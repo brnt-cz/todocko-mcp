@@ -39,9 +39,10 @@ chmod +x install.sh
 
 Instalátor:
 1. Nainstaluje závislosti a sestaví projekt
-2. Požádá vás o zadání vaší 24-slovné zálohovací fráze z Todocko
-3. Zeptá se, zda chcete nakonfigurovat Claude Desktop, Claude Code nebo obojí
-4. Automaticky vytvoří/aktualizuje konfigurační soubory
+2. Zeptá se, zda chcete nakonfigurovat Claude Desktop, Claude Code nebo obojí
+3. Vytvoří konfigurační soubor s placeholderem
+4. **Ručně doplňte** svou 24-slovnou zálohovací frázi do konfiguračního souboru
+5. Restartujte Claude
 
 ### Manuální instalace
 

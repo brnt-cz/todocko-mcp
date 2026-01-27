@@ -47,25 +47,11 @@ npm run build
 
 echo -e "${GREEN}✓ Build complete${NC}"
 
-# Get mnemonic from user
+# Ask which Claude client to configure
 echo ""
 echo "=========================================="
 echo "  Configuration"
 echo "=========================================="
-echo ""
-echo "To sync with your Todocko data, you need your 24-word backup phrase."
-echo "You can find it in Todocko: Settings → Synchronization → Show backup phrase"
-echo ""
-echo -e "${YELLOW}Warning: Keep your mnemonic secret! Anyone with it can access your data.${NC}"
-echo ""
-read -p "Enter your Todocko mnemonic (24 words): " MNEMONIC
-
-if [ -z "$MNEMONIC" ]; then
-    echo -e "${RED}Error: Mnemonic is required${NC}"
-    exit 1
-fi
-
-# Ask which Claude client to configure
 echo ""
 echo "Which Claude client do you want to configure?"
 echo "1) Claude Desktop"
@@ -100,7 +86,7 @@ config.mcpServers.todocko = {
     command: 'node',
     args: ['$SCRIPT_DIR/dist/index.js'],
     env: {
-        TODOCKO_MNEMONIC: '$MNEMONIC'
+        TODOCKO_MNEMONIC: 'YOUR_24_WORD_MNEMONIC_HERE'
     }
 };
 fs.writeFileSync('$config_file', JSON.stringify(config, null, 2));
@@ -113,33 +99,38 @@ fs.writeFileSync('$config_file', JSON.stringify(config, null, 2));
       "command": "node",
       "args": ["$SCRIPT_DIR/dist/index.js"],
       "env": {
-        "TODOCKO_MNEMONIC": "$MNEMONIC"
+        "TODOCKO_MNEMONIC": "YOUR_24_WORD_MNEMONIC_HERE"
       }
     }
   }
 }
 EOF
     fi
-    echo -e "${GREEN}✓ Config updated: $config_file${NC}"
+    echo -e "${GREEN}✓ Config created: $config_file${NC}"
 }
 
 # Configure based on choice
+CONFIG_FILES=()
 case $CLIENT_CHOICE in
     1)
         if [ -n "$DESKTOP_CONFIG_DIR" ]; then
             update_config "$DESKTOP_CONFIG_DIR/claude_desktop_config.json"
+            CONFIG_FILES+=("$DESKTOP_CONFIG_DIR/claude_desktop_config.json")
         else
             echo -e "${YELLOW}Claude Desktop config location unknown for this OS${NC}"
         fi
         ;;
     2)
         update_config "$CODE_CONFIG_DIR/settings.json"
+        CONFIG_FILES+=("$CODE_CONFIG_DIR/settings.json")
         ;;
     3)
         if [ -n "$DESKTOP_CONFIG_DIR" ]; then
             update_config "$DESKTOP_CONFIG_DIR/claude_desktop_config.json"
+            CONFIG_FILES+=("$DESKTOP_CONFIG_DIR/claude_desktop_config.json")
         fi
         update_config "$CODE_CONFIG_DIR/settings.json"
+        CONFIG_FILES+=("$CODE_CONFIG_DIR/settings.json")
         ;;
     *)
         echo -e "${YELLOW}Invalid choice. Skipping config.${NC}"
@@ -151,22 +142,20 @@ echo "=========================================="
 echo "  Installation Complete!"
 echo "=========================================="
 echo ""
-echo -e "${GREEN}Todocko MCP Server has been installed successfully.${NC}"
+echo -e "${GREEN}Todocko MCP Server has been installed.${NC}"
 echo ""
-echo "Next steps:"
-echo "1. Restart Claude Desktop / Claude Code"
-echo "2. Look for the MCP tools icon"
-echo "3. You should see tools like: td_list_tasks, td_create_task, etc."
+echo -e "${YELLOW}⚠️  IMPORTANT: You need to add your mnemonic!${NC}"
 echo ""
-echo "Available tools:"
-echo "  - td_list_projects   List all projects"
-echo "  - td_get_project     Get project details"
-echo "  - td_list_tasks      List tasks with filters"
-echo "  - td_get_task        Get task by ID or code"
-echo "  - td_create_task     Create a new task"
-echo "  - td_update_task     Update an existing task"
-echo "  - td_search_tasks    Search tasks"
-echo "  - td_list_users      List all users"
-echo "  - td_get_user        Get user details"
-echo "  - td_list_worklogs   List worklogs for a task"
-echo "  - td_add_worklog     Add worklog to a task"
+echo "1. Open the config file:"
+for cfg in "${CONFIG_FILES[@]}"; do
+    echo "   $cfg"
+done
+echo ""
+echo "2. Replace YOUR_24_WORD_MNEMONIC_HERE with your actual 24-word"
+echo "   backup phrase from Todocko (Settings → Synchronization)"
+echo ""
+echo "3. Restart Claude Desktop / Claude Code"
+echo ""
+echo "Available tools after setup:"
+echo "  td_list_tasks, td_create_task, td_update_task, td_search_tasks,"
+echo "  td_list_projects, td_list_users, td_list_worklogs, td_add_worklog"
