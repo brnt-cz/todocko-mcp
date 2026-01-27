@@ -1,0 +1,45 @@
+{
+  "name": "todocko-mcp",
+  "version": "1.0.0",
+  "description": "MCP Server for Todocko - local-first kanban todo app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brnt-cz/todocko-mcp.git"
+  },
+  "homepage": "https://github.com/brnt-cz/todocko-mcp",
+  "bugs": {
+    "url": "https://github.com/brnt-cz/todocko-mcp/issues"
+  },
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "todocko-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "todocko",
+    "kanban",
+    "todo",
+    "evolu",
+    "local-first"
+  ],
+  "author": "brnt.cz",
+  "license": "MIT",
+  "dependencies": {
+    "@evolu/common": "^7.4.1",
+    "@evolu/nodejs": "^2.4.0",
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
