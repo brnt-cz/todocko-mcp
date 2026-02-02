@@ -2,6 +2,14 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type EvoluInstance } from "../evolu.js";
 
+// Wait for Evolu to sync changes to relay servers
+// Evolu doesn't have a public API to wait for sync, so we use a delay
+const SYNC_DELAY_MS = 3000;
+
+async function waitForSync(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, SYNC_DELAY_MS));
+}
+
 // Tool definitions
 export const tools: Tool[] = [
   {
@@ -684,6 +692,9 @@ async function createTask(
     blockedReason: null,
   });
 
+  // Wait for sync to relay servers
+  await waitForSync();
+
   return {
     success: true,
     taskId: result.id,
@@ -746,6 +757,9 @@ async function updateTask(
   }
 
   evolu.update("task", updates as any);
+
+  // Wait for sync to relay servers
+  await waitForSync();
 
   return {
     success: true,
@@ -859,6 +873,9 @@ async function addWorklog(
     loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
     userId: args.userId ? (args.userId as UserId) : null,
   });
+
+  // Wait for sync to relay servers
+  await waitForSync();
 
   return {
     success: true,
