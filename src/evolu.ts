@@ -6,6 +6,9 @@
  */
 
 import WebSocket from "ws";
+import Database from "better-sqlite3";
+import { existsSync } from "fs";
+import { join } from "path";
 
 // WebSocket polyfill for Node.js - must be set before importing Evolu
 globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
@@ -142,7 +145,7 @@ const RELAY_SERVERS = [
  */
 function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
   return {
-    console: createConsole({ enableLogging: true }),
+    console: createConsole({ enableLogging: false }),
     createSqliteDriver: createBetterSqliteDriver,
     createWebSocket: createWebSocket,
     randomBytes: createRandomBytes(),
@@ -152,49 +155,165 @@ function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
 }
 
 /**
- * Initialize Evolu with the given mnemonic.
- *
- * This creates an Evolu instance that syncs with the Todocko relay servers.
- * Data is decrypted locally using keys derived from the mnemonic.
+ * Get the database path for the Evolu database
  */
-export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null> {
-  const platformDeps = createNodejsPlatformDeps();
+function getDbPath(): string {
+  // Evolu uses the app name as the database file name
+  return join(process.cwd(), "todocko.db");
+}
 
-  // Create the DbWorker using platform-specific implementation
+/**
+ * Check if the database already has the correct owner from the mnemonic
+ * Returns true if owner matches, false otherwise
+ */
+function checkExistingOwner(mnemonic: string): boolean {
+  const dbPath = getDbPath();
+
+  if (!existsSync(dbPath)) {
+    console.log("Database does not exist yet");
+    return false;
+  }
+
+  try {
+    const db = new Database(dbPath, { readonly: true });
+
+    // Check if evolu_config table exists
+    const tableExists = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='evolu_config'"
+    ).get();
+
+    if (!tableExists) {
+      console.log("evolu_config table does not exist");
+      db.close();
+      return false;
+    }
+
+    // Check if mnemonic matches
+    const config = db.prepare(
+      "SELECT appOwnerMnemonic FROM evolu_config LIMIT 1"
+    ).get() as { appOwnerMnemonic: string | null } | undefined;
+
+    db.close();
+
+    if (!config || !config.appOwnerMnemonic) {
+      console.log("No mnemonic stored in database");
+      return false;
+    }
+
+    const matches = config.appOwnerMnemonic.trim() === mnemonic.trim();
+    console.log(`Database mnemonic ${matches ? "matches" : "does not match"}`);
+    return matches;
+  } catch (error) {
+    console.error("Error checking database:", error);
+    return false;
+  }
+}
+
+/**
+ * Create Evolu dependencies for Node.js
+ */
+function createEvoluDeps(platformDeps: DbWorkerPlatformDeps, onReloadApp?: () => void) {
   const createDbWorker = (_name: SimpleName) => {
     return createDbWorkerForPlatform(platformDeps);
   };
 
-  // Build complete Evolu dependencies for Node.js
-  const evoluDeps = {
+  return {
     console: platformDeps.console,
     createDbWorker,
     randomBytes: platformDeps.randomBytes,
     reloadApp: () => {
-      // Not needed in MCP context - just log
-      console.log("reloadApp called (no-op in MCP)");
+      console.log("reloadApp called");
+      if (onReloadApp) onReloadApp();
     },
     time: platformDeps.time,
   };
+}
+
+/**
+ * Initialize Evolu with the given mnemonic.
+ *
+ * This creates an Evolu instance that syncs with the Todocko relay servers.
+ * Data is decrypted locally using keys derived from the mnemonic.
+ *
+ * Note: restoreAppOwner() in Evolu is designed for browsers where it calls
+ * reloadApp() to restart. In Node.js, we check if the database already has
+ * the correct owner and skip restore if it matches.
+ */
+export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null> {
+  // Parse and validate the mnemonic FIRST
+  const mnemonicResult = Mnemonic.from(mnemonic.trim());
+  if (!mnemonicResult.ok) {
+    console.error("Invalid mnemonic:", mnemonicResult.error);
+    throw new Error("Invalid BIP39 mnemonic phrase");
+  }
+
+  const platformDeps = createNodejsPlatformDeps();
+  const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
+
+  // Check if database already has the correct owner
+  const ownerAlreadySet = checkExistingOwner(mnemonic);
 
   try {
-    // Create the Evolu instance
-    evoluInstance = createEvolu(evoluDeps)(Schema, {
-      name: SimpleName.orThrow("todocko"),
-      transports: RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url })),
-      enableLogging: true,
-    });
+    if (ownerAlreadySet) {
+      // Owner already matches - just create Evolu with transports and let it sync
+      console.log("Owner already set in database - creating Evolu with transports...");
 
-    // Parse and validate the mnemonic
-    const mnemonicResult = Mnemonic.from(mnemonic.trim());
-    if (!mnemonicResult.ok) {
-      console.error("Invalid mnemonic:", mnemonicResult.error);
-      throw new Error("Invalid BIP39 mnemonic phrase");
+      const evoluDeps = createEvoluDeps(platformDeps);
+      evoluInstance = createEvolu(evoluDeps)(Schema, {
+        name: SimpleName.orThrow("todocko"),
+        transports: transports,
+        enableLogging: false,
+      });
+    } else {
+      // Need to restore owner first
+      console.log("Owner not set - restoring from mnemonic...");
+
+      // Flag to track if restoreAppOwner triggered a reload
+      let reloadTriggered = false;
+      let reloadResolve: (() => void) | null = null;
+      const reloadPromise = new Promise<void>((resolve) => {
+        reloadResolve = resolve;
+      });
+
+      // Create initial Evolu instance WITHOUT transports
+      const evoluDeps = createEvoluDeps(platformDeps, () => {
+        reloadTriggered = true;
+        if (reloadResolve) reloadResolve();
+      });
+
+      evoluInstance = createEvolu(evoluDeps)(Schema, {
+        name: SimpleName.orThrow("todocko"),
+        transports: [], // No sync yet - will add after restore
+        enableLogging: false,
+      });
+
+      // Restore owner from mnemonic
+      console.log("Calling restoreAppOwner...");
+      const restorePromise = evoluInstance.restoreAppOwner(mnemonicResult.value);
+
+      // Wait for either restore to complete or reload to be triggered
+      await Promise.race([
+        restorePromise,
+        reloadPromise,
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
+
+      // If reload was triggered, recreate with transports
+      if (reloadTriggered) {
+        console.log("Reload triggered - recreating Evolu instance with transports...");
+
+        const newEvoluDeps = createEvoluDeps(platformDeps);
+        evoluInstance = createEvolu(newEvoluDeps)(Schema, {
+          name: SimpleName.orThrow("todocko"),
+          transports: transports,
+          enableLogging: false,
+        });
+      } else {
+        // Just add transports
+        console.log("Adding transports for sync...");
+        evoluInstance.useOwner({ transports });
+      }
     }
-
-    // Restore the owner using the mnemonic
-    console.log("Restoring app owner from mnemonic...");
-    await evoluInstance.restoreAppOwner(mnemonicResult.value);
 
     // Wait for initial sync
     console.log("Waiting for initial sync...");

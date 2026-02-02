@@ -3,3 +3,9 @@ dist/
 *.log
 .DS_Store
 todocko.db
+
+# Security - never commit mnemonics or secrets
+.todocko-mnemonic
+*.mnemonic
+.env
+.env.local
