@@ -133,6 +133,9 @@ export type EvoluInstance = any;
 
 let evoluInstance: EvoluInstance | null = null;
 
+// Database name - must match main app (src/db/appEvolu.ts)
+const DB_NAME = "todocko";
+
 // Evolu relay servers (same as main app)
 const RELAY_SERVERS = [
   "wss://free.evoluhq.com",
@@ -145,7 +148,7 @@ const RELAY_SERVERS = [
  */
 function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
   return {
-    console: createConsole({ enableLogging: false }),
+    console: createConsole({ enableLogging: true }),
     createSqliteDriver: createBetterSqliteDriver,
     createWebSocket: createWebSocket,
     randomBytes: createRandomBytes(),
@@ -159,7 +162,7 @@ function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
  */
 function getDbPath(): string {
   // Evolu uses the app name as the database file name
-  return join(process.cwd(), "todocko.db");
+  return join(process.cwd(), `${DB_NAME}.db`);
 }
 
 /**
@@ -260,7 +263,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
 
       const evoluDeps = createEvoluDeps(platformDeps);
       evoluInstance = createEvolu(evoluDeps)(Schema, {
-        name: SimpleName.orThrow("todocko"),
+        name: SimpleName.orThrow(DB_NAME),
         transports: transports,
         enableLogging: false,
       });
@@ -282,7 +285,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       });
 
       evoluInstance = createEvolu(evoluDeps)(Schema, {
-        name: SimpleName.orThrow("todocko"),
+        name: SimpleName.orThrow(DB_NAME),
         transports: [], // No sync yet - will add after restore
         enableLogging: false,
       });
@@ -304,7 +307,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
 
         const newEvoluDeps = createEvoluDeps(platformDeps);
         evoluInstance = createEvolu(newEvoluDeps)(Schema, {
-          name: SimpleName.orThrow("todocko"),
+          name: SimpleName.orThrow(DB_NAME),
           transports: transports,
           enableLogging: false,
         });
@@ -315,9 +318,9 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       }
     }
 
-    // Wait for initial sync
-    console.log("Waiting for initial sync...");
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    // Wait for initial sync - need longer timeout for relay servers
+    console.log("Waiting for initial sync (15s)...");
+    await new Promise((resolve) => setTimeout(resolve, 15000));
 
     console.log("Evolu initialized successfully");
     return evoluInstance;
