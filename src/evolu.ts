@@ -1,15 +1,20 @@
 /**
  * Evolu integration for Todocko MCP Server
  *
- * NOTE: Full Evolu integration for Node.js is complex and requires
- * building the EvoluDeps manually. This file provides a simplified
- * structure that can be expanded later.
- *
- * For now, the MCP server operates with a local SQLite database
- * that syncs via the Evolu relay protocol.
+ * This creates a proper Node.js Evolu instance using createDbWorkerForPlatform
+ * with all required platform dependencies.
  */
 
+import WebSocket from "ws";
+
+// WebSocket polyfill for Node.js - must be set before importing Evolu
+globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
+
 import { createEvolu } from "@evolu/common/local-first";
+import {
+  createDbWorkerForPlatform,
+  type DbWorkerPlatformDeps,
+} from "@evolu/common/local-first";
 import { createBetterSqliteDriver } from "@evolu/nodejs";
 import {
   id,
@@ -19,6 +24,13 @@ import {
   SqliteBoolean,
   Int,
   String,
+  createConsole,
+  createRandomBytes,
+  createRandom,
+  createTime,
+  createWebSocket,
+  SimpleName,
+  Mnemonic,
 } from "@evolu/common";
 
 // Re-create schema for MCP server (mirrors main app)
@@ -118,6 +130,27 @@ export type EvoluInstance = any;
 
 let evoluInstance: EvoluInstance | null = null;
 
+// Evolu relay servers (same as main app)
+const RELAY_SERVERS = [
+  "wss://free.evoluhq.com",
+  "wss://relay-production-0afe.up.railway.app",
+  "wss://relay.todocko.cz",
+];
+
+/**
+ * Create platform dependencies for Node.js
+ */
+function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
+  return {
+    console: createConsole({ enableLogging: true }),
+    createSqliteDriver: createBetterSqliteDriver,
+    createWebSocket: createWebSocket,
+    randomBytes: createRandomBytes(),
+    random: createRandom(),
+    time: createTime(),
+  };
+}
+
 /**
  * Initialize Evolu with the given mnemonic.
  *
@@ -125,49 +158,49 @@ let evoluInstance: EvoluInstance | null = null;
  * Data is decrypted locally using keys derived from the mnemonic.
  */
 export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null> {
-  // Evolu relay servers (same as main app)
-  const RELAY_SERVERS = [
-    "wss://free.evoluhq.com",
-    "wss://relay-production-0afe.up.railway.app",
-    "wss://relay.todocko.cz",
-  ];
+  const platformDeps = createNodejsPlatformDeps();
 
-  // Create Node.js specific dependencies
-  const createSqliteDriver = createBetterSqliteDriver;
+  // Create the DbWorker using platform-specific implementation
+  const createDbWorker = (_name: SimpleName) => {
+    return createDbWorkerForPlatform(platformDeps);
+  };
 
-  // Build evolu deps for Node.js
-  // This is a simplified version - full implementation would require
-  // more platform-specific code
-  const evoluNodeDeps = {
-    console,
-    createDbWorker: () => {
-      throw new Error("Worker not supported in Node.js MCP context");
-    },
-    createSqliteDriver,
-    flushSync: (fn: () => void) => fn(),
-    randomBytes: (size: number) => {
-      const { randomBytes } = require("crypto");
-      return randomBytes(size);
-    },
+  // Build complete Evolu dependencies for Node.js
+  const evoluDeps = {
+    console: platformDeps.console,
+    createDbWorker,
+    randomBytes: platformDeps.randomBytes,
     reloadApp: () => {
-      throw new Error("Reload not supported in MCP context");
+      // Not needed in MCP context - just log
+      console.log("reloadApp called (no-op in MCP)");
     },
-    time: {
-      now: Date.now,
-    },
+    time: platformDeps.time,
   };
 
   try {
-    evoluInstance = createEvolu(evoluNodeDeps as any)(Schema, {
-      name: "todocko",
+    // Create the Evolu instance
+    evoluInstance = createEvolu(evoluDeps)(Schema, {
+      name: SimpleName.orThrow("todocko"),
       transports: RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url })),
-      // The mnemonic is used for key derivation
-      // Note: This might need additional setup for owner restoration
-    } as any);
+      enableLogging: true,
+    });
+
+    // Parse and validate the mnemonic
+    const mnemonicResult = Mnemonic.from(mnemonic.trim());
+    if (!mnemonicResult.ok) {
+      console.error("Invalid mnemonic:", mnemonicResult.error);
+      throw new Error("Invalid BIP39 mnemonic phrase");
+    }
+
+    // Restore the owner using the mnemonic
+    console.log("Restoring app owner from mnemonic...");
+    await evoluInstance.restoreAppOwner(mnemonicResult.value);
 
     // Wait for initial sync
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    console.log("Waiting for initial sync...");
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
+    console.log("Evolu initialized successfully");
     return evoluInstance;
   } catch (error) {
     console.error("Failed to initialize Evolu:", error);
