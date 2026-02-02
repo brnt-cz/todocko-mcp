@@ -146,6 +146,26 @@ Zaloguj 2 hodiny práce na úkol TODO-15 s popisem "Implementace feature"
 - V konfiguraci MCP serveru je fráze bezpečná (AI k ní nemá přístup)
 - Kdokoli s vaší frází má plný přístup k vašim datům
 
+## Změna konfigurace
+
+### Claude Code (CLI)
+
+Po změně konfigurace v `~/.claude/settings.json` (např. změna mnemonicu) spusťte příkaz:
+```
+/mcp
+```
+Tím se MCP server restartuje s novou konfigurací.
+
+### Přepnutí na jiný účet
+
+Při změně mnemonicu na **jiný Todocko účet** je potřeba smazat lokální databázi:
+
+```bash
+rm /cesta/k/mcp-server/todocko.db
+```
+
+Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při dalším spuštění vytvoří nová databáze a stáhnou se data nového účtu.
+
 ## Troubleshooting
 
 ### Server se nespustí
@@ -157,9 +177,11 @@ Zaloguj 2 hodiny práce na úkol TODO-15 s popisem "Implementace feature"
 - Ověřte, že je zálohovací fráze správná (24 slov)
 - Zkontrolujte internetové připojení
 - Počkejte pár sekund na synchronizaci
+- Zkuste smazat `todocko.db` a restartovat
 
 ### Nástroje nejsou viditelné
 - Restartujte Claude Desktop
+- V Claude Code použijte `/mcp` pro reload
 - Zkontrolujte konfigurační soubor
 - Zkontrolujte cestu k dist/index.js
 
