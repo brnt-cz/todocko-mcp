@@ -7,8 +7,9 @@
 
 import WebSocket from "ws";
 import Database from "better-sqlite3";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { homedir } from "os";
 
 // WebSocket polyfill for Node.js - must be set before importing Evolu
 globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
@@ -271,11 +272,20 @@ function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
 }
 
 /**
+ * Get the Todocko data directory (~/.todocko)
+ */
+function getTodockoDir(): string {
+  const dir = join(homedir(), ".todocko");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
  * Get the database path for the Evolu database
  */
 function getDbPath(): string {
   // Evolu uses the app name as the database file name
-  return join(process.cwd(), `${DB_NAME}.db`);
+  return join(getTodockoDir(), `${DB_NAME}.db`);
 }
 
 /**

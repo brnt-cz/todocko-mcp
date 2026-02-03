@@ -172,6 +172,20 @@ Vytvoř novou deployment stage "Staging" pro sdílený projekt
 - V konfiguraci MCP serveru je fráze bezpečná (AI k ní nemá přístup)
 - Kdokoli s vaší frází má plný přístup k vašim datům
 
+## Umístění dat
+
+Databáze jsou uloženy v adresáři `~/.todocko/`:
+
+| Platforma | Cesta |
+|-----------|-------|
+| Linux | `~/.todocko/` |
+| macOS | `~/.todocko/` |
+| Windows | `C:\Users\<user>\.todocko\` |
+
+Soubory:
+- `todocko.db` - vaše osobní data (úkoly, projekty)
+- `todocko-projects.db` - sdílené projekty
+
 ## Změna konfigurace
 
 ### Claude Code (CLI)
@@ -187,7 +201,11 @@ Tím se MCP server restartuje s novou konfigurací.
 Při změně mnemonicu na **jiný Todocko účet** je potřeba smazat lokální databázi:
 
 ```bash
-rm /cesta/k/mcp-server/todocko.db
+# Linux/macOS
+rm ~/.todocko/todocko.db
+
+# Windows
+del %USERPROFILE%\.todocko\todocko.db
 ```
 
 Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při dalším spuštění vytvoří nová databáze a stáhnou se data nového účtu.
@@ -203,7 +221,7 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - Ověřte, že je zálohovací fráze správná (24 slov)
 - Zkontrolujte internetové připojení
 - Počkejte pár sekund na synchronizaci
-- Zkuste smazat `todocko.db` a restartovat
+- Zkuste smazat `~/.todocko/todocko.db` a restartovat
 
 ### Nástroje nejsou viditelné
 - Restartujte Claude Desktop
@@ -401,6 +419,20 @@ Create a new deployment stage "Staging" for the shared project
 - In the MCP server configuration, the phrase is safe (AI has no access to it)
 - Anyone with your phrase has full access to your data
 
+## Data Location
+
+Databases are stored in the `~/.todocko/` directory:
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.todocko/` |
+| macOS | `~/.todocko/` |
+| Windows | `C:\Users\<user>\.todocko\` |
+
+Files:
+- `todocko.db` - your personal data (tasks, projects)
+- `todocko-projects.db` - shared projects
+
 ## Configuration Changes
 
 ### Claude Code (CLI)
@@ -416,7 +448,11 @@ This will restart the MCP server with the new configuration.
 When changing the mnemonic to a **different Todocko account**, you need to delete the local database:
 
 ```bash
-rm /path/to/mcp-server/todocko.db
+# Linux/macOS
+rm ~/.todocko/todocko.db
+
+# Windows
+del %USERPROFILE%\.todocko\todocko.db
 ```
 
 The database contains the owner ID from the previous mnemonic. After deletion, a new database will be created on the next startup and data from the new account will be downloaded.
@@ -432,7 +468,7 @@ The database contains the owner ID from the previous mnemonic. After deletion, a
 - Verify the backup phrase is correct (24 words)
 - Check internet connection
 - Wait a few seconds for synchronization
-- Try deleting `todocko.db` and restart
+- Try deleting `~/.todocko/todocko.db` and restart
 
 ### Tools not visible
 - Restart Claude Desktop
