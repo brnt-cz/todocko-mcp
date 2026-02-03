@@ -101,10 +101,21 @@ Instalátor:
 | `td_create_task` | Vytvoření nového úkolu |
 | `td_update_task` | Aktualizace existujícího úkolu |
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
+| `td_list_deployment_stages` | Seznam deployment stages pro projekt |
 | `td_list_users` | Seznam všech uživatelů |
 | `td_get_user` | Detail uživatele |
 | `td_list_worklogs` | Seznam worklogů pro úkol |
 | `td_add_worklog` | Přidání worklogu k úkolu |
+
+### Sdílené projekty
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_shared_projects` | Seznam sdílených projektů, ke kterým má uživatel přístup |
+| `td_list_shared_tasks` | Seznam úkolů ze sdíleného projektu |
+| `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu |
+| `td_list_shared_deployment_stages` | Seznam deployment stages pro sdílený projekt |
+| `td_create_shared_deployment_stage` | Vytvoření deployment stage ve sdíleném projektu |
 
 ## Příklady použití
 
@@ -138,6 +149,19 @@ Přiřaď úkol TODO-10 uživateli s ID xyz
 ### Logování času
 ```
 Zaloguj 2 hodiny práce na úkol TODO-15 s popisem "Implementace feature"
+```
+
+### Sdílené projekty
+```
+Zobraz sdílené projekty
+Jaké úkoly jsou ve sdíleném projektu?
+Označ úkol jako nasazený na produkci
+```
+
+### Deployment stages
+```
+Jaké deployment stages má projekt?
+Vytvoř novou deployment stage "Staging" pro sdílený projekt
 ```
 
 ## Bezpečnost
@@ -306,10 +330,21 @@ The installer will:
 | `td_create_task` | Create a new task |
 | `td_update_task` | Update an existing task |
 | `td_search_tasks` | Search tasks by text |
+| `td_list_deployment_stages` | List deployment stages for a project |
 | `td_list_users` | List all users |
 | `td_get_user` | Get user details |
 | `td_list_worklogs` | List worklogs for a task |
 | `td_add_worklog` | Add a worklog to a task |
+
+### Shared Projects
+
+| Tool | Description |
+|------|-------------|
+| `td_list_shared_projects` | List shared projects the user has access to |
+| `td_list_shared_tasks` | List tasks from a shared project |
+| `td_update_shared_task` | Update a task in a shared project |
+| `td_list_shared_deployment_stages` | List deployment stages for a shared project |
+| `td_create_shared_deployment_stage` | Create a deployment stage in a shared project |
 
 ## Usage Examples
 
@@ -343,6 +378,19 @@ Assign task TODO-10 to user with ID xyz
 ### Log time
 ```
 Log 2 hours of work on task TODO-15 with description "Feature implementation"
+```
+
+### Shared projects
+```
+Show shared projects
+What tasks are in the shared project?
+Mark task as deployed to production
+```
+
+### Deployment stages
+```
+What deployment stages does the project have?
+Create a new deployment stage "Staging" for the shared project
 ```
 
 ## Security
