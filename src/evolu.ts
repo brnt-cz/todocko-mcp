@@ -55,6 +55,15 @@ export type WorklogId = typeof WorklogId.Type;
 export const TaskLinkId = id("TaskLink");
 export type TaskLinkId = typeof TaskLinkId.Type;
 
+export const DeploymentStageId = id("DeploymentStage");
+export type DeploymentStageId = typeof DeploymentStageId.Type;
+
+export const ProjectRefId = id("ProjectRef");
+export type ProjectRefId = typeof ProjectRefId.Type;
+
+export const ProjectMemberId = id("ProjectMember");
+export type ProjectMemberId = typeof ProjectMemberId.Type;
+
 export const Schema = {
   user: {
     id: UserId,
@@ -90,6 +99,8 @@ export const Schema = {
     isBlocked: nullOr(SqliteBoolean),
     blockedReason: nullOr(NonEmptyString1000),
     estimate: nullOr(Int),
+    isOnProduction: nullOr(SqliteBoolean),
+    deploymentStageId: nullOr(DeploymentStageId),
   },
   tag: {
     id: id("Tag"),
@@ -122,6 +133,108 @@ export const Schema = {
     sourceTaskId: TaskId,
     targetTaskId: TaskId,
     linkType: String,
+  },
+  deploymentStage: {
+    id: DeploymentStageId,
+    projectId: ProjectId,
+    name: NonEmptyString100,
+    color: String,
+    position: Int,
+  },
+  // Project references for shared projects
+  projectRef: {
+    id: ProjectRefId,
+    projectId: String,
+    ownerSecret: String,
+    sharedOwnerId: String,
+    name: NonEmptyString100,
+    code: nullOr(NonEmptyString100),
+    color: String,
+    isOwner: nullOr(SqliteBoolean),
+    permission: String,
+    joinedAt: String,
+    isArchived: nullOr(SqliteBoolean),
+    isHiddenFromFilters: nullOr(SqliteBoolean),
+  },
+};
+
+// Schema for shared projects (todocko-projects database)
+export const ProjectSchema = {
+  project: {
+    id: ProjectId,
+    name: NonEmptyString100,
+    code: nullOr(NonEmptyString100),
+    color: String,
+    isArchived: nullOr(SqliteBoolean),
+    isHiddenFromFilters: nullOr(SqliteBoolean),
+    position: Int,
+  },
+  projectMember: {
+    id: ProjectMemberId,
+    projectId: ProjectId,
+    userAppOwnerId: String,
+    userName: NonEmptyString100,
+    userColor: String,
+    userAvatarUrl: nullOr(String),
+    permission: String,
+    joinedAt: String,
+  },
+  task: {
+    id: TaskId,
+    projectId: nullOr(ProjectId),
+    assigneeId: nullOr(String), // AppOwner OwnerId of assignee
+    title: NonEmptyString100,
+    name: nullOr(NonEmptyString100),
+    description: nullOr(NonEmptyString1000),
+    status: String,
+    priority: String,
+    deadline: nullOr(String),
+    position: Int,
+    completedAt: nullOr(String),
+    isBlocked: nullOr(SqliteBoolean),
+    blockedReason: nullOr(NonEmptyString1000),
+    estimate: nullOr(Int),
+    isOnProduction: nullOr(SqliteBoolean),
+    deploymentStageId: nullOr(DeploymentStageId),
+  },
+  tag: {
+    id: id("Tag"),
+    name: NonEmptyString100,
+    color: String,
+  },
+  taskTag: {
+    id: id("TaskTag"),
+    taskId: TaskId,
+    tagId: id("Tag"),
+  },
+  attachment: {
+    id: AttachmentId,
+    taskId: TaskId,
+    filename: NonEmptyString100,
+    mimeType: String,
+    data: nullOr(String),
+    size: Int,
+  },
+  worklog: {
+    id: WorklogId,
+    taskId: TaskId,
+    userId: nullOr(String),
+    durationMinutes: Int,
+    description: nullOr(NonEmptyString1000),
+    loggedAt: String,
+  },
+  taskLink: {
+    id: TaskLinkId,
+    sourceTaskId: TaskId,
+    targetTaskId: TaskId,
+    linkType: String,
+  },
+  deploymentStage: {
+    id: DeploymentStageId,
+    projectId: ProjectId,
+    name: NonEmptyString100,
+    color: String,
+    position: Int,
   },
 };
 
@@ -337,3 +450,93 @@ export function getEvolu(): EvoluInstance | null {
 // Helper to convert SQLite boolean
 export const SQLITE_TRUE = 1 as unknown as SqliteBoolean;
 export const SQLITE_FALSE = null;
+
+// --- Shared Projects Support ---
+
+import { createSharedOwner, createOwnerSecret, type SharedOwner, type OwnerSecret, type OwnerId } from "@evolu/common";
+
+let projectEvoluInstance: EvoluInstance | null = null;
+const PROJECT_DB_NAME = "todocko-projects";
+
+// Cache for SharedOwners
+const sharedOwnersCache = new Map<string, SharedOwner>();
+
+/**
+ * Initialize the project Evolu instance for shared projects
+ */
+export async function initProjectEvolu(): Promise<EvoluInstance | null> {
+  if (projectEvoluInstance) return projectEvoluInstance;
+
+  const platformDeps = createNodejsPlatformDeps();
+  const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
+
+  console.error("Initializing project Evolu for shared projects...");
+
+  const evoluDeps = createEvoluDeps(platformDeps);
+  projectEvoluInstance = createEvolu(evoluDeps)(ProjectSchema, {
+    name: SimpleName.orThrow(PROJECT_DB_NAME),
+    transports: transports,
+    enableLogging: false,
+  });
+
+  // Wait for initial sync
+  console.error("Waiting for project Evolu sync (5s)...");
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+
+  console.error("Project Evolu initialized successfully");
+  return projectEvoluInstance;
+}
+
+export function getProjectEvolu(): EvoluInstance | null {
+  return projectEvoluInstance;
+}
+
+/**
+ * Decode OwnerSecret from base64 string
+ */
+export function decodeOwnerSecret(encoded: string): OwnerSecret {
+  const binary = Buffer.from(encoded, "base64");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary[i]!;
+  }
+  return bytes as unknown as OwnerSecret;
+}
+
+/**
+ * Get or create a SharedOwner for a project
+ */
+export function getSharedOwner(ownerId: string, ownerSecretBase64: string): SharedOwner {
+  let sharedOwner = sharedOwnersCache.get(ownerId);
+
+  if (!sharedOwner) {
+    const ownerSecret = decodeOwnerSecret(ownerSecretBase64);
+    sharedOwner = createSharedOwner(ownerSecret);
+    sharedOwnersCache.set(sharedOwner.id as string, sharedOwner);
+  }
+
+  return sharedOwner;
+}
+
+/**
+ * Use a SharedOwner to access a project's data
+ */
+export function useSharedOwner(sharedOwner: SharedOwner): void {
+  const evolu = getProjectEvolu();
+  if (!evolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
+  evolu.useOwner(sharedOwner, { transports });
+}
+
+/**
+ * Stop using a SharedOwner
+ */
+export function stopUsingSharedOwner(sharedOwner: SharedOwner): void {
+  const evolu = getProjectEvolu();
+  if (!evolu) return;
+
+  evolu.useOwner(sharedOwner, { transports: [] });
+}

@@ -3,6 +3,7 @@ dist/
 *.log
 .DS_Store
 todocko.db
+.idea
 
 # Security - never commit mnemonics or secrets
 .todocko-mnemonic
