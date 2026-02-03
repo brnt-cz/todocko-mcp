@@ -65,6 +65,9 @@ export type ProjectRefId = typeof ProjectRefId.Type;
 export const ProjectMemberId = id("ProjectMember");
 export type ProjectMemberId = typeof ProjectMemberId.Type;
 
+export const RepositoryLinkId = id("RepositoryLink");
+export type RepositoryLinkId = typeof RepositoryLinkId.Type;
+
 export const Schema = {
   user: {
     id: UserId,
@@ -235,6 +238,15 @@ export const ProjectSchema = {
     projectId: ProjectId,
     name: NonEmptyString100,
     color: String,
+    position: Int,
+  },
+  // Repository links (GitHub, GitLab, etc.)
+  repositoryLink: {
+    id: RepositoryLinkId,
+    projectId: ProjectId,
+    type: String, // 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'custom'
+    url: NonEmptyString1000,
+    label: nullOr(NonEmptyString100),
     position: Int,
   },
 };

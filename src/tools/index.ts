@@ -1,6 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
-import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getProjectEvolu, getSharedOwner, useSharedOwner, stopUsingSharedOwner } from "../evolu.js";
+import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type RepositoryLinkId, type EvoluInstance, getProjectEvolu, getSharedOwner, useSharedOwner, stopUsingSharedOwner } from "../evolu.js";
 
 // Wait for Evolu to sync changes to relay servers
 // Evolu doesn't have a public API to wait for sync, so we use a delay
@@ -209,6 +209,60 @@ export const tools: Tool[] = [
           description: "Project ID to get stages for (optional - returns all if not specified)",
         },
       },
+    },
+  },
+  {
+    name: "td_list_repository_links",
+    description: "List repository links for a project. Returns link id, type, url, label, and position.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project ID to get links for (optional - returns all if not specified)",
+        },
+      },
+    },
+  },
+  {
+    name: "td_create_repository_link",
+    description: "Create a repository link for a project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project ID (required)",
+        },
+        type: {
+          type: "string",
+          enum: ["github", "gitlab", "bitbucket", "azure", "custom"],
+          description: "Repository type (default: 'github')",
+        },
+        url: {
+          type: "string",
+          description: "Repository URL (required)",
+        },
+        label: {
+          type: "string",
+          description: "Optional label (e.g., 'Frontend', 'API')",
+        },
+      },
+      required: ["projectId", "url"],
+    },
+  },
+  {
+    name: "td_delete_repository_link",
+    description: "Delete a repository link",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Repository link ID (required)",
+        },
+      },
+      required: ["id"],
     },
   },
   {
@@ -432,6 +486,59 @@ export const tools: Tool[] = [
       required: ["sharedOwnerId", "ownerSecret", "projectId", "name"],
     },
   },
+  {
+    name: "td_list_shared_repository_links",
+    description: "List repository links for a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: {
+          type: "string",
+          description: "SharedOwner ID from projectRef (required)",
+        },
+        ownerSecret: {
+          type: "string",
+          description: "Owner secret from projectRef (required)",
+        },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_create_shared_repository_link",
+    description: "Create a repository link in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: {
+          type: "string",
+          description: "SharedOwner ID from projectRef (required)",
+        },
+        ownerSecret: {
+          type: "string",
+          description: "Owner secret from projectRef (required)",
+        },
+        projectId: {
+          type: "string",
+          description: "Project ID within the shared owner (required)",
+        },
+        type: {
+          type: "string",
+          enum: ["github", "gitlab", "bitbucket", "azure", "custom"],
+          description: "Repository type (default: 'github')",
+        },
+        url: {
+          type: "string",
+          description: "Repository URL (required)",
+        },
+        label: {
+          type: "string",
+          description: "Optional label (e.g., 'Frontend', 'API')",
+        },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "projectId", "url"],
+    },
+  },
 ];
 
 // Tool handler
@@ -491,6 +598,20 @@ export async function handleToolCall(
     case "td_list_deployment_stages":
       return listDeploymentStages(evolu, args as { projectId?: string });
 
+    case "td_list_repository_links":
+      return listRepositoryLinks(evolu, args as { projectId?: string });
+
+    case "td_create_repository_link":
+      return createRepositoryLink(evolu, args as {
+        projectId: string;
+        type?: string;
+        url: string;
+        label?: string;
+      });
+
+    case "td_delete_repository_link":
+      return deleteRepositoryLink(evolu, args as { id: string });
+
     case "td_list_users":
       return listUsers(evolu);
 
@@ -549,6 +670,22 @@ export async function handleToolCall(
         name: string;
         color?: string;
         position?: number;
+      });
+
+    case "td_list_shared_repository_links":
+      return listSharedRepositoryLinks(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+      });
+
+    case "td_create_shared_repository_link":
+      return createSharedRepositoryLink(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        projectId: string;
+        type?: string;
+        url: string;
+        label?: string;
       });
 
     default:
@@ -1558,6 +1695,238 @@ async function createSharedDeploymentStage(
       success: true,
       stageId: result.value.id,
       message: `Deployment stage "${args.name}" created successfully`,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+// --- Repository Links Functions ---
+
+async function listRepositoryLinks(
+  evolu: EvoluInstance,
+  args: { projectId?: string }
+) {
+  const query = evolu.createQuery((db) => {
+    let q = db
+      .selectFrom("repositoryLink")
+      .leftJoin("project", "repositoryLink.projectId", "project.id")
+      .select([
+        "repositoryLink.id",
+        "repositoryLink.type",
+        "repositoryLink.url",
+        "repositoryLink.label",
+        "repositoryLink.position",
+        "project.id as projectId",
+        "project.name as projectName",
+        "project.code as projectCode",
+      ])
+      .where("repositoryLink.isDeleted", "is not", SQLITE_TRUE)
+      .orderBy("repositoryLink.position", "asc");
+
+    if (args.projectId) {
+      q = q.where("repositoryLink.projectId", "=", args.projectId as ProjectId);
+    }
+
+    return q;
+  });
+
+  const result = await evolu.loadQuery(query);
+  return {
+    count: result.length,
+    links: result.map((l) => ({
+      id: l.id,
+      type: l.type,
+      url: l.url,
+      label: l.label,
+      position: l.position,
+      project: l.projectId
+        ? {
+            id: l.projectId,
+            name: l.projectName,
+            code: l.projectCode,
+          }
+        : null,
+    })),
+  };
+}
+
+async function createRepositoryLink(
+  evolu: EvoluInstance,
+  args: {
+    projectId: string;
+    type?: string;
+    url: string;
+    label?: string;
+  }
+) {
+  // Get max position
+  const posQuery = evolu.createQuery((db) =>
+    db
+      .selectFrom("repositoryLink")
+      .select(["position"])
+      .where("projectId", "=", args.projectId as ProjectId)
+      .orderBy("position", "desc")
+      .limit(1)
+  );
+  const posResult = await evolu.loadQuery(posQuery);
+  const maxPosition = posResult.length > 0 ? (posResult[0].position || 0) : 0;
+
+  const result = evolu.insert("repositoryLink", {
+    projectId: args.projectId as ProjectId,
+    type: args.type || "github",
+    url: NonEmptyString1000.orThrow(args.url),
+    label: args.label ? NonEmptyString100.orThrow(args.label) : null,
+    position: Int.orThrow(maxPosition + 1),
+  });
+
+  if (!result.ok) {
+    throw new Error(`Failed to create repository link: ${JSON.stringify(result.error)}`);
+  }
+
+  await waitForSync();
+
+  return {
+    success: true,
+    linkId: result.value.id,
+    message: "Repository link created successfully",
+  };
+}
+
+async function deleteRepositoryLink(
+  evolu: EvoluInstance,
+  args: { id: string }
+) {
+  evolu.update("repositoryLink", {
+    id: args.id as RepositoryLinkId,
+    isDeleted: SQLITE_TRUE,
+  } as any);
+
+  await waitForSync();
+
+  return {
+    success: true,
+    message: "Repository link deleted successfully",
+  };
+}
+
+// --- Shared Repository Links Functions ---
+
+async function listSharedRepositoryLinks(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("repositoryLink")
+        .leftJoin("project", "repositoryLink.projectId", "project.id")
+        .select([
+          "repositoryLink.id",
+          "repositoryLink.type",
+          "repositoryLink.url",
+          "repositoryLink.label",
+          "repositoryLink.position",
+          "project.id as projectId",
+          "project.name as projectName",
+          "project.code as projectCode",
+        ])
+        .where("repositoryLink.isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("repositoryLink.position", "asc")
+    );
+
+    const result = await projectEvolu.loadQuery(query);
+
+    // Filter by ownerId
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((l: any) => {
+      const linkOwnerId = l.ownerId as string | undefined;
+      return linkOwnerId === actualOwnerId;
+    });
+
+    return {
+      count: filtered.length,
+      links: filtered.map((l: any) => ({
+        id: l.id,
+        type: l.type,
+        url: l.url,
+        label: l.label,
+        position: l.position,
+        project: l.projectId
+          ? {
+              id: l.projectId,
+              name: l.projectName,
+              code: l.projectCode,
+            }
+          : null,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedRepositoryLink(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    projectId: string;
+    type?: string;
+    url: string;
+    label?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    // Get max position for this project
+    const posQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("repositoryLink")
+        .select(["position", "ownerId"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("position", "desc")
+    );
+    const posResults = await projectEvolu.loadQuery(posQuery);
+    const filteredPos = posResults.filter((r: any) => r.ownerId === (sharedOwner.id as string));
+    const maxPosition = filteredPos.length > 0 ? (filteredPos[0].position || 0) : 0;
+
+    const result = projectEvolu.insert("repositoryLink", {
+      projectId: args.projectId as ProjectId,
+      type: args.type || "github",
+      url: NonEmptyString1000.orThrow(args.url),
+      label: args.label ? NonEmptyString100.orThrow(args.label) : null,
+      position: Int.orThrow(maxPosition + 1),
+    }, { ownerId: sharedOwner.id });
+
+    if (!result.ok) {
+      throw new Error(`Failed to create repository link: ${JSON.stringify(result.error)}`);
+    }
+
+    await waitForSync();
+
+    return {
+      success: true,
+      linkId: result.value.id,
+      message: "Repository link created successfully",
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
