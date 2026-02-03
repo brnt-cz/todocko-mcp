@@ -5,7 +5,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { initEvolu, getEvolu } from "./evolu.js";
+import { initEvolu, getEvolu, initProjectEvolu } from "./evolu.js";
 import { tools, handleToolCall } from "./tools/index.js";
 
 const server = new Server(
@@ -79,6 +79,10 @@ async function main() {
   try {
     await initEvolu(mnemonic);
     console.error("Todocko MCP Server initialized successfully.");
+
+    // Initialize project Evolu for shared projects
+    await initProjectEvolu();
+    console.error("Project Evolu initialized for shared projects.");
   } catch (error) {
     console.error("Failed to initialize Evolu:", error);
     process.exit(1);

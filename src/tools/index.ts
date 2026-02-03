@@ -1,6 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
-import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type EvoluInstance } from "../evolu.js";
+import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getProjectEvolu, getSharedOwner, useSharedOwner, stopUsingSharedOwner } from "../evolu.js";
 
 // Wait for Evolu to sync changes to relay servers
 // Evolu doesn't have a public API to wait for sync, so we use a delay
@@ -186,8 +186,29 @@ export const tools: Tool[] = [
           type: "number",
           description: "Time estimate in minutes",
         },
+        isOnProduction: {
+          type: "boolean",
+          description: "Set production badge (simple flag when no custom deployment stages)",
+        },
+        deploymentStageId: {
+          type: "string",
+          description: "Deployment stage ID, or null to clear",
+        },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "td_list_deployment_stages",
+    description: "List deployment stages for a project. Returns stage id, name, color, and position.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project ID to get stages for (optional - returns all if not specified)",
+        },
+      },
     },
   },
   {
@@ -274,6 +295,143 @@ export const tools: Tool[] = [
       required: ["query"],
     },
   },
+  // Shared projects tools
+  {
+    name: "td_list_shared_projects",
+    description: "List all shared projects the user has access to. Returns project references with owner info.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        includeArchived: {
+          type: "boolean",
+          description: "Include archived projects (default: false)",
+        },
+      },
+    },
+  },
+  {
+    name: "td_list_shared_tasks",
+    description: "List tasks from a shared project. Requires sharedOwnerId from td_list_shared_projects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: {
+          type: "string",
+          description: "SharedOwner ID from projectRef (required)",
+        },
+        ownerSecret: {
+          type: "string",
+          description: "Owner secret from projectRef (required)",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "Filter by status",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of tasks to return (default: 50)",
+        },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_list_shared_deployment_stages",
+    description: "List deployment stages for a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: {
+          type: "string",
+          description: "SharedOwner ID from projectRef (required)",
+        },
+        ownerSecret: {
+          type: "string",
+          description: "Owner secret from projectRef (required)",
+        },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_update_shared_task",
+    description: "Update a task in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: {
+          type: "string",
+          description: "SharedOwner ID from projectRef (required)",
+        },
+        ownerSecret: {
+          type: "string",
+          description: "Owner secret from projectRef (required)",
+        },
+        id: {
+          type: "string",
+          description: "Task ID (required)",
+        },
+        name: {
+          type: "string",
+          description: "Human-readable task name/summary",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "Task status",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "Task priority",
+        },
+        isOnProduction: {
+          type: "boolean",
+          description: "Set production badge",
+        },
+        deploymentStageId: {
+          type: "string",
+          description: "Deployment stage ID, or null to clear",
+        },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_create_shared_deployment_stage",
+    description: "Create a deployment stage in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: {
+          type: "string",
+          description: "SharedOwner ID from projectRef (required)",
+        },
+        ownerSecret: {
+          type: "string",
+          description: "Owner secret from projectRef (required)",
+        },
+        projectId: {
+          type: "string",
+          description: "Project ID within the shared owner (required)",
+        },
+        name: {
+          type: "string",
+          description: "Stage name (e.g., 'Test', 'Stage', 'Prod') (required)",
+        },
+        color: {
+          type: "string",
+          description: "Hex color for badge (e.g., '#22c55e')",
+        },
+        position: {
+          type: "number",
+          description: "Order position (default: 0)",
+        },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "projectId", "name"],
+    },
+  },
 ];
 
 // Tool handler
@@ -326,7 +484,12 @@ export async function handleToolCall(
         isBlocked?: boolean;
         blockedReason?: string;
         estimate?: number;
+        isOnProduction?: boolean;
+        deploymentStageId?: string | null;
       });
+
+    case "td_list_deployment_stages":
+      return listDeploymentStages(evolu, args as { projectId?: string });
 
     case "td_list_users":
       return listUsers(evolu);
@@ -348,6 +511,45 @@ export async function handleToolCall(
 
     case "td_search_tasks":
       return searchTasks(evolu, args as { query: string; limit?: number });
+
+    case "td_list_shared_projects":
+      return listSharedProjects(evolu, args as { includeArchived?: boolean });
+
+    case "td_list_shared_tasks":
+      return listSharedTasks(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        status?: string;
+        limit?: number;
+      });
+
+    case "td_list_shared_deployment_stages":
+      return listSharedDeploymentStages(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+      });
+
+    case "td_update_shared_task":
+      return updateSharedTask(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
+        name?: string;
+        status?: string;
+        priority?: string;
+        isOnProduction?: boolean;
+        deploymentStageId?: string | null;
+      });
+
+    case "td_create_shared_deployment_stage":
+      return createSharedDeploymentStage(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        projectId: string;
+        name: string;
+        color?: string;
+        position?: number;
+      });
 
     default:
       throw new Error(`Unknown tool: ${name}`);
@@ -460,6 +662,7 @@ async function listTasks(
       .selectFrom("task")
       .leftJoin("project", "task.projectId", "project.id")
       .leftJoin("user", "task.assigneeId", "user.id")
+      .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
       .select([
         "task.id",
         "task.title",
@@ -471,12 +674,16 @@ async function listTasks(
         "task.estimate",
         "task.completedAt",
         "task.position",
+        "task.isOnProduction",
+        "task.deploymentStageId",
         "project.id as projectId",
         "project.name as projectName",
         "project.code as projectCode",
         "project.color as projectColor",
         "user.id as assigneeId",
         "user.name as assigneeName",
+        "deploymentStage.name as deploymentStageName",
+        "deploymentStage.color as deploymentStageColor",
       ])
       .where("task.isDeleted", "is not", SQLITE_TRUE);
 
@@ -509,6 +716,14 @@ async function listTasks(
       isBlocked: t.isBlocked === SQLITE_TRUE,
       estimate: t.estimate,
       completedAt: t.completedAt,
+      isOnProduction: t.isOnProduction === SQLITE_TRUE,
+      deploymentStage: t.deploymentStageId
+        ? {
+            id: t.deploymentStageId,
+            name: t.deploymentStageName,
+            color: t.deploymentStageColor,
+          }
+        : null,
       project: t.projectId
         ? {
             id: t.projectId,
@@ -540,6 +755,7 @@ async function getTask(
       .selectFrom("task")
       .leftJoin("project", "task.projectId", "project.id")
       .leftJoin("user", "task.assigneeId", "user.id")
+      .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
       .select([
         "task.id",
         "task.title",
@@ -553,12 +769,16 @@ async function getTask(
         "task.estimate",
         "task.completedAt",
         "task.position",
+        "task.isOnProduction",
+        "task.deploymentStageId",
         "project.id as projectId",
         "project.name as projectName",
         "project.code as projectCode",
         "project.color as projectColor",
         "user.id as assigneeId",
         "user.name as assigneeName",
+        "deploymentStage.name as deploymentStageName",
+        "deploymentStage.color as deploymentStageColor",
       ])
       .where("task.isDeleted", "is not", SQLITE_TRUE);
 
@@ -602,6 +822,14 @@ async function getTask(
     estimate: t.estimate,
     totalLoggedMinutes,
     completedAt: t.completedAt,
+    isOnProduction: t.isOnProduction === SQLITE_TRUE,
+    deploymentStage: t.deploymentStageId
+      ? {
+          id: t.deploymentStageId,
+          name: t.deploymentStageName,
+          color: t.deploymentStageColor,
+        }
+      : null,
     project: t.projectId
       ? {
           id: t.projectId,
@@ -676,7 +904,7 @@ async function createTask(
   const maxPosition = posResult.length > 0 ? (posResult[0].position || 0) : 0;
 
   // Create task
-  const result = evolu.create("task", {
+  const result = evolu.insert("task", {
     projectId: args.projectId as ProjectId,
     title: NonEmptyString100.orThrow(taskCode),
     name: args.name ? NonEmptyString100.orThrow(args.name) : null,
@@ -692,12 +920,16 @@ async function createTask(
     blockedReason: null,
   });
 
+  if (!result.ok) {
+    throw new Error(`Failed to create task: ${JSON.stringify(result.error)}`);
+  }
+
   // Wait for sync to relay servers
   await waitForSync();
 
   return {
     success: true,
-    taskId: result.id,
+    taskId: result.value.id,
     taskCode,
     message: `Task ${taskCode} created successfully`,
   };
@@ -716,6 +948,8 @@ async function updateTask(
     isBlocked?: boolean;
     blockedReason?: string;
     estimate?: number;
+    isOnProduction?: boolean;
+    deploymentStageId?: string | null;
   }
 ) {
   const updates: Record<string, unknown> = {
@@ -754,6 +988,12 @@ async function updateTask(
   }
   if (args.estimate !== undefined) {
     updates.estimate = args.estimate ? Int.orThrow(args.estimate) : null;
+  }
+  if (args.isOnProduction !== undefined) {
+    updates.isOnProduction = args.isOnProduction ? SQLITE_TRUE : null;
+  }
+  if (args.deploymentStageId !== undefined) {
+    updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
   }
 
   evolu.update("task", updates as any);
@@ -816,6 +1056,52 @@ async function getUser(evolu: EvoluInstance, args: { id: string }) {
   };
 }
 
+async function listDeploymentStages(
+  evolu: EvoluInstance,
+  args: { projectId?: string }
+) {
+  const query = evolu.createQuery((db) => {
+    let q = db
+      .selectFrom("deploymentStage")
+      .leftJoin("project", "deploymentStage.projectId", "project.id")
+      .select([
+        "deploymentStage.id",
+        "deploymentStage.name",
+        "deploymentStage.color",
+        "deploymentStage.position",
+        "project.id as projectId",
+        "project.name as projectName",
+        "project.code as projectCode",
+      ])
+      .where("deploymentStage.isDeleted", "is not", SQLITE_TRUE)
+      .orderBy("deploymentStage.position", "asc");
+
+    if (args.projectId) {
+      q = q.where("deploymentStage.projectId", "=", args.projectId as ProjectId);
+    }
+
+    return q;
+  });
+
+  const result = await evolu.loadQuery(query);
+  return {
+    count: result.length,
+    stages: result.map((s) => ({
+      id: s.id,
+      name: s.name,
+      color: s.color,
+      position: s.position,
+      project: s.projectId
+        ? {
+            id: s.projectId,
+            name: s.projectName,
+            code: s.projectCode,
+          }
+        : null,
+    })),
+  };
+}
+
 async function listWorklogs(evolu: EvoluInstance, args: { taskId: string }) {
   const query = evolu.createQuery((db) =>
     db
@@ -866,7 +1152,7 @@ async function addWorklog(
     userId?: string;
   }
 ) {
-  const result = evolu.create("worklog", {
+  const result = evolu.insert("worklog", {
     taskId: args.taskId as TaskId,
     durationMinutes: Int.orThrow(args.durationMinutes),
     description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
@@ -874,12 +1160,16 @@ async function addWorklog(
     userId: args.userId ? (args.userId as UserId) : null,
   });
 
+  if (!result.ok) {
+    throw new Error(`Failed to add worklog: ${JSON.stringify(result.error)}`);
+  }
+
   // Wait for sync to relay servers
   await waitForSync();
 
   return {
     success: true,
-    worklogId: result.id,
+    worklogId: result.value.id,
     message: "Worklog added successfully",
   };
 }
@@ -945,4 +1235,331 @@ async function searchTasks(
         : null,
     })),
   };
+}
+
+// --- Shared Projects Functions ---
+
+async function listSharedProjects(
+  evolu: EvoluInstance,
+  args: { includeArchived?: boolean }
+) {
+  const query = evolu.createQuery((db) => {
+    let q = db
+      .selectFrom("projectRef")
+      .select([
+        "id",
+        "projectId",
+        "ownerSecret",
+        "sharedOwnerId",
+        "name",
+        "code",
+        "color",
+        "isOwner",
+        "permission",
+        "joinedAt",
+        "isArchived",
+        "isHiddenFromFilters",
+      ])
+      .where("isDeleted", "is not", SQLITE_TRUE);
+
+    if (!args.includeArchived) {
+      q = q.where("isArchived", "is not", SQLITE_TRUE);
+    }
+
+    return q;
+  });
+
+  const result = await evolu.loadQuery(query);
+  return {
+    count: result.length,
+    projects: result.map((p) => ({
+      id: p.id,
+      projectId: p.projectId,
+      sharedOwnerId: p.sharedOwnerId,
+      ownerSecret: p.ownerSecret, // Needed to access the project's data
+      name: p.name,
+      code: p.code,
+      color: p.color,
+      isOwner: p.isOwner === SQLITE_TRUE,
+      permission: p.permission,
+      joinedAt: p.joinedAt,
+      isArchived: p.isArchived === SQLITE_TRUE,
+    })),
+  };
+}
+
+async function listSharedTasks(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    status?: string;
+    limit?: number;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  // Get or create SharedOwner
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+
+  // Use the SharedOwner to access this project's data
+  useSharedOwner(sharedOwner);
+
+  // Wait a bit for sync
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) => {
+      let q = db
+        .selectFrom("task")
+        .leftJoin("project", "task.projectId", "project.id")
+        .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
+        .select([
+          "task.id",
+          "task.title",
+          "task.name",
+          "task.status",
+          "task.priority",
+          "task.deadline",
+          "task.isBlocked",
+          "task.estimate",
+          "task.completedAt",
+          "task.position",
+          "task.isOnProduction",
+          "task.deploymentStageId",
+          "task.assigneeId",
+          "project.id as projectId",
+          "project.name as projectName",
+          "project.code as projectCode",
+          "project.color as projectColor",
+          "deploymentStage.name as deploymentStageName",
+          "deploymentStage.color as deploymentStageColor",
+        ])
+        .where("task.isDeleted", "is not", SQLITE_TRUE);
+
+      if (args.status) {
+        q = q.where("task.status", "=", args.status);
+      }
+
+      return q.orderBy("task.position", "asc").limit(args.limit || 50);
+    });
+
+    const result = await projectEvolu.loadQuery(query);
+
+    // Filter by ownerId - Evolu returns ownerId automatically on each record
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((t: any) => {
+      const taskOwnerId = t.ownerId as string | undefined;
+      return taskOwnerId === actualOwnerId;
+    });
+
+    return {
+      count: filtered.length,
+      sharedOwnerId: actualOwnerId,
+      tasks: filtered.map((t: any) => ({
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        deadline: t.deadline,
+        isBlocked: t.isBlocked === SQLITE_TRUE,
+        estimate: t.estimate,
+        completedAt: t.completedAt,
+        isOnProduction: t.isOnProduction === SQLITE_TRUE,
+        assigneeId: t.assigneeId,
+        deploymentStage: t.deploymentStageId
+          ? {
+              id: t.deploymentStageId,
+              name: t.deploymentStageName,
+              color: t.deploymentStageColor,
+            }
+          : null,
+        project: t.projectId
+          ? {
+              id: t.projectId,
+              name: t.projectName,
+              code: t.projectCode,
+              color: t.projectColor,
+            }
+          : null,
+      })),
+    };
+  } finally {
+    // Stop using the SharedOwner to free resources
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedDeploymentStages(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("deploymentStage")
+        .leftJoin("project", "deploymentStage.projectId", "project.id")
+        .select([
+          "deploymentStage.id",
+          "deploymentStage.name",
+          "deploymentStage.color",
+          "deploymentStage.position",
+          "project.id as projectId",
+          "project.name as projectName",
+          "project.code as projectCode",
+        ])
+        .where("deploymentStage.isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("deploymentStage.position", "asc")
+    );
+
+    const result = await projectEvolu.loadQuery(query);
+
+    // Filter by ownerId
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((s: any) => {
+      const stageOwnerId = s.ownerId as string | undefined;
+      return stageOwnerId === actualOwnerId;
+    });
+
+    return {
+      count: filtered.length,
+      stages: filtered.map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        color: s.color,
+        position: s.position,
+        project: s.projectId
+          ? {
+              id: s.projectId,
+              name: s.projectName,
+              code: s.projectCode,
+            }
+          : null,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedTask(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    id: string;
+    name?: string;
+    status?: string;
+    priority?: string;
+    isOnProduction?: boolean;
+    deploymentStageId?: string | null;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    const updates: Record<string, unknown> = {
+      id: args.id as TaskId,
+    };
+
+    if (args.name !== undefined) {
+      updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
+    }
+    if (args.status !== undefined) {
+      updates.status = args.status;
+      if (args.status === "done") {
+        updates.completedAt = new Date().toISOString();
+      } else {
+        updates.completedAt = null;
+      }
+    }
+    if (args.priority !== undefined) {
+      updates.priority = args.priority;
+    }
+    if (args.isOnProduction !== undefined) {
+      updates.isOnProduction = args.isOnProduction ? SQLITE_TRUE : null;
+    }
+    if (args.deploymentStageId !== undefined) {
+      updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
+    }
+
+    projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id });
+    await waitForSync();
+
+    return {
+      success: true,
+      message: "Shared task updated successfully",
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedDeploymentStage(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    projectId: string;
+    name: string;
+    color?: string;
+    position?: number;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  // Get or create SharedOwner
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+
+  // Use the SharedOwner to access this project's data
+  useSharedOwner(sharedOwner);
+
+  // Wait a bit for sync
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  try {
+    const result = projectEvolu.insert("deploymentStage", {
+      projectId: args.projectId as ProjectId,
+      name: NonEmptyString100.orThrow(args.name),
+      color: args.color || "#22c55e",
+      position: Int.orThrow(args.position ?? 0),
+    }, { ownerId: sharedOwner.id });
+
+    if (!result.ok) {
+      throw new Error(`Failed to create deployment stage: ${JSON.stringify(result.error)}`);
+    }
+
+    // Wait for sync to relay servers
+    await waitForSync();
+
+    return {
+      success: true,
+      stageId: result.value.id,
+      message: `Deployment stage "${args.name}" created successfully`,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
 }
