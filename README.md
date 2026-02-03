@@ -43,7 +43,7 @@ Instalátor:
 1. Nainstaluje závislosti a sestaví projekt
 2. Zeptá se, zda chcete nakonfigurovat Claude Desktop, Claude Code nebo obojí
 3. Vytvoří konfigurační soubor s placeholderem
-4. **Ručně doplňte** svou 24-slovnou zálohovací frázi do konfiguračního souboru
+4. **Ručně doplňte** svou 24slovnou zálohovací frázi do konfiguračního souboru
 5. Restartujte Claude
 
 ### Manuální instalace
@@ -65,7 +65,7 @@ Instalátor:
       "command": "node",
       "args": ["/cesta/k/mcp-server/dist/index.js"],
       "env": {
-        "TODOCKO_MNEMONIC": "vaše 24 slov zálohovací fráze"
+        "TODOCKO_MNEMONIC": "vaše 24slovná zálohovací fráze"
       }
     }
   }
@@ -81,7 +81,7 @@ Instalátor:
       "command": "node",
       "args": ["/cesta/k/mcp-server/dist/index.js"],
       "env": {
-        "TODOCKO_MNEMONIC": "vaše 24 slov zálohovací fráze"
+        "TODOCKO_MNEMONIC": "vaše 24slovná zálohovací fráze"
       }
     }
   }
