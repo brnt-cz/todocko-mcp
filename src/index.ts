@@ -5,8 +5,16 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { homedir } from "os";
+import { mkdirSync } from "fs";
+import { join } from "path";
 import { initEvolu, getEvolu, initProjectEvolu } from "./evolu.js";
 import { tools, handleToolCall } from "./tools/index.js";
+
+// Set working directory to ~/.todocko for database storage (cross-platform)
+const todockoDir = join(homedir(), ".todocko");
+mkdirSync(todockoDir, { recursive: true });
+process.chdir(todockoDir);
 
 const server = new Server(
   {
