@@ -159,7 +159,7 @@ export const Schema = {
   },
 };
 
-// Schema for shared projects (todocko-projects database)
+// Schema for shared projects (todocko-shared database)
 export const ProjectSchema = {
   project: {
     id: ProjectId,
@@ -466,7 +466,7 @@ export const SQLITE_FALSE = null;
 import { createSharedOwner, createOwnerSecret, type SharedOwner, type OwnerSecret, type OwnerId } from "@evolu/common";
 
 let projectEvoluInstance: EvoluInstance | null = null;
-const PROJECT_DB_NAME = "todocko-projects";
+const PROJECT_DB_NAME = "todocko-shared";
 
 // Cache for SharedOwners
 const sharedOwnersCache = new Map<string, SharedOwner>();

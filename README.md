@@ -184,7 +184,7 @@ Databáze jsou uloženy v adresáři `~/.todocko/`:
 
 Soubory:
 - `todocko.db` - vaše osobní data (úkoly, projekty)
-- `todocko-projects.db` - sdílené projekty
+- `todocko-shared.db` - sdílené projekty
 
 ## Změna konfigurace
 
@@ -431,7 +431,7 @@ Databases are stored in the `~/.todocko/` directory:
 
 Files:
 - `todocko.db` - your personal data (tasks, projects)
-- `todocko-projects.db` - shared projects
+- `todocko-shared.db` - shared projects
 
 ## Configuration Changes
 
