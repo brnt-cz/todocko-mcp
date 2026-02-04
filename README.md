@@ -106,6 +106,9 @@ Instalátor:
 | `td_get_user` | Detail uživatele |
 | `td_list_worklogs` | Seznam worklogů pro úkol |
 | `td_add_worklog` | Přidání worklogu k úkolu |
+| `td_upload_attachment` | Nahrání přílohy k úkolu (ze souboru nebo base64) |
+| `td_list_attachments` | Seznam příloh úkolu |
+| `td_delete_attachment` | Smazání přílohy |
 
 ### Sdílené projekty
 
@@ -149,6 +152,13 @@ Přiřaď úkol TODO-10 uživateli s ID xyz
 ### Logování času
 ```
 Zaloguj 2 hodiny práce na úkol TODO-15 s popisem "Implementace feature"
+```
+
+### Práce s přílohami
+```
+Nahraj soubor /home/user/report.pdf jako přílohu k úkolu TODO-15
+Jaké přílohy má úkol TODO-15?
+Smaž přílohu s ID xyz
 ```
 
 ### Sdílené projekty
@@ -353,6 +363,9 @@ The installer will:
 | `td_get_user` | Get user details |
 | `td_list_worklogs` | List worklogs for a task |
 | `td_add_worklog` | Add a worklog to a task |
+| `td_upload_attachment` | Upload an attachment to a task (from file or base64) |
+| `td_list_attachments` | List attachments for a task |
+| `td_delete_attachment` | Delete an attachment |
 
 ### Shared Projects
 
@@ -396,6 +409,13 @@ Assign task TODO-10 to user with ID xyz
 ### Log time
 ```
 Log 2 hours of work on task TODO-15 with description "Feature implementation"
+```
+
+### Working with attachments
+```
+Upload file /home/user/report.pdf as attachment to task TODO-15
+What attachments does task TODO-15 have?
+Delete attachment with ID xyz
 ```
 
 ### Shared projects

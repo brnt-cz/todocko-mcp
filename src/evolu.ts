@@ -94,7 +94,7 @@ export const Schema = {
     assigneeId: nullOr(UserId),
     title: NonEmptyString100,
     name: nullOr(NonEmptyString100),
-    description: nullOr(NonEmptyString1000),
+    description: nullOr(String),
     status: String,
     priority: String,
     deadline: nullOr(String),
@@ -189,7 +189,7 @@ export const ProjectSchema = {
     assigneeId: nullOr(String), // AppOwner OwnerId of assignee
     title: NonEmptyString100,
     name: nullOr(NonEmptyString100),
-    description: nullOr(NonEmptyString1000),
+    description: nullOr(String),
     status: String,
     priority: String,
     deadline: nullOr(String),
