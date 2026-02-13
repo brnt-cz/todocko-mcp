@@ -308,7 +308,7 @@ function checkExistingOwner(mnemonic: string): boolean {
   const dbPath = getDbPath();
 
   if (!existsSync(dbPath)) {
-    console.log("Database does not exist yet");
+    console.error("Database does not exist yet");
     return false;
   }
 
@@ -321,7 +321,7 @@ function checkExistingOwner(mnemonic: string): boolean {
     ).get();
 
     if (!tableExists) {
-      console.log("evolu_config table does not exist");
+      console.error("evolu_config table does not exist");
       db.close();
       return false;
     }
@@ -334,12 +334,12 @@ function checkExistingOwner(mnemonic: string): boolean {
     db.close();
 
     if (!config || !config.appOwnerMnemonic) {
-      console.log("No mnemonic stored in database");
+      console.error("No mnemonic stored in database");
       return false;
     }
 
     const matches = config.appOwnerMnemonic.trim() === mnemonic.trim();
-    console.log(`Database mnemonic ${matches ? "matches" : "does not match"}`);
+    console.error(`Database mnemonic ${matches ? "matches" : "does not match"}`);
     return matches;
   } catch (error) {
     console.error("Error checking database:", error);
@@ -360,7 +360,7 @@ function createEvoluDeps(platformDeps: DbWorkerPlatformDeps, onReloadApp?: () =>
     createDbWorker,
     randomBytes: platformDeps.randomBytes,
     reloadApp: () => {
-      console.log("reloadApp called");
+      console.error("reloadApp called");
       if (onReloadApp) onReloadApp();
     },
     time: platformDeps.time,
@@ -394,7 +394,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
   try {
     if (ownerAlreadySet) {
       // Owner already matches - just create Evolu with transports and let it sync
-      console.log("Owner already set in database - creating Evolu with transports...");
+      console.error("Owner already set in database - creating Evolu with transports...");
 
       const evoluDeps = createEvoluDeps(platformDeps);
       evoluInstance = createEvolu(evoluDeps)(Schema, {
@@ -404,7 +404,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       });
     } else {
       // Need to restore owner first
-      console.log("Owner not set - restoring from mnemonic...");
+      console.error("Owner not set - restoring from mnemonic...");
 
       // Flag to track if restoreAppOwner triggered a reload
       let reloadTriggered = false;
@@ -426,7 +426,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       });
 
       // Restore owner from mnemonic
-      console.log("Calling restoreAppOwner...");
+      console.error("Calling restoreAppOwner...");
       const restorePromise = evoluInstance.restoreAppOwner(mnemonicResult.value);
 
       // Wait for either restore to complete or reload to be triggered
@@ -438,7 +438,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
 
       // If reload was triggered, recreate with transports
       if (reloadTriggered) {
-        console.log("Reload triggered - recreating Evolu instance with transports...");
+        console.error("Reload triggered - recreating Evolu instance with transports...");
 
         const newEvoluDeps = createEvoluDeps(platformDeps);
         evoluInstance = createEvolu(newEvoluDeps)(Schema, {
@@ -448,25 +448,45 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
         });
       } else {
         // Just add transports
-        console.log("Adding transports for sync...");
+        console.error("Adding transports for sync...");
         evoluInstance.useOwner({ transports });
       }
     }
 
-    // Wait for initial sync - need longer timeout for relay servers
-    console.log("Waiting for initial sync (15s)...");
-    await new Promise((resolve) => setTimeout(resolve, 15000));
+    // Wait for initial sync in the background - don't block MCP transport
+    console.error("Evolu created, waiting for sync in background...");
+    setTimeout(() => {
+      console.error("Evolu sync period complete, ready for queries");
+      if (evoluReadyResolve) evoluReadyResolve();
+    }, 15000);
 
-    console.log("Evolu initialized successfully");
     return evoluInstance;
   } catch (error) {
     console.error("Failed to initialize Evolu:", error);
+    if (evoluReadyReject) evoluReadyReject(error instanceof Error ? error : new Error(globalThis.String(error)));
     throw error;
   }
 }
 
 export function getEvolu(): EvoluInstance | null {
   return evoluInstance;
+}
+
+// --- Readiness tracking ---
+
+let evoluReadyResolve: (() => void) | null = null;
+let evoluReadyReject: ((err: Error) => void) | null = null;
+const evoluReadyPromise = new Promise<void>((resolve, reject) => {
+  evoluReadyResolve = resolve;
+  evoluReadyReject = reject;
+});
+
+/**
+ * Wait for Evolu to be fully initialized and synced.
+ * Tool calls should await this before accessing data.
+ */
+export function waitForEvolu(): Promise<void> {
+  return evoluReadyPromise;
 }
 
 // Helper to convert SQLite boolean
@@ -501,11 +521,7 @@ export async function initProjectEvolu(): Promise<EvoluInstance | null> {
     enableLogging: false,
   });
 
-  // Wait for initial sync
-  console.error("Waiting for project Evolu sync (5s)...");
-  await new Promise((resolve) => setTimeout(resolve, 5000));
-
-  console.error("Project Evolu initialized successfully");
+  console.error("Project Evolu created, syncing in background...");
   return projectEvoluInstance;
 }
 

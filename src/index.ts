@@ -8,7 +8,7 @@ import {
 import { homedir } from "os";
 import { mkdirSync } from "fs";
 import { join } from "path";
-import { initEvolu, getEvolu, initProjectEvolu } from "./evolu.js";
+import { initEvolu, getEvolu, initProjectEvolu, waitForEvolu } from "./evolu.js";
 import { tools, handleToolCall } from "./tools/index.js";
 
 // Set working directory to ~/.todocko for database storage (cross-platform)
@@ -33,11 +33,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return { tools };
 });
 
-// Handle tool calls
+// Handle tool calls - waits for Evolu to be ready before processing
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
+    // Wait for Evolu initialization and sync to complete
+    await waitForEvolu();
+
     const evolu = getEvolu();
     if (!evolu) {
       return {
@@ -83,23 +86,22 @@ async function main() {
     process.exit(1);
   }
 
-  // Initialize Evolu with mnemonic
+  // Connect MCP transport FIRST so the client gets a response immediately
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("Todocko MCP Server running on stdio");
+
+  // Initialize Evolu in the background - tool calls will await waitForEvolu()
   try {
     await initEvolu(mnemonic);
-    console.error("Todocko MCP Server initialized successfully.");
+    console.error("Evolu instance created, sync running in background.");
 
-    // Initialize project Evolu for shared projects
     await initProjectEvolu();
-    console.error("Project Evolu initialized for shared projects.");
+    console.error("Project Evolu created for shared projects.");
   } catch (error) {
     console.error("Failed to initialize Evolu:", error);
     process.exit(1);
   }
-
-  // Start server
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Todocko MCP Server running on stdio");
 }
 
 main().catch((error) => {

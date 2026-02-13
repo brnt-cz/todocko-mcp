@@ -1137,6 +1137,9 @@ async function createTask(
     throw new Error(`Failed to create task: ${JSON.stringify(result.error)}`);
   }
 
+  // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
+  evolu.update("task", { id: result.value.id, status: args.status || "todo" } as any);
+
   // Wait for sync to relay servers
   await waitForSync();
 
