@@ -264,10 +264,98 @@ const DB_NAME = "todocko";
 
 // Evolu relay servers (same as main app)
 const RELAY_SERVERS = [
-  "wss://free.evoluhq.com",
   "wss://relay-production-0afe.up.railway.app",
   "wss://relay.todocko.cz",
 ];
+
+// --- Sync Health Tracking ---
+
+interface SyncHealth {
+  lastError: string | null;
+  lastErrorAt: Date | null;
+  errorCount: number;
+  wsConnectivity: Map<string, 'untested' | 'ok' | 'failed'>;
+  evoluReady: boolean;
+  onCompleteCount: number;
+}
+
+const syncHealth: SyncHealth = {
+  lastError: null,
+  lastErrorAt: null,
+  errorCount: 0,
+  wsConnectivity: new Map(RELAY_SERVERS.map(url => [url, 'untested' as const])),
+  evoluReady: false,
+  onCompleteCount: 0,
+};
+
+/**
+ * Get current sync health status for diagnostics
+ */
+export function getSyncHealth(): {
+  lastError: string | null;
+  lastErrorAt: string | null;
+  errorCount: number;
+  wsConnectivity: Record<string, string>;
+  evoluReady: boolean;
+  onCompleteCount: number;
+  relayServers: string[];
+} {
+  return {
+    lastError: syncHealth.lastError,
+    lastErrorAt: syncHealth.lastErrorAt?.toISOString() ?? null,
+    errorCount: syncHealth.errorCount,
+    wsConnectivity: Object.fromEntries(syncHealth.wsConnectivity),
+    evoluReady: syncHealth.evoluReady,
+    onCompleteCount: syncHealth.onCompleteCount,
+    relayServers: RELAY_SERVERS,
+  };
+}
+
+/** Track onComplete calls from mutations */
+export function trackOnComplete(): void {
+  syncHealth.onCompleteCount++;
+}
+
+/**
+ * Test WebSocket connectivity to relay servers.
+ * Opens a WebSocket to each server and checks if the connection is established.
+ */
+export async function testWebSocketConnectivity(): Promise<Record<string, string>> {
+  const results: Record<string, string> = {};
+
+  const tests = RELAY_SERVERS.map(async (url) => {
+    try {
+      const ws = new WebSocket(url);
+      const result = await new Promise<string>((resolve) => {
+        const timeout = setTimeout(() => {
+          try { ws.close(); } catch {}
+          resolve('timeout (5s)');
+        }, 5000);
+
+        ws.onopen = () => {
+          clearTimeout(timeout);
+          ws.close();
+          resolve('ok');
+        };
+
+        ws.onerror = (err: any) => {
+          clearTimeout(timeout);
+          try { ws.close(); } catch {}
+          resolve(`error: ${err.message || 'unknown'}`);
+        };
+      });
+
+      results[url] = result;
+      syncHealth.wsConnectivity.set(url, result === 'ok' ? 'ok' : 'failed');
+    } catch (err) {
+      results[url] = `exception: ${err instanceof Error ? err.message : globalThis.String(err)}`;
+      syncHealth.wsConnectivity.set(url, 'failed');
+    }
+  });
+
+  await Promise.all(tests);
+  return results;
+}
 
 /**
  * Create platform dependencies for Node.js
@@ -400,7 +488,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       evoluInstance = createEvolu(evoluDeps)(Schema, {
         name: SimpleName.orThrow(DB_NAME),
         transports: transports,
-        enableLogging: false,
+        enableLogging: true,
       });
     } else {
       // Need to restore owner first
@@ -422,7 +510,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       evoluInstance = createEvolu(evoluDeps)(Schema, {
         name: SimpleName.orThrow(DB_NAME),
         transports: [], // No sync yet - will add after restore
-        enableLogging: false,
+        enableLogging: true,
       });
 
       // Restore owner from mnemonic
@@ -444,7 +532,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
         evoluInstance = createEvolu(newEvoluDeps)(Schema, {
           name: SimpleName.orThrow(DB_NAME),
           transports: transports,
-          enableLogging: false,
+          enableLogging: true,
         });
       } else {
         // Just add transports
@@ -453,12 +541,43 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       }
     }
 
-    // Wait for initial sync in the background - don't block MCP transport
-    console.error("Evolu created, waiting for sync in background...");
+    // Subscribe to sync errors for health tracking
+    if (evoluInstance.subscribeError) {
+      evoluInstance.subscribeError(() => {
+        const error = evoluInstance!.getError();
+        if (error) {
+          try {
+            syncHealth.lastError = JSON.stringify(error);
+          } catch {
+            syncHealth.lastError = error instanceof Error ? error.message : globalThis.String(error);
+          }
+          syncHealth.lastErrorAt = new Date();
+          syncHealth.errorCount++;
+          console.error("[sync-health] Evolu error:", JSON.stringify(error, null, 2));
+        }
+      });
+    }
+
+    // Test WebSocket connectivity to relay servers
+    console.error("Testing WebSocket connectivity to relay servers...");
+    const wsResults = await testWebSocketConnectivity();
+    for (const [url, status] of Object.entries(wsResults)) {
+      console.error(`  ${url}: ${status}`);
+    }
+
+    const anyConnected = Object.values(wsResults).some(s => s === 'ok');
+    if (!anyConnected) {
+      console.error("WARNING: Cannot connect to any relay server! Sync will not work.");
+    }
+
+    // Wait for initial sync - use shorter timeout if WS is connected
+    const syncWaitMs = anyConnected ? 8000 : 3000;
+    console.error(`Evolu created, waiting ${syncWaitMs}ms for initial sync...`);
     setTimeout(() => {
+      syncHealth.evoluReady = true;
       console.error("Evolu sync period complete, ready for queries");
       if (evoluReadyResolve) evoluReadyResolve();
-    }, 15000);
+    }, syncWaitMs);
 
     return evoluInstance;
   } catch (error) {
@@ -518,7 +637,7 @@ export async function initProjectEvolu(): Promise<EvoluInstance | null> {
   projectEvoluInstance = createEvolu(evoluDeps)(ProjectSchema, {
     name: SimpleName.orThrow(PROJECT_DB_NAME),
     transports: transports,
-    enableLogging: false,
+    enableLogging: true,
   });
 
   console.error("Project Evolu created, syncing in background...");
