@@ -264,7 +264,6 @@ const DB_NAME = "todocko";
 
 // Evolu relay servers (same as main app)
 const RELAY_SERVERS = [
-  "wss://free.evoluhq.com",
   "wss://relay-production-0afe.up.railway.app",
   "wss://relay.todocko.cz",
 ];
@@ -547,10 +546,14 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       evoluInstance.subscribeError(() => {
         const error = evoluInstance!.getError();
         if (error) {
-          syncHealth.lastError = globalThis.String(error);
+          try {
+            syncHealth.lastError = JSON.stringify(error);
+          } catch {
+            syncHealth.lastError = error instanceof Error ? error.message : globalThis.String(error);
+          }
           syncHealth.lastErrorAt = new Date();
           syncHealth.errorCount++;
-          console.error("[sync-health] Evolu error:", error);
+          console.error("[sync-health] Evolu error:", JSON.stringify(error, null, 2));
         }
       });
     }
