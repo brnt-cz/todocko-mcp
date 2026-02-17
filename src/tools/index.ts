@@ -1,16 +1,46 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int, String as EvoluString } from "@evolu/common";
-import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type RepositoryLinkId, type AttachmentId, type EvoluInstance, getProjectEvolu, getSharedOwner, useSharedOwner, stopUsingSharedOwner } from "../evolu.js";
+import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type RepositoryLinkId, type AttachmentId, type EvoluInstance, getProjectEvolu, getSharedOwner, useSharedOwner, stopUsingSharedOwner, getSyncHealth, trackOnComplete, testWebSocketConnectivity } from "../evolu.js";
 import { readFileSync, existsSync } from "fs";
 import { basename, extname } from "path";
 import { lookup } from "mime-types";
 
-// Wait for Evolu to sync changes to relay servers
-// Evolu doesn't have a public API to wait for sync, so we use a delay
-const SYNC_DELAY_MS = 3000;
+// Network delay after onComplete - time for WebSocket to send data to relay
+// onComplete means local DB is updated; this delay allows network round-trip
+const NETWORK_DELAY_MS = 3000;
 
+/**
+ * Wait for a mutation to complete locally (via onComplete), then wait for network sync.
+ * Returns a promise that resolves after the mutation is locally applied + network delay.
+ */
+function createMutationWaiter(): { onComplete: () => void; waitForSync: () => Promise<void> } {
+  let resolveComplete: (() => void) | null = null;
+  const completePromise = new Promise<void>((resolve) => {
+    resolveComplete = resolve;
+  });
+
+  return {
+    onComplete: () => {
+      trackOnComplete();
+      if (resolveComplete) resolveComplete();
+    },
+    waitForSync: async () => {
+      // Wait for onComplete (max 5s safety net)
+      await Promise.race([
+        completePromise,
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+      ]);
+      // Then wait for network round-trip
+      await new Promise((resolve) => setTimeout(resolve, NETWORK_DELAY_MS));
+    },
+  };
+}
+
+/**
+ * Simple wait for sync (used where onComplete isn't available)
+ */
 async function waitForSync(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, SYNC_DELAY_MS));
+  await new Promise((resolve) => setTimeout(resolve, NETWORK_DELAY_MS));
 }
 
 // Tool definitions
@@ -410,6 +440,20 @@ export const tools: Tool[] = [
       required: ["id"],
     },
   },
+  // Diagnostics
+  {
+    name: "td_sync_status",
+    description: "Check sync health: WebSocket connectivity to relay servers, Evolu errors, and sync state. Use this to diagnose sync issues.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        retest: {
+          type: "boolean",
+          description: "Re-test WebSocket connectivity (default: false)",
+        },
+      },
+    },
+  },
   // Shared projects tools
   {
     name: "td_list_shared_projects",
@@ -708,6 +752,9 @@ export async function handleToolCall(
 
     case "td_delete_attachment":
       return deleteAttachment(evolu, args as { id: string });
+
+    case "td_sync_status":
+      return syncStatus(args as { retest?: boolean });
 
     case "td_list_shared_projects":
       return listSharedProjects(evolu, args as { includeArchived?: boolean });
@@ -1116,7 +1163,8 @@ async function createTask(
   const posResult = await evolu.loadQuery(posQuery);
   const maxPosition = posResult.length > 0 ? (posResult[0].position || 0) : 0;
 
-  // Create task
+  // Create task with onComplete tracking
+  const waiter = createMutationWaiter();
   const result = evolu.insert("task", {
     projectId: args.projectId as ProjectId,
     title: NonEmptyString100.orThrow(taskCode),
@@ -1131,7 +1179,7 @@ async function createTask(
     completedAt: null,
     isBlocked: null,
     blockedReason: null,
-  });
+  }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
     throw new Error(`Failed to create task: ${JSON.stringify(result.error)}`);
@@ -1140,14 +1188,18 @@ async function createTask(
   // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
   evolu.update("task", { id: result.value.id, status: args.status || "todo" } as any);
 
-  // Wait for sync to relay servers
-  await waitForSync();
+  // Wait for onComplete + network sync
+  await waiter.waitForSync();
+
+  // Check for sync errors
+  const health = getSyncHealth();
+  const syncWarning = health.lastError ? ` (sync warning: ${health.lastError})` : '';
 
   return {
     success: true,
     taskId: result.value.id,
     taskCode,
-    message: `Task ${taskCode} created successfully`,
+    message: `Task ${taskCode} created successfully${syncWarning}`,
   };
 }
 
@@ -1212,14 +1264,18 @@ async function updateTask(
     updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
   }
 
-  evolu.update("task", updates as any);
+  const waiter = createMutationWaiter();
+  evolu.update("task", updates as any, { onComplete: waiter.onComplete });
 
-  // Wait for sync to relay servers
-  await waitForSync();
+  // Wait for onComplete + network sync
+  await waiter.waitForSync();
+
+  const health = getSyncHealth();
+  const syncWarning = health.lastError ? ` (sync warning: ${health.lastError})` : '';
 
   return {
     success: true,
-    message: "Task updated successfully",
+    message: `Task updated successfully${syncWarning}`,
   };
 }
 
@@ -1368,20 +1424,21 @@ async function addWorklog(
     userId?: string;
   }
 ) {
+  const waiter = createMutationWaiter();
   const result = evolu.insert("worklog", {
     taskId: args.taskId as TaskId,
     durationMinutes: Int.orThrow(args.durationMinutes),
     description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
     loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
     userId: args.userId ? (args.userId as UserId) : null,
-  });
+  }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
     throw new Error(`Failed to add worklog: ${JSON.stringify(result.error)}`);
   }
 
-  // Wait for sync to relay servers
-  await waitForSync();
+  // Wait for onComplete + network sync
+  await waiter.waitForSync();
 
   return {
     success: true,
@@ -1453,6 +1510,35 @@ async function searchTasks(
   };
 }
 
+// --- Sync Diagnostics ---
+
+async function syncStatus(args: { retest?: boolean }) {
+  const health = getSyncHealth();
+
+  // Optionally re-test WebSocket connectivity
+  if (args.retest) {
+    const wsResults = await testWebSocketConnectivity();
+    health.wsConnectivity = wsResults;
+  }
+
+  return {
+    status: health.lastError ? 'degraded' : 'ok',
+    evoluReady: health.evoluReady,
+    relayServers: health.relayServers,
+    wsConnectivity: health.wsConnectivity,
+    lastError: health.lastError,
+    lastErrorAt: health.lastErrorAt,
+    errorCount: health.errorCount,
+    onCompleteCount: health.onCompleteCount,
+    tips: [
+      "If all relays show 'untested', run with retest: true",
+      "If relays show 'failed'/'timeout', check network/firewall",
+      "errorCount > 0 indicates Evolu sync issues",
+      "onCompleteCount tracks successfully applied local mutations",
+    ],
+  };
+}
+
 // --- Attachment Functions ---
 
 async function uploadAttachment(
@@ -1521,20 +1607,21 @@ async function uploadAttachment(
     throw new Error("Task not found");
   }
 
-  // Create attachment
+  // Create attachment with onComplete tracking
+  const waiter = createMutationWaiter();
   const result = evolu.insert("attachment", {
     taskId: args.taskId as TaskId,
     filename: NonEmptyString100.orThrow(filename),
     mimeType: mimeType,
     data: fileContent,
     size: Int.orThrow(size),
-  });
+  }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
     throw new Error(`Failed to upload attachment: ${JSON.stringify(result.error)}`);
   }
 
-  await waitForSync();
+  await waiter.waitForSync();
 
   return {
     success: true,
@@ -1576,13 +1663,14 @@ async function deleteAttachment(
   args: { id: string }
 ) {
   // Clear data and mark as deleted
+  const waiter = createMutationWaiter();
   evolu.update("attachment", {
     id: args.id as AttachmentId,
     data: null,
     isDeleted: SQLITE_TRUE,
-  } as any);
+  } as any, { onComplete: waiter.onComplete });
 
-  await waitForSync();
+  await waiter.waitForSync();
 
   return {
     success: true,
@@ -1856,8 +1944,9 @@ async function updateSharedTask(
       updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
     }
 
-    projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id });
-    await waitForSync();
+    const waiter = createMutationWaiter();
+    projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    await waiter.waitForSync();
 
     return {
       success: true,
@@ -1893,19 +1982,19 @@ async function createSharedDeploymentStage(
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
   try {
+    const waiter = createMutationWaiter();
     const result = projectEvolu.insert("deploymentStage", {
       projectId: args.projectId as ProjectId,
       name: NonEmptyString100.orThrow(args.name),
       color: args.color || "#22c55e",
       position: Int.orThrow(args.position ?? 0),
-    }, { ownerId: sharedOwner.id });
+    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
     if (!result.ok) {
       throw new Error(`Failed to create deployment stage: ${JSON.stringify(result.error)}`);
     }
 
-    // Wait for sync to relay servers
-    await waitForSync();
+    await waiter.waitForSync();
 
     return {
       success: true,
@@ -1988,19 +2077,20 @@ async function createRepositoryLink(
   const posResult = await evolu.loadQuery(posQuery);
   const maxPosition = posResult.length > 0 ? (posResult[0].position || 0) : 0;
 
+  const waiter = createMutationWaiter();
   const result = evolu.insert("repositoryLink", {
     projectId: args.projectId as ProjectId,
     type: args.type || "github",
     url: NonEmptyString1000.orThrow(args.url),
     label: args.label ? NonEmptyString100.orThrow(args.label) : null,
     position: Int.orThrow(maxPosition + 1),
-  });
+  }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
     throw new Error(`Failed to create repository link: ${JSON.stringify(result.error)}`);
   }
 
-  await waitForSync();
+  await waiter.waitForSync();
 
   return {
     success: true,
@@ -2013,12 +2103,13 @@ async function deleteRepositoryLink(
   evolu: EvoluInstance,
   args: { id: string }
 ) {
+  const waiter = createMutationWaiter();
   evolu.update("repositoryLink", {
     id: args.id as RepositoryLinkId,
     isDeleted: SQLITE_TRUE,
-  } as any);
+  } as any, { onComplete: waiter.onComplete });
 
-  await waitForSync();
+  await waiter.waitForSync();
 
   return {
     success: true,
@@ -2125,19 +2216,20 @@ async function createSharedRepositoryLink(
     const filteredPos = posResults.filter((r: any) => r.ownerId === (sharedOwner.id as string));
     const maxPosition = filteredPos.length > 0 ? (filteredPos[0].position || 0) : 0;
 
+    const waiter = createMutationWaiter();
     const result = projectEvolu.insert("repositoryLink", {
       projectId: args.projectId as ProjectId,
       type: args.type || "github",
       url: NonEmptyString1000.orThrow(args.url),
       label: args.label ? NonEmptyString100.orThrow(args.label) : null,
       position: Int.orThrow(maxPosition + 1),
-    }, { ownerId: sharedOwner.id });
+    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
     if (!result.ok) {
       throw new Error(`Failed to create repository link: ${JSON.stringify(result.error)}`);
     }
 
-    await waitForSync();
+    await waiter.waitForSync();
 
     return {
       success: true,
