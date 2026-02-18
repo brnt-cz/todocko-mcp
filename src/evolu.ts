@@ -264,7 +264,6 @@ const DB_NAME = "todocko";
 
 // Evolu relay servers (same as main app)
 const RELAY_SERVERS = [
-  "wss://relay-production-0afe.up.railway.app",
   "wss://relay.todocko.cz",
 ];
 

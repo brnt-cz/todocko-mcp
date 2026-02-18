@@ -440,6 +440,54 @@ export const tools: Tool[] = [
       required: ["id"],
     },
   },
+  {
+    name: "td_bulk_update_tasks",
+    description: "Bulk update multiple tasks at once. Updates status, priority, assignee, or deployment stage for multiple task IDs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of task IDs to update (required)",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "New status for all tasks",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "New priority for all tasks",
+        },
+        assigneeId: {
+          type: "string",
+          description: "User ID to assign, or null to unassign",
+        },
+        deploymentStageId: {
+          type: "string",
+          description: "Deployment stage ID, or null to clear",
+        },
+      },
+      required: ["taskIds"],
+    },
+  },
+  {
+    name: "td_bulk_delete_tasks",
+    description: "Bulk delete multiple tasks at once. Marks tasks as deleted (soft delete).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of task IDs to delete (required)",
+        },
+      },
+      required: ["taskIds"],
+    },
+  },
   // Diagnostics
   {
     name: "td_sync_status",
@@ -752,6 +800,18 @@ export async function handleToolCall(
 
     case "td_delete_attachment":
       return deleteAttachment(evolu, args as { id: string });
+
+    case "td_bulk_update_tasks":
+      return bulkUpdateTasks(evolu, args as {
+        taskIds: string[];
+        status?: string;
+        priority?: string;
+        assigneeId?: string | null;
+        deploymentStageId?: string | null;
+      });
+
+    case "td_bulk_delete_tasks":
+      return bulkDeleteTasks(evolu, args as { taskIds: string[] });
 
     case "td_sync_status":
       return syncStatus(args as { retest?: boolean });
@@ -1507,6 +1567,125 @@ async function searchTasks(
           }
         : null,
     })),
+  };
+}
+
+// --- Bulk Operations ---
+
+async function bulkUpdateTasks(
+  evolu: EvoluInstance,
+  args: {
+    taskIds: string[];
+    status?: string;
+    priority?: string;
+    assigneeId?: string | null;
+    deploymentStageId?: string | null;
+  }
+) {
+  if (!args.taskIds || args.taskIds.length === 0) {
+    throw new Error("taskIds array is required and must not be empty");
+  }
+
+  let successCount = 0;
+  let skippedCount = 0;
+
+  for (const taskId of args.taskIds) {
+    try {
+      const updates: Record<string, unknown> = {
+        id: taskId as TaskId,
+      };
+
+      if (args.status !== undefined) {
+        updates.status = args.status;
+        if (args.status === "done") {
+          updates.completedAt = new Date().toISOString();
+        } else {
+          updates.completedAt = null;
+        }
+      }
+      if (args.priority !== undefined) {
+        updates.priority = args.priority;
+      }
+      if (args.assigneeId !== undefined) {
+        updates.assigneeId = args.assigneeId ? (args.assigneeId as UserId) : null;
+      }
+      if (args.deploymentStageId !== undefined) {
+        updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
+      }
+
+      evolu.update("task", updates as any);
+      successCount++;
+    } catch {
+      skippedCount++;
+    }
+  }
+
+  // Wait for sync after all updates
+  await waitForSync();
+
+  return {
+    success: true,
+    successCount,
+    skippedCount,
+    message: `Bulk update complete: ${successCount} updated, ${skippedCount} skipped`,
+  };
+}
+
+async function bulkDeleteTasks(
+  evolu: EvoluInstance,
+  args: { taskIds: string[] }
+) {
+  if (!args.taskIds || args.taskIds.length === 0) {
+    throw new Error("taskIds array is required and must not be empty");
+  }
+
+  let successCount = 0;
+  let skippedCount = 0;
+
+  for (const taskId of args.taskIds) {
+    try {
+      // Delete worklogs for this task
+      const worklogsQuery = evolu.createQuery((db: any) =>
+        db
+          .selectFrom("worklog")
+          .select(["id"])
+          .where("taskId", "=", taskId as TaskId)
+          .where("isDeleted", "is not", SQLITE_TRUE)
+      );
+      const worklogs = await evolu.loadQuery(worklogsQuery);
+      for (const w of worklogs) {
+        evolu.update("worklog", { id: w.id, isDeleted: SQLITE_TRUE } as any);
+      }
+
+      // Delete attachments for this task
+      const attachmentsQuery = evolu.createQuery((db: any) =>
+        db
+          .selectFrom("attachment")
+          .select(["id"])
+          .where("taskId", "=", taskId as TaskId)
+          .where("isDeleted", "is not", SQLITE_TRUE)
+      );
+      const attachments = await evolu.loadQuery(attachmentsQuery);
+      for (const a of attachments) {
+        evolu.update("attachment", { id: a.id, data: null, isDeleted: SQLITE_TRUE } as any);
+      }
+
+      // Delete the task itself
+      evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE } as any);
+      successCount++;
+    } catch {
+      skippedCount++;
+    }
+  }
+
+  // Wait for sync after all deletes
+  await waitForSync();
+
+  return {
+    success: true,
+    successCount,
+    skippedCount,
+    message: `Bulk delete complete: ${successCount} deleted, ${skippedCount} skipped`,
   };
 }
 
