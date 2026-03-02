@@ -141,12 +141,14 @@ Jaké jsou detaily úkolu TODO-15?
 ### Vytvoření úkolu
 ```
 Vytvoř nový úkol v projektu PROJ s názvem "Opravit bug v přihlášení" a prioritou high
+Vytvoř úkol s deadline na 2026-03-15 a scheduledDate na 2026-03-10
 ```
 
 ### Aktualizace úkolu
 ```
 Označ úkol PROJ-5 jako dokončený
 Přiřaď úkol TODO-10 uživateli s ID xyz
+Nastav scheduledDate úkolu TODO-10 na zítra
 ```
 
 ### Logování času
@@ -398,12 +400,14 @@ What are the details of task TODO-15?
 ### Create task
 ```
 Create a new task in project PROJ with title "Fix login bug" and priority high
+Create a task with deadline 2026-03-15 and scheduledDate 2026-03-10
 ```
 
 ### Update task
 ```
 Mark task PROJ-5 as completed
 Assign task TODO-10 to user with ID xyz
+Set scheduledDate of task TODO-10 to tomorrow
 ```
 
 ### Log time
