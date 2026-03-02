@@ -77,7 +77,7 @@ export const tools: Tool[] = [
   },
   {
     name: "td_list_tasks",
-    description: "List tasks with optional filters. Returns task id, title (code), name, status, priority, deadline, and project info.",
+    description: "List tasks with optional filters. Returns task id, title (code), name, status, priority, deadline, scheduledDate, and project info.",
     inputSchema: {
       type: "object",
       properties: {
@@ -159,6 +159,10 @@ export const tools: Tool[] = [
           type: "string",
           description: "Deadline in ISO format (e.g., '2024-12-31')",
         },
+        scheduledDate: {
+          type: "string",
+          description: "Scheduled date for when to work on the task (YYYY-MM-DD)",
+        },
         assigneeId: {
           type: "string",
           description: "User ID to assign the task to",
@@ -202,6 +206,10 @@ export const tools: Tool[] = [
         deadline: {
           type: "string",
           description: "Deadline in ISO format, or null to clear",
+        },
+        scheduledDate: {
+          type: "string",
+          description: "Scheduled date for when to work on the task (YYYY-MM-DD), or null to clear",
         },
         assigneeId: {
           type: "string",
@@ -728,6 +736,7 @@ export async function handleToolCall(
         status?: string;
         priority?: string;
         deadline?: string;
+        scheduledDate?: string;
         assigneeId?: string;
         estimate?: number;
       });
@@ -740,6 +749,7 @@ export async function handleToolCall(
         status?: string;
         priority?: string;
         deadline?: string | null;
+        scheduledDate?: string | null;
         assigneeId?: string | null;
         isBlocked?: boolean;
         blockedReason?: string;
@@ -990,6 +1000,7 @@ async function listTasks(
         "task.status",
         "task.priority",
         "task.deadline",
+        "task.scheduledDate",
         "task.isBlocked",
         "task.estimate",
         "task.completedAt",
@@ -1033,6 +1044,7 @@ async function listTasks(
       status: t.status,
       priority: t.priority,
       deadline: t.deadline,
+      scheduledDate: t.scheduledDate,
       isBlocked: t.isBlocked === SQLITE_TRUE,
       estimate: t.estimate,
       completedAt: t.completedAt,
@@ -1084,6 +1096,7 @@ async function getTask(
         "task.status",
         "task.priority",
         "task.deadline",
+        "task.scheduledDate",
         "task.isBlocked",
         "task.blockedReason",
         "task.estimate",
@@ -1137,6 +1150,7 @@ async function getTask(
     status: t.status,
     priority: t.priority,
     deadline: t.deadline,
+    scheduledDate: t.scheduledDate,
     isBlocked: t.isBlocked === SQLITE_TRUE,
     blockedReason: t.blockedReason,
     estimate: t.estimate,
@@ -1176,6 +1190,7 @@ async function createTask(
     status?: string;
     priority?: string;
     deadline?: string;
+    scheduledDate?: string;
     assigneeId?: string;
     estimate?: number;
   }
@@ -1233,6 +1248,7 @@ async function createTask(
     status: args.status || "todo",
     priority: args.priority || "medium",
     deadline: args.deadline || null,
+    scheduledDate: args.scheduledDate || null,
     assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
     estimate: args.estimate ? Int.orThrow(args.estimate) : null,
     position: Int.orThrow(maxPosition + 1),
@@ -1272,6 +1288,7 @@ async function updateTask(
     status?: string;
     priority?: string;
     deadline?: string | null;
+    scheduledDate?: string | null;
     assigneeId?: string | null;
     isBlocked?: boolean;
     blockedReason?: string;
@@ -1304,6 +1321,9 @@ async function updateTask(
   }
   if (args.deadline !== undefined) {
     updates.deadline = args.deadline;
+  }
+  if (args.scheduledDate !== undefined) {
+    updates.scheduledDate = args.scheduledDate;
   }
   if (args.assigneeId !== undefined) {
     updates.assigneeId = args.assigneeId ? (args.assigneeId as UserId) : null;
@@ -1943,6 +1963,7 @@ async function listSharedTasks(
           "task.status",
           "task.priority",
           "task.deadline",
+          "task.scheduledDate",
           "task.isBlocked",
           "task.estimate",
           "task.completedAt",
@@ -1985,6 +2006,7 @@ async function listSharedTasks(
         status: t.status,
         priority: t.priority,
         deadline: t.deadline,
+        scheduledDate: t.scheduledDate,
         isBlocked: t.isBlocked === SQLITE_TRUE,
         estimate: t.estimate,
         completedAt: t.completedAt,
