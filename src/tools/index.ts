@@ -1,8 +1,8 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int, String as EvoluString } from "@evolu/common";
 import { Schema, SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type RepositoryLinkId, type AttachmentId, type EvoluInstance, getProjectEvolu, getSharedOwner, useSharedOwner, stopUsingSharedOwner, getSyncHealth, trackOnComplete, testWebSocketConnectivity } from "../evolu.js";
-import { readFileSync, existsSync } from "fs";
-import { basename, extname } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { basename, extname, dirname } from "path";
 import { lookup } from "mime-types";
 
 // Network delay after onComplete - time for WebSocket to send data to relay
@@ -449,6 +449,24 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: "td_download_attachment",
+    description: "Download an attachment by ID. Returns base64-encoded content, or saves to a file if savePath is provided.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Attachment ID (required)",
+        },
+        savePath: {
+          type: "string",
+          description: "Optional file path to save the attachment to disk. If provided, writes the file and returns the path instead of base64 content.",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "td_bulk_update_tasks",
     description: "Bulk update multiple tasks at once. Updates status, priority, assignee, or deployment stage for multiple task IDs.",
     inputSchema: {
@@ -810,6 +828,9 @@ export async function handleToolCall(
 
     case "td_delete_attachment":
       return deleteAttachment(evolu, args as { id: string });
+
+    case "td_download_attachment":
+      return downloadAttachment(evolu, args as { id: string; savePath?: string });
 
     case "td_bulk_update_tasks":
       return bulkUpdateTasks(evolu, args as {
@@ -1874,6 +1895,53 @@ async function deleteAttachment(
   return {
     success: true,
     message: "Attachment deleted successfully",
+  };
+}
+
+async function downloadAttachment(
+  evolu: EvoluInstance,
+  args: { id: string; savePath?: string }
+) {
+  const query = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("attachment")
+      .select(["id", "filename", "mimeType", "data", "size"])
+      .where("id", "=", args.id as AttachmentId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1)
+  );
+
+  const result = await evolu.loadQuery(query);
+  if (result.length === 0) {
+    return { error: "Attachment not found" };
+  }
+
+  const a = result[0] as any;
+  if (!a.data) {
+    return { error: "Attachment data is empty (may have been deleted)" };
+  }
+
+  if (args.savePath) {
+    const dir = dirname(args.savePath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
+    return {
+      success: true,
+      filePath: args.savePath,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      size: a.size,
+    };
+  }
+
+  return {
+    id: a.id,
+    filename: a.filename,
+    mimeType: a.mimeType,
+    data: a.data,
+    size: a.size,
   };
 }
 
