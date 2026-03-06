@@ -1,0 +1,937 @@
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
+import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
+import { createMutationWaiter, waitForSync, getSyncWarning } from "./helpers.js";
+
+export const taskTools: Tool[] = [
+  {
+    name: "td_list_tasks",
+    description: "List tasks with optional filters. Returns task id, title (code), name, status, priority, deadline, scheduledDate, and project info.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Filter by project ID",
+        },
+        projectCode: {
+          type: "string",
+          description: "Filter by project code (e.g., 'TODO')",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "Filter by status",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "Filter by priority",
+        },
+        assigneeId: {
+          type: "string",
+          description: "Filter by assignee user ID",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of tasks to return (default: 50)",
+        },
+      },
+    },
+  },
+  {
+    name: "td_get_task",
+    description: "Get a specific task by ID or code (e.g., 'PROJ-123')",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Task ID",
+        },
+        code: {
+          type: "string",
+          description: "Task code (e.g., 'PROJ-123')",
+        },
+      },
+    },
+  },
+  {
+    name: "td_create_task",
+    description: "Create a new task in Todocko",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Project ID (required)",
+        },
+        name: {
+          type: "string",
+          description: "Human-readable task name/summary",
+        },
+        description: {
+          type: "string",
+          description: "Task description (HTML supported)",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "Task status (default: 'todo')",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "Task priority (default: 'medium')",
+        },
+        deadline: {
+          type: "string",
+          description: "Deadline in ISO format (e.g., '2024-12-31')",
+        },
+        scheduledDate: {
+          type: "string",
+          description: "Scheduled date for when to work on the task (YYYY-MM-DD)",
+        },
+        assigneeId: {
+          type: "string",
+          description: "User ID to assign the task to",
+        },
+        estimate: {
+          type: "number",
+          description: "Time estimate in minutes",
+        },
+        recurrenceType: {
+          type: "string",
+          enum: ["none", "daily", "weekly", "monthly", "yearly", "custom"],
+          description: "Recurrence type (default: 'none')",
+        },
+        recurrenceInterval: {
+          type: "number",
+          description: "Recurrence interval (e.g., every 2 weeks)",
+        },
+        recurrenceEndDate: {
+          type: "string",
+          description: "Recurrence end date (ISO format)",
+        },
+        recurrenceDay: {
+          type: "string",
+          description: "Recurrence day info (e.g., 'monday' for weekly)",
+        },
+      },
+      required: ["projectId"],
+    },
+  },
+  {
+    name: "td_update_task",
+    description: "Update an existing task",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Task ID (required)",
+        },
+        name: {
+          type: "string",
+          description: "Human-readable task name/summary",
+        },
+        description: {
+          type: "string",
+          description: "Task description",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "Task status",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "Task priority",
+        },
+        deadline: {
+          type: "string",
+          description: "Deadline in ISO format, or null to clear",
+        },
+        scheduledDate: {
+          type: "string",
+          description: "Scheduled date for when to work on the task (YYYY-MM-DD), or null to clear",
+        },
+        assigneeId: {
+          type: "string",
+          description: "User ID to assign, or null to unassign",
+        },
+        isBlocked: {
+          type: "boolean",
+          description: "Set blocked status",
+        },
+        blockedReason: {
+          type: "string",
+          description: "Reason for being blocked",
+        },
+        estimate: {
+          type: "number",
+          description: "Time estimate in minutes",
+        },
+        isOnProduction: {
+          type: "boolean",
+          description: "Set production badge (simple flag when no custom deployment stages)",
+        },
+        deploymentStageId: {
+          type: "string",
+          description: "Deployment stage ID, or null to clear",
+        },
+        recurrenceType: {
+          type: "string",
+          enum: ["none", "daily", "weekly", "monthly", "yearly", "custom"],
+          description: "Recurrence type",
+        },
+        recurrenceInterval: {
+          type: "number",
+          description: "Recurrence interval",
+        },
+        recurrenceEndDate: {
+          type: "string",
+          description: "Recurrence end date (ISO format), or null to clear",
+        },
+        recurrenceDay: {
+          type: "string",
+          description: "Recurrence day info, or null to clear",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "td_search_tasks",
+    description: "Search tasks by code, name, or description",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query (required)",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum results (default: 20)",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "td_bulk_update_tasks",
+    description: "Bulk update multiple tasks at once. Updates status, priority, assignee, or deployment stage for multiple task IDs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of task IDs to update (required)",
+        },
+        status: {
+          type: "string",
+          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          description: "New status for all tasks",
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "medium", "high", "urgent"],
+          description: "New priority for all tasks",
+        },
+        assigneeId: {
+          type: "string",
+          description: "User ID to assign, or null to unassign",
+        },
+        deploymentStageId: {
+          type: "string",
+          description: "Deployment stage ID, or null to clear",
+        },
+      },
+      required: ["taskIds"],
+    },
+  },
+  {
+    name: "td_bulk_delete_tasks",
+    description: "Bulk delete multiple tasks at once. Marks tasks as deleted (soft delete).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Array of task IDs to delete (required)",
+        },
+      },
+      required: ["taskIds"],
+    },
+  },
+];
+
+export async function handleTaskTool(
+  name: string,
+  args: Record<string, unknown>,
+  evolu: EvoluInstance
+): Promise<unknown> {
+  switch (name) {
+    case "td_list_tasks":
+      return listTasks(evolu, args as {
+        projectId?: string;
+        projectCode?: string;
+        status?: string;
+        priority?: string;
+        assigneeId?: string;
+        limit?: number;
+      });
+    case "td_get_task":
+      return getTask(evolu, args as { id?: string; code?: string });
+    case "td_create_task":
+      return createTask(evolu, args as {
+        projectId: string;
+        name?: string;
+        description?: string;
+        status?: string;
+        priority?: string;
+        deadline?: string;
+        scheduledDate?: string;
+        assigneeId?: string;
+        estimate?: number;
+        recurrenceType?: string;
+        recurrenceInterval?: number;
+        recurrenceEndDate?: string;
+        recurrenceDay?: string;
+      });
+    case "td_update_task":
+      return updateTask(evolu, args as {
+        id: string;
+        name?: string;
+        description?: string;
+        status?: string;
+        priority?: string;
+        deadline?: string | null;
+        scheduledDate?: string | null;
+        assigneeId?: string | null;
+        isBlocked?: boolean;
+        blockedReason?: string;
+        estimate?: number;
+        isOnProduction?: boolean;
+        deploymentStageId?: string | null;
+        recurrenceType?: string;
+        recurrenceInterval?: number;
+        recurrenceEndDate?: string | null;
+        recurrenceDay?: string | null;
+      });
+    case "td_search_tasks":
+      return searchTasks(evolu, args as { query: string; limit?: number });
+    case "td_bulk_update_tasks":
+      return bulkUpdateTasks(evolu, args as {
+        taskIds: string[];
+        status?: string;
+        priority?: string;
+        assigneeId?: string | null;
+        deploymentStageId?: string | null;
+      });
+    case "td_bulk_delete_tasks":
+      return bulkDeleteTasks(evolu, args as { taskIds: string[] });
+    default:
+      return undefined;
+  }
+}
+
+async function listTasks(
+  evolu: EvoluInstance,
+  args: {
+    projectId?: string;
+    projectCode?: string;
+    status?: string;
+    priority?: string;
+    assigneeId?: string;
+    limit?: number;
+  }
+) {
+  // If filtering by project code, first get the project ID
+  let projectIdToFilter = args.projectId as ProjectId | undefined;
+  if (args.projectCode && !projectIdToFilter) {
+    const projectQuery = evolu.createQuery((db: any) =>
+      db
+        .selectFrom("project")
+        .select(["id"])
+        .where("code", "=", args.projectCode as unknown as typeof NonEmptyString100.Type)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .limit(1)
+    );
+    const projectResult = await evolu.loadQuery(projectQuery);
+    if (projectResult.length > 0) {
+      projectIdToFilter = (projectResult[0] as any).id;
+    }
+  }
+
+  const query = evolu.createQuery((db: any) => {
+    let q = db
+      .selectFrom("task")
+      .leftJoin("project", "task.projectId", "project.id")
+      .leftJoin("user", "task.assigneeId", "user.id")
+      .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
+      .select([
+        "task.id",
+        "task.title",
+        "task.name",
+        "task.status",
+        "task.priority",
+        "task.deadline",
+        "task.scheduledDate",
+        "task.isBlocked",
+        "task.estimate",
+        "task.completedAt",
+        "task.position",
+        "task.isOnProduction",
+        "task.deploymentStageId",
+        "project.id as projectId",
+        "project.name as projectName",
+        "project.code as projectCode",
+        "project.color as projectColor",
+        "user.id as assigneeId",
+        "user.name as assigneeName",
+        "deploymentStage.name as deploymentStageName",
+        "deploymentStage.color as deploymentStageColor",
+      ])
+      .where("task.isDeleted", "is not", SQLITE_TRUE);
+
+    if (projectIdToFilter) {
+      q = q.where("task.projectId", "=", projectIdToFilter);
+    }
+    if (args.status) {
+      q = q.where("task.status", "=", args.status);
+    }
+    if (args.priority) {
+      q = q.where("task.priority", "=", args.priority);
+    }
+    if (args.assigneeId) {
+      q = q.where("task.assigneeId", "=", args.assigneeId as UserId);
+    }
+
+    return q.orderBy("task.position", "asc").limit(args.limit || 50);
+  });
+
+  const result = await evolu.loadQuery(query);
+  return {
+    count: result.length,
+    tasks: result.map((t: any) => ({
+      id: t.id,
+      code: t.title,
+      name: t.name,
+      status: t.status,
+      priority: t.priority,
+      deadline: t.deadline,
+      scheduledDate: t.scheduledDate,
+      isBlocked: t.isBlocked === SQLITE_TRUE,
+      estimate: t.estimate,
+      completedAt: t.completedAt,
+      isOnProduction: t.isOnProduction === SQLITE_TRUE,
+      deploymentStage: t.deploymentStageId
+        ? {
+            id: t.deploymentStageId,
+            name: t.deploymentStageName,
+            color: t.deploymentStageColor,
+          }
+        : null,
+      project: t.projectId
+        ? {
+            id: t.projectId,
+            name: t.projectName,
+            code: t.projectCode,
+            color: t.projectColor,
+          }
+        : null,
+      assignee: t.assigneeId
+        ? {
+            id: t.assigneeId,
+            name: t.assigneeName,
+          }
+        : null,
+    })),
+  };
+}
+
+async function getTask(
+  evolu: EvoluInstance,
+  args: { id?: string; code?: string }
+) {
+  if (!args.id && !args.code) {
+    throw new Error("Either id or code is required");
+  }
+
+  const query = evolu.createQuery((db: any) => {
+    let q = db
+      .selectFrom("task")
+      .leftJoin("project", "task.projectId", "project.id")
+      .leftJoin("user", "task.assigneeId", "user.id")
+      .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
+      .select([
+        "task.id",
+        "task.title",
+        "task.name",
+        "task.description",
+        "task.status",
+        "task.priority",
+        "task.deadline",
+        "task.scheduledDate",
+        "task.isBlocked",
+        "task.blockedReason",
+        "task.estimate",
+        "task.completedAt",
+        "task.position",
+        "task.isOnProduction",
+        "task.deploymentStageId",
+        "project.id as projectId",
+        "project.name as projectName",
+        "project.code as projectCode",
+        "project.color as projectColor",
+        "user.id as assigneeId",
+        "user.name as assigneeName",
+        "deploymentStage.name as deploymentStageName",
+        "deploymentStage.color as deploymentStageColor",
+      ])
+      .where("task.isDeleted", "is not", SQLITE_TRUE);
+
+    if (args.id) {
+      q = q.where("task.id", "=", args.id as TaskId);
+    } else if (args.code) {
+      q = q.where("task.title", "=", args.code as unknown as typeof NonEmptyString100.Type);
+    }
+
+    return q.limit(1);
+  });
+
+  const result = await evolu.loadQuery(query);
+  if (result.length === 0) {
+    return { error: "Task not found" };
+  }
+
+  const t = result[0] as any;
+
+  // Get worklogs for total logged time
+  const worklogsQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("worklog")
+      .select(["durationMinutes"])
+      .where("taskId", "=", t.id)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+  );
+  const worklogs = await evolu.loadQuery(worklogsQuery);
+  const totalLoggedMinutes = worklogs.reduce((sum: number, w: any) => sum + (w.durationMinutes || 0), 0);
+
+  return {
+    id: t.id,
+    code: t.title,
+    name: t.name,
+    description: t.description,
+    status: t.status,
+    priority: t.priority,
+    deadline: t.deadline,
+    scheduledDate: t.scheduledDate,
+    isBlocked: t.isBlocked === SQLITE_TRUE,
+    blockedReason: t.blockedReason,
+    estimate: t.estimate,
+    totalLoggedMinutes,
+    completedAt: t.completedAt,
+    isOnProduction: t.isOnProduction === SQLITE_TRUE,
+    deploymentStage: t.deploymentStageId
+      ? {
+          id: t.deploymentStageId,
+          name: t.deploymentStageName,
+          color: t.deploymentStageColor,
+        }
+      : null,
+    project: t.projectId
+      ? {
+          id: t.projectId,
+          name: t.projectName,
+          code: t.projectCode,
+          color: t.projectColor,
+        }
+      : null,
+    assignee: t.assigneeId
+      ? {
+          id: t.assigneeId,
+          name: t.assigneeName,
+        }
+      : null,
+  };
+}
+
+async function createTask(
+  evolu: EvoluInstance,
+  args: {
+    projectId: string;
+    name?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    deadline?: string;
+    scheduledDate?: string;
+    assigneeId?: string;
+    estimate?: number;
+    recurrenceType?: string;
+    recurrenceInterval?: number;
+    recurrenceEndDate?: string;
+    recurrenceDay?: string;
+  }
+) {
+  // Get project to generate task code
+  const projectQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("project")
+      .select(["id", "code"])
+      .where("id", "=", args.projectId as ProjectId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1)
+  );
+  const projectResult = await evolu.loadQuery(projectQuery);
+  if (projectResult.length === 0) {
+    throw new Error("Project not found");
+  }
+  const project = projectResult[0] as any;
+
+  // Get next task number for this project
+  const tasksQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("task")
+      .select(["title"])
+      .where("projectId", "=", project.id)
+  );
+  const existingTasks = await evolu.loadQuery(tasksQuery);
+
+  const projectCode = project.code || "TASK";
+  let maxNum = 0;
+  const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
+  for (const t of existingTasks) {
+    const match = (t as any).title?.match(codeRegex);
+    if (match) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  }
+  const taskCode = `${projectCode}-${maxNum + 1}`;
+
+  // Get max position
+  const posQuery = evolu.createQuery((db: any) =>
+    db.selectFrom("task").select(["position"]).orderBy("position", "desc").limit(1)
+  );
+  const posResult = await evolu.loadQuery(posQuery);
+  const maxPosition = posResult.length > 0 ? ((posResult[0] as any).position || 0) : 0;
+
+  // Create task with onComplete tracking
+  const waiter = createMutationWaiter();
+  const result = evolu.insert("task", {
+    projectId: args.projectId as ProjectId,
+    title: NonEmptyString100.orThrow(taskCode),
+    name: args.name ? NonEmptyString100.orThrow(args.name) : null,
+    description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+    status: args.status || "todo",
+    priority: args.priority || "medium",
+    deadline: args.deadline || null,
+    scheduledDate: args.scheduledDate || null,
+    assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
+    estimate: args.estimate ? Int.orThrow(args.estimate) : null,
+    position: Int.orThrow(maxPosition + 1),
+    completedAt: null,
+    isBlocked: null,
+    blockedReason: null,
+    recurrenceType: args.recurrenceType || null,
+    recurrenceInterval: args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null,
+    recurrenceEndDate: args.recurrenceEndDate || null,
+    recurrenceDay: args.recurrenceDay || null,
+  }, { onComplete: waiter.onComplete });
+
+  if (!result.ok) {
+    throw new Error(`Failed to create task: ${JSON.stringify(result.error)}`);
+  }
+
+  // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
+  evolu.update("task", { id: result.value.id, status: args.status || "todo" } as any);
+
+  // Wait for onComplete + network sync
+  await waiter.waitForSync();
+
+  const syncWarning = getSyncWarning();
+
+  return {
+    success: true,
+    taskId: result.value.id,
+    taskCode,
+    message: `Task ${taskCode} created successfully${syncWarning}`,
+  };
+}
+
+async function updateTask(
+  evolu: EvoluInstance,
+  args: {
+    id: string;
+    name?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    deadline?: string | null;
+    scheduledDate?: string | null;
+    assigneeId?: string | null;
+    isBlocked?: boolean;
+    blockedReason?: string;
+    estimate?: number;
+    isOnProduction?: boolean;
+    deploymentStageId?: string | null;
+    recurrenceType?: string;
+    recurrenceInterval?: number;
+    recurrenceEndDate?: string | null;
+    recurrenceDay?: string | null;
+  }
+) {
+  const updates: Record<string, unknown> = {
+    id: args.id as TaskId,
+  };
+
+  if (args.name !== undefined) {
+    updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
+  }
+  if (args.description !== undefined) {
+    updates.description = args.description ? NonEmptyString1000.orThrow(args.description) : null;
+  }
+  if (args.status !== undefined) {
+    updates.status = args.status;
+    if (args.status === "done") {
+      updates.completedAt = new Date().toISOString();
+    } else {
+      updates.completedAt = null;
+    }
+  }
+  if (args.priority !== undefined) {
+    updates.priority = args.priority;
+  }
+  if (args.deadline !== undefined) {
+    updates.deadline = args.deadline;
+  }
+  if (args.scheduledDate !== undefined) {
+    updates.scheduledDate = args.scheduledDate;
+  }
+  if (args.assigneeId !== undefined) {
+    updates.assigneeId = args.assigneeId ? (args.assigneeId as UserId) : null;
+  }
+  if (args.isBlocked !== undefined) {
+    updates.isBlocked = args.isBlocked ? SQLITE_TRUE : null;
+  }
+  if (args.blockedReason !== undefined) {
+    updates.blockedReason = args.blockedReason ? NonEmptyString1000.orThrow(args.blockedReason) : null;
+  }
+  if (args.estimate !== undefined) {
+    updates.estimate = args.estimate ? Int.orThrow(args.estimate) : null;
+  }
+  if (args.isOnProduction !== undefined) {
+    updates.isOnProduction = args.isOnProduction ? SQLITE_TRUE : null;
+  }
+  if (args.deploymentStageId !== undefined) {
+    updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
+  }
+  if (args.recurrenceType !== undefined) {
+    updates.recurrenceType = args.recurrenceType || null;
+  }
+  if (args.recurrenceInterval !== undefined) {
+    updates.recurrenceInterval = args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null;
+  }
+  if (args.recurrenceEndDate !== undefined) {
+    updates.recurrenceEndDate = args.recurrenceEndDate || null;
+  }
+  if (args.recurrenceDay !== undefined) {
+    updates.recurrenceDay = args.recurrenceDay || null;
+  }
+
+  const waiter = createMutationWaiter();
+  evolu.update("task", updates as any, { onComplete: waiter.onComplete });
+
+  await waiter.waitForSync();
+
+  const syncWarning = getSyncWarning();
+
+  return {
+    success: true,
+    message: `Task updated successfully${syncWarning}`,
+  };
+}
+
+async function searchTasks(
+  evolu: EvoluInstance,
+  args: { query: string; limit?: number }
+) {
+  const searchQuery = args.query.toLowerCase();
+  const limit = args.limit || 20;
+
+  const query = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("task")
+      .leftJoin("project", "task.projectId", "project.id")
+      .select([
+        "task.id",
+        "task.title",
+        "task.name",
+        "task.description",
+        "task.status",
+        "task.priority",
+        "project.id as projectId",
+        "project.name as projectName",
+        "project.code as projectCode",
+        "project.color as projectColor",
+      ])
+      .where("task.isDeleted", "is not", SQLITE_TRUE)
+  );
+
+  const allTasks = await evolu.loadQuery(query);
+
+  const filtered = allTasks.filter((t: any) => {
+    const title = (t.title || "").toLowerCase();
+    const name = (t.name || "").toLowerCase();
+    const description = (t.description || "").toLowerCase();
+    return (
+      title.includes(searchQuery) ||
+      name.includes(searchQuery) ||
+      description.includes(searchQuery)
+    );
+  });
+
+  const limited = filtered.slice(0, limit);
+
+  return {
+    count: limited.length,
+    totalMatches: filtered.length,
+    tasks: limited.map((t: any) => ({
+      id: t.id,
+      code: t.title,
+      name: t.name,
+      status: t.status,
+      priority: t.priority,
+      project: t.projectId
+        ? {
+            id: t.projectId,
+            name: t.projectName,
+            code: t.projectCode,
+            color: t.projectColor,
+          }
+        : null,
+    })),
+  };
+}
+
+async function bulkUpdateTasks(
+  evolu: EvoluInstance,
+  args: {
+    taskIds: string[];
+    status?: string;
+    priority?: string;
+    assigneeId?: string | null;
+    deploymentStageId?: string | null;
+  }
+) {
+  if (!args.taskIds || args.taskIds.length === 0) {
+    throw new Error("taskIds array is required and must not be empty");
+  }
+
+  let successCount = 0;
+  let skippedCount = 0;
+
+  for (const taskId of args.taskIds) {
+    try {
+      const updates: Record<string, unknown> = {
+        id: taskId as TaskId,
+      };
+
+      if (args.status !== undefined) {
+        updates.status = args.status;
+        if (args.status === "done") {
+          updates.completedAt = new Date().toISOString();
+        } else {
+          updates.completedAt = null;
+        }
+      }
+      if (args.priority !== undefined) {
+        updates.priority = args.priority;
+      }
+      if (args.assigneeId !== undefined) {
+        updates.assigneeId = args.assigneeId ? (args.assigneeId as UserId) : null;
+      }
+      if (args.deploymentStageId !== undefined) {
+        updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
+      }
+
+      evolu.update("task", updates as any);
+      successCount++;
+    } catch {
+      skippedCount++;
+    }
+  }
+
+  await waitForSync();
+
+  return {
+    success: true,
+    successCount,
+    skippedCount,
+    message: `Bulk update complete: ${successCount} updated, ${skippedCount} skipped`,
+  };
+}
+
+async function bulkDeleteTasks(
+  evolu: EvoluInstance,
+  args: { taskIds: string[] }
+) {
+  if (!args.taskIds || args.taskIds.length === 0) {
+    throw new Error("taskIds array is required and must not be empty");
+  }
+
+  let successCount = 0;
+  let skippedCount = 0;
+
+  for (const taskId of args.taskIds) {
+    try {
+      // Delete worklogs for this task
+      const worklogsQuery = evolu.createQuery((db: any) =>
+        db
+          .selectFrom("worklog")
+          .select(["id"])
+          .where("taskId", "=", taskId as TaskId)
+          .where("isDeleted", "is not", SQLITE_TRUE)
+      );
+      const worklogs = await evolu.loadQuery(worklogsQuery);
+      for (const w of worklogs) {
+        evolu.update("worklog", { id: (w as any).id, isDeleted: SQLITE_TRUE } as any);
+      }
+
+      // Delete attachments for this task
+      const attachmentsQuery = evolu.createQuery((db: any) =>
+        db
+          .selectFrom("attachment")
+          .select(["id"])
+          .where("taskId", "=", taskId as TaskId)
+          .where("isDeleted", "is not", SQLITE_TRUE)
+      );
+      const attachments = await evolu.loadQuery(attachmentsQuery);
+      for (const a of attachments) {
+        evolu.update("attachment", { id: (a as any).id, data: null, isDeleted: SQLITE_TRUE } as any);
+      }
+
+      // Delete the task itself
+      evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE } as any);
+      successCount++;
+    } catch {
+      skippedCount++;
+    }
+  }
+
+  await waitForSync();
+
+  return {
+    success: true,
+    successCount,
+    skippedCount,
+    message: `Bulk delete complete: ${successCount} deleted, ${skippedCount} skipped`,
+  };
+}

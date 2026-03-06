@@ -90,35 +90,182 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje
+## Dostupné nástroje (80)
+
+### Projekty
 
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_projects` | Seznam všech projektů |
 | `td_get_project` | Detail projektu podle ID nebo kódu |
+| `td_create_project` | Vytvoření nového projektu |
+| `td_update_project` | Aktualizace projektu |
+| `td_delete_project` | Smazání projektu (soft delete) |
+
+### Úkoly
+
+| Nástroj | Popis |
+|---------|-------|
 | `td_list_tasks` | Seznam úkolů s filtry (projekt, status, priorita, assignee) |
 | `td_get_task` | Detail úkolu podle ID nebo kódu (např. `PROJ-123`) |
-| `td_create_task` | Vytvoření nového úkolu |
-| `td_update_task` | Aktualizace existujícího úkolu |
+| `td_create_task` | Vytvoření nového úkolu (včetně recurrence) |
+| `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence) |
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
-| `td_list_deployment_stages` | Seznam deployment stages pro projekt |
+| `td_bulk_update_tasks` | Hromadná aktualizace více úkolů |
+| `td_bulk_delete_tasks` | Hromadné smazání více úkolů |
+
+### Uživatelé
+
+| Nástroj | Popis |
+|---------|-------|
 | `td_list_users` | Seznam všech uživatelů |
 | `td_get_user` | Detail uživatele |
+| `td_create_user` | Vytvoření nového uživatele |
+| `td_update_user` | Aktualizace uživatele |
+| `td_delete_user` | Smazání uživatele (soft delete) |
+
+### Worklogy
+
+| Nástroj | Popis |
+|---------|-------|
 | `td_list_worklogs` | Seznam worklogů pro úkol |
 | `td_add_worklog` | Přidání worklogu k úkolu |
+| `td_update_worklog` | Aktualizace worklogu |
+| `td_delete_worklog` | Smazání worklogu (soft delete) |
+
+### Přílohy
+
+| Nástroj | Popis |
+|---------|-------|
 | `td_upload_attachment` | Nahrání přílohy k úkolu (ze souboru nebo base64) |
 | `td_list_attachments` | Seznam příloh úkolu |
+| `td_download_attachment` | Stažení přílohy |
 | `td_delete_attachment` | Smazání přílohy |
+
+### Komentáře
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_task_comments` | Seznam komentářů k úkolu |
+| `td_create_task_comment` | Přidání komentáře k úkolu |
+| `td_update_task_comment` | Úprava komentáře |
+| `td_delete_task_comment` | Smazání komentáře (soft delete) |
+
+### Checklist
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_checklist_items` | Seznam položek checklistu úkolu |
+| `td_create_checklist_item` | Přidání položky checklistu |
+| `td_update_checklist_item` | Aktualizace položky (zaškrtnutí, pozice) |
+| `td_delete_checklist_item` | Smazání položky (soft delete) |
+
+### Zmínky (mentions)
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_mentions` | Seznam zmínek uživatele |
+| `td_create_mention` | Vytvoření zmínky |
+| `td_mark_mention_read` | Označení zmínky jako přečtené |
+| `td_mark_all_mentions_read` | Označení všech zmínek jako přečtených |
+| `td_delete_mention` | Smazání zmínky (soft delete) |
+
+### Linky mezi úkoly
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_task_links` | Seznam linků úkolu |
+| `td_create_task_link` | Vytvoření linku mezi úkoly |
+| `td_delete_task_link` | Smazání linku (soft delete) |
+
+### Tagy
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_tags` | Seznam všech tagů |
+| `td_create_tag` | Vytvoření nového tagu |
+| `td_delete_tag` | Smazání tagu (soft delete) |
+| `td_list_task_tags` | Seznam tagů přiřazených k úkolu |
+| `td_add_tag_to_task` | Přiřazení tagu k úkolu |
+| `td_remove_tag_from_task` | Odebrání tagu z úkolu |
+
+### Šablony úkolů
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_task_templates` | Seznam šablon úkolů |
+| `td_create_task_template` | Vytvoření šablony |
+| `td_update_task_template` | Aktualizace šablony |
+| `td_delete_task_template` | Smazání šablony (soft delete) |
+
+### Kanban sloupce
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_kanban_columns` | Seznam kanban sloupců |
+| `td_create_kanban_column` | Vytvoření sloupce |
+| `td_update_kanban_column` | Aktualizace sloupce |
+| `td_delete_kanban_column` | Smazání sloupce (soft delete) |
+
+### Uložená zobrazení
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_saved_views` | Seznam uložených zobrazení |
+| `td_create_saved_view` | Vytvoření zobrazení |
+| `td_update_saved_view` | Aktualizace zobrazení |
+| `td_delete_saved_view` | Smazání zobrazení (soft delete) |
+
+### Aktivita
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_activity_log` | Seznam zápisů aktivity (read-only) |
+
+### Poznámky k projektu
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_project_notes` | Seznam lokálních poznámek projektu |
+| `td_create_project_note` | Vytvoření lokální poznámky |
+| `td_update_project_note` | Aktualizace lokální poznámky |
+| `td_delete_project_note` | Smazání lokální poznámky (soft delete) |
+
+### Deployment stages
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_deployment_stages` | Seznam deployment stages pro projekt |
+
+### Repository linky
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_repository_links` | Seznam repozitářových linků |
+| `td_create_repository_link` | Vytvoření repozitářového linku |
+| `td_delete_repository_link` | Smazání repozitářového linku |
 
 ### Sdílené projekty
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_shared_projects` | Seznam sdílených projektů, ke kterým má uživatel přístup |
+| `td_list_shared_projects` | Seznam sdílených projektů |
 | `td_list_shared_tasks` | Seznam úkolů ze sdíleného projektu |
 | `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu |
 | `td_list_shared_deployment_stages` | Seznam deployment stages pro sdílený projekt |
 | `td_create_shared_deployment_stage` | Vytvoření deployment stage ve sdíleném projektu |
+| `td_list_shared_repository_links` | Seznam repozitářových linků sdíleného projektu |
+| `td_create_shared_repository_link` | Vytvoření repozitářového linku ve sdíleném projektu |
+| `td_list_shared_project_notes` | Seznam poznámek sdíleného projektu |
+| `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
+| `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
+| `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
+
+### Diagnostika
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_sync_status` | Stav synchronizace |
 
 ## Příklady použití
 
@@ -349,35 +496,182 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools
+## Available Tools (80)
+
+### Projects
 
 | Tool | Description |
 |------|-------------|
 | `td_list_projects` | List all projects |
 | `td_get_project` | Get project details by ID or code |
+| `td_create_project` | Create a new project |
+| `td_update_project` | Update a project |
+| `td_delete_project` | Delete a project (soft delete) |
+
+### Tasks
+
+| Tool | Description |
+|------|-------------|
 | `td_list_tasks` | List tasks with filters (project, status, priority, assignee) |
 | `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`) |
-| `td_create_task` | Create a new task |
-| `td_update_task` | Update an existing task |
+| `td_create_task` | Create a new task (with recurrence support) |
+| `td_update_task` | Update an existing task (with recurrence support) |
 | `td_search_tasks` | Search tasks by text |
-| `td_list_deployment_stages` | List deployment stages for a project |
+| `td_bulk_update_tasks` | Bulk update multiple tasks |
+| `td_bulk_delete_tasks` | Bulk delete multiple tasks |
+
+### Users
+
+| Tool | Description |
+|------|-------------|
 | `td_list_users` | List all users |
 | `td_get_user` | Get user details |
+| `td_create_user` | Create a new user |
+| `td_update_user` | Update a user |
+| `td_delete_user` | Delete a user (soft delete) |
+
+### Worklogs
+
+| Tool | Description |
+|------|-------------|
 | `td_list_worklogs` | List worklogs for a task |
 | `td_add_worklog` | Add a worklog to a task |
+| `td_update_worklog` | Update a worklog |
+| `td_delete_worklog` | Delete a worklog (soft delete) |
+
+### Attachments
+
+| Tool | Description |
+|------|-------------|
 | `td_upload_attachment` | Upload an attachment to a task (from file or base64) |
 | `td_list_attachments` | List attachments for a task |
+| `td_download_attachment` | Download an attachment |
 | `td_delete_attachment` | Delete an attachment |
+
+### Comments
+
+| Tool | Description |
+|------|-------------|
+| `td_list_task_comments` | List comments for a task |
+| `td_create_task_comment` | Add a comment to a task |
+| `td_update_task_comment` | Update a comment |
+| `td_delete_task_comment` | Delete a comment (soft delete) |
+
+### Checklist
+
+| Tool | Description |
+|------|-------------|
+| `td_list_checklist_items` | List checklist items for a task |
+| `td_create_checklist_item` | Add a checklist item |
+| `td_update_checklist_item` | Update a checklist item (check, reposition) |
+| `td_delete_checklist_item` | Delete a checklist item (soft delete) |
+
+### Mentions
+
+| Tool | Description |
+|------|-------------|
+| `td_list_mentions` | List mentions for a user |
+| `td_create_mention` | Create a mention |
+| `td_mark_mention_read` | Mark a mention as read |
+| `td_mark_all_mentions_read` | Mark all mentions as read |
+| `td_delete_mention` | Delete a mention (soft delete) |
+
+### Task Links
+
+| Tool | Description |
+|------|-------------|
+| `td_list_task_links` | List links for a task |
+| `td_create_task_link` | Create a link between tasks |
+| `td_delete_task_link` | Delete a task link (soft delete) |
+
+### Tags
+
+| Tool | Description |
+|------|-------------|
+| `td_list_tags` | List all tags |
+| `td_create_tag` | Create a new tag |
+| `td_delete_tag` | Delete a tag (soft delete) |
+| `td_list_task_tags` | List tags assigned to a task |
+| `td_add_tag_to_task` | Assign a tag to a task |
+| `td_remove_tag_from_task` | Remove a tag from a task |
+
+### Task Templates
+
+| Tool | Description |
+|------|-------------|
+| `td_list_task_templates` | List task templates |
+| `td_create_task_template` | Create a task template |
+| `td_update_task_template` | Update a task template |
+| `td_delete_task_template` | Delete a task template (soft delete) |
+
+### Kanban Columns
+
+| Tool | Description |
+|------|-------------|
+| `td_list_kanban_columns` | List kanban columns |
+| `td_create_kanban_column` | Create a kanban column |
+| `td_update_kanban_column` | Update a kanban column |
+| `td_delete_kanban_column` | Delete a kanban column (soft delete) |
+
+### Saved Views
+
+| Tool | Description |
+|------|-------------|
+| `td_list_saved_views` | List saved views |
+| `td_create_saved_view` | Create a saved view |
+| `td_update_saved_view` | Update a saved view |
+| `td_delete_saved_view` | Delete a saved view (soft delete) |
+
+### Activity Log
+
+| Tool | Description |
+|------|-------------|
+| `td_list_activity_log` | List activity log entries (read-only) |
+
+### Project Notes
+
+| Tool | Description |
+|------|-------------|
+| `td_list_project_notes` | List local project notes |
+| `td_create_project_note` | Create a local project note |
+| `td_update_project_note` | Update a local project note |
+| `td_delete_project_note` | Delete a local project note (soft delete) |
+
+### Deployment Stages
+
+| Tool | Description |
+|------|-------------|
+| `td_list_deployment_stages` | List deployment stages for a project |
+
+### Repository Links
+
+| Tool | Description |
+|------|-------------|
+| `td_list_repository_links` | List repository links |
+| `td_create_repository_link` | Create a repository link |
+| `td_delete_repository_link` | Delete a repository link |
 
 ### Shared Projects
 
 | Tool | Description |
 |------|-------------|
-| `td_list_shared_projects` | List shared projects the user has access to |
+| `td_list_shared_projects` | List shared projects |
 | `td_list_shared_tasks` | List tasks from a shared project |
 | `td_update_shared_task` | Update a task in a shared project |
 | `td_list_shared_deployment_stages` | List deployment stages for a shared project |
 | `td_create_shared_deployment_stage` | Create a deployment stage in a shared project |
+| `td_list_shared_repository_links` | List repository links for a shared project |
+| `td_create_shared_repository_link` | Create a repository link in a shared project |
+| `td_list_shared_project_notes` | List notes for a shared project |
+| `td_create_shared_project_note` | Create a note in a shared project |
+| `td_update_shared_project_note` | Update a note in a shared project |
+| `td_delete_shared_project_note` | Delete a note in a shared project |
+
+### Diagnostics
+
+| Tool | Description |
+|------|-------------|
+| `td_sync_status` | Sync status |
 
 ## Usage Examples
 
