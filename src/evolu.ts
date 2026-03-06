@@ -68,6 +68,39 @@ export type ProjectMemberId = typeof ProjectMemberId.Type;
 export const RepositoryLinkId = id("RepositoryLink");
 export type RepositoryLinkId = typeof RepositoryLinkId.Type;
 
+export const TaskCommentId = id("TaskComment");
+export type TaskCommentId = typeof TaskCommentId.Type;
+
+export const MentionId = id("Mention");
+export type MentionId = typeof MentionId.Type;
+
+export const ChecklistItemId = id("ChecklistItem");
+export type ChecklistItemId = typeof ChecklistItemId.Type;
+
+export const TaskTemplateId = id("TaskTemplate");
+export type TaskTemplateId = typeof TaskTemplateId.Type;
+
+export const KanbanColumnId = id("KanbanColumn");
+export type KanbanColumnId = typeof KanbanColumnId.Type;
+
+export const SavedViewId = id("SavedView");
+export type SavedViewId = typeof SavedViewId.Type;
+
+export const ActivityLogId = id("ActivityLog");
+export type ActivityLogId = typeof ActivityLogId.Type;
+
+export const TagId = id("Tag");
+export type TagId = typeof TagId.Type;
+
+export const TaskTagId = id("TaskTag");
+export type TaskTagId = typeof TaskTagId.Type;
+
+export const LocalProjectNoteId = id("LocalProjectNote");
+export type LocalProjectNoteId = typeof LocalProjectNoteId.Type;
+
+export const ProjectNoteId = id("ProjectNote");
+export type ProjectNoteId = typeof ProjectNoteId.Type;
+
 export const Schema = {
   user: {
     id: UserId,
@@ -106,16 +139,20 @@ export const Schema = {
     estimate: nullOr(Int),
     isOnProduction: nullOr(SqliteBoolean),
     deploymentStageId: nullOr(DeploymentStageId),
+    recurrenceType: nullOr(String),
+    recurrenceInterval: nullOr(Int),
+    recurrenceEndDate: nullOr(String),
+    recurrenceDay: nullOr(Int),
   },
   tag: {
-    id: id("Tag"),
+    id: TagId,
     name: NonEmptyString100,
     color: String,
   },
   taskTag: {
-    id: id("TaskTag"),
+    id: TaskTagId,
     taskId: TaskId,
-    tagId: id("Tag"),
+    tagId: TagId,
   },
   attachment: {
     id: AttachmentId,
@@ -161,6 +198,82 @@ export const Schema = {
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
   },
+  // Task comments
+  taskComment: {
+    id: TaskCommentId,
+    taskId: TaskId,
+    userId: nullOr(UserId),
+    content: String,
+  },
+  // @mentions
+  mention: {
+    id: MentionId,
+    mentionedUserId: String,
+    mentionedByUserId: nullOr(String),
+    taskId: nullOr(TaskId),
+    sourceType: String, // 'description' | 'comment'
+    sourceId: nullOr(String),
+    isRead: nullOr(SqliteBoolean),
+  },
+  // Checklist items
+  checklistItem: {
+    id: ChecklistItemId,
+    taskId: TaskId,
+    title: NonEmptyString1000,
+    isChecked: nullOr(SqliteBoolean),
+    position: Int,
+  },
+  // Task templates
+  taskTemplate: {
+    id: TaskTemplateId,
+    name: NonEmptyString100,
+    taskName: nullOr(NonEmptyString100),
+    description: nullOr(String),
+    priority: String,
+    estimate: nullOr(Int),
+    projectId: nullOr(ProjectId),
+    position: Int,
+  },
+  // Kanban columns
+  kanbanColumn: {
+    id: KanbanColumnId,
+    slug: NonEmptyString100,
+    name: NonEmptyString100,
+    color: String,
+    icon: String,
+    position: Int,
+    isDefault: nullOr(SqliteBoolean),
+    showInKanban: nullOr(SqliteBoolean),
+  },
+  // Saved views
+  savedView: {
+    id: SavedViewId,
+    name: NonEmptyString100,
+    icon: nullOr(String),
+    filters: String,
+    isBuiltIn: nullOr(SqliteBoolean),
+    position: Int,
+  },
+  // Activity log
+  activityLog: {
+    id: ActivityLogId,
+    taskId: nullOr(TaskId),
+    actorId: nullOr(String),
+    action: String,
+    entityType: String,
+    field: nullOr(String),
+    oldValue: nullOr(String),
+    newValue: nullOr(String),
+    metadata: nullOr(String),
+  },
+  // Local project notes (not synced)
+  localProjectNote: {
+    id: LocalProjectNoteId,
+    projectId: ProjectId,
+    title: NonEmptyString100,
+    content: nullOr(String),
+    position: Int,
+  },
 };
 
 // Schema for shared projects (todocko-shared database)
@@ -202,16 +315,20 @@ export const ProjectSchema = {
     estimate: nullOr(Int),
     isOnProduction: nullOr(SqliteBoolean),
     deploymentStageId: nullOr(DeploymentStageId),
+    recurrenceType: nullOr(String),
+    recurrenceInterval: nullOr(Int),
+    recurrenceEndDate: nullOr(String),
+    recurrenceDay: nullOr(Int),
   },
   tag: {
-    id: id("Tag"),
+    id: TagId,
     name: NonEmptyString100,
     color: String,
   },
   taskTag: {
-    id: id("TaskTag"),
+    id: TaskTagId,
     taskId: TaskId,
-    tagId: id("Tag"),
+    tagId: TagId,
   },
   attachment: {
     id: AttachmentId,
@@ -249,6 +366,15 @@ export const ProjectSchema = {
     type: String, // 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'custom'
     url: NonEmptyString1000,
     label: nullOr(NonEmptyString100),
+    position: Int,
+  },
+  // Project notes (shared, synced)
+  projectNote: {
+    id: ProjectNoteId,
+    projectId: ProjectId,
+    title: NonEmptyString100,
+    content: nullOr(String),
+    createdBy: nullOr(String),
     position: Int,
   },
 };
