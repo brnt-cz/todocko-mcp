@@ -21,6 +21,7 @@ import { kanbanColumnTools, handleKanbanColumnTool } from "./kanbanColumns.js";
 import { savedViewTools, handleSavedViewTool } from "./savedViews.js";
 import { activityLogTools, handleActivityLogTool } from "./activityLog.js";
 import { projectNoteTools, handleProjectNoteTool } from "./projectNotes.js";
+import { systemNotificationTools, handleSystemNotificationTool } from "./systemNotifications.js";
 
 // Aggregated tool definitions
 export const tools: Tool[] = [
@@ -42,6 +43,7 @@ export const tools: Tool[] = [
   ...activityLogTools,
   ...projectNoteTools,
   ...sharedTools,
+  ...systemNotificationTools,
   ...diagnosticTools,
 ];
 
@@ -65,6 +67,7 @@ const handlers: Array<(name: string, args: Record<string, unknown>, evolu: Evolu
   handleActivityLogTool,
   handleProjectNoteTool,
   handleSharedTool,
+  handleSystemNotificationTool,
   (name, args, _evolu) => handleDiagnosticTool(name, args),
 ];
 
