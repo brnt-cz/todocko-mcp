@@ -13,11 +13,11 @@ import {
 } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning } from "./helpers.js";
 
-export const projectNoteTools: Tool[] = [
-  // Local project notes (not synced)
+export const projectDocTools: Tool[] = [
+  // Local project docs (not synced)
   {
-    name: "td_list_project_notes",
-    description: "List local project notes (not synced to shared projects)",
+    name: "td_list_project_docs",
+    description: "List local project document pages (not synced to shared projects)",
     inputSchema: {
       type: "object",
       properties: {
@@ -26,47 +26,49 @@ export const projectNoteTools: Tool[] = [
     },
   },
   {
-    name: "td_create_project_note",
-    description: "Create a local project note",
+    name: "td_create_project_doc",
+    description: "Create a local project document page",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string", description: "Project ID (required)" },
-        title: { type: "string", description: "Note title (required)" },
-        content: { type: "string", description: "Note content (HTML)" },
+        title: { type: "string", description: "Document page title (required)" },
+        content: { type: "string", description: "Document content (HTML)" },
+        parentDocId: { type: "string", description: "Parent document ID for hierarchy (null for root pages)" },
       },
       required: ["projectId", "title"],
     },
   },
   {
-    name: "td_update_project_note",
-    description: "Update a local project note",
+    name: "td_update_project_doc",
+    description: "Update a local project document page",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Note ID (required)" },
+        id: { type: "string", description: "Document page ID (required)" },
         title: { type: "string" },
         content: { type: "string" },
         position: { type: "number" },
+        parentDocId: { type: "string", description: "Parent document ID (null to make root page)" },
       },
       required: ["id"],
     },
   },
   {
-    name: "td_delete_project_note",
-    description: "Delete a local project note (soft delete)",
+    name: "td_delete_project_doc",
+    description: "Delete a local project document page (soft delete)",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Note ID (required)" },
+        id: { type: "string", description: "Document page ID (required)" },
       },
       required: ["id"],
     },
   },
-  // Shared project notes
+  // Shared project docs
   {
-    name: "td_list_shared_project_notes",
-    description: "List project notes from a shared project",
+    name: "td_list_shared_project_docs",
+    description: "List document pages from a shared project",
     inputSchema: {
       type: "object",
       properties: {
@@ -78,87 +80,89 @@ export const projectNoteTools: Tool[] = [
     },
   },
   {
-    name: "td_create_shared_project_note",
-    description: "Create a project note in a shared project",
+    name: "td_create_shared_project_doc",
+    description: "Create a document page in a shared project",
     inputSchema: {
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
         ownerSecret: { type: "string", description: "Owner secret (required)" },
         projectId: { type: "string", description: "Project ID (required)" },
-        title: { type: "string", description: "Note title (required)" },
-        content: { type: "string", description: "Note content (HTML)" },
+        title: { type: "string", description: "Document page title (required)" },
+        content: { type: "string", description: "Document content (HTML)" },
+        parentDocId: { type: "string", description: "Parent document ID for hierarchy (null for root pages)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "projectId", "title"],
     },
   },
   {
-    name: "td_update_shared_project_note",
-    description: "Update a project note in a shared project",
+    name: "td_update_shared_project_doc",
+    description: "Update a document page in a shared project",
     inputSchema: {
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
         ownerSecret: { type: "string", description: "Owner secret (required)" },
-        id: { type: "string", description: "Note ID (required)" },
+        id: { type: "string", description: "Document page ID (required)" },
         title: { type: "string" },
         content: { type: "string" },
         position: { type: "number" },
+        parentDocId: { type: "string", description: "Parent document ID (null to make root page)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
   },
   {
-    name: "td_delete_shared_project_note",
-    description: "Delete a project note in a shared project (soft delete)",
+    name: "td_delete_shared_project_doc",
+    description: "Delete a document page in a shared project (soft delete)",
     inputSchema: {
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
         ownerSecret: { type: "string", description: "Owner secret (required)" },
-        id: { type: "string", description: "Note ID (required)" },
+        id: { type: "string", description: "Document page ID (required)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
   },
 ];
 
-export async function handleProjectNoteTool(
+export async function handleProjectDocTool(
   name: string,
   args: Record<string, unknown>,
   evolu: EvoluInstance
 ): Promise<unknown> {
   switch (name) {
-    case "td_list_project_notes":
-      return listProjectNotes(evolu, args as { projectId?: string });
-    case "td_create_project_note":
-      return createProjectNote(evolu, args as { projectId: string; title: string; content?: string });
-    case "td_update_project_note":
-      return updateProjectNote(evolu, args as { id: string; title?: string; content?: string; position?: number });
-    case "td_delete_project_note":
-      return deleteProjectNote(evolu, args as { id: string });
-    case "td_list_shared_project_notes":
-      return listSharedProjectNotes(args as { sharedOwnerId: string; ownerSecret: string; projectId?: string });
-    case "td_create_shared_project_note":
-      return createSharedProjectNote(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string });
-    case "td_update_shared_project_note":
-      return updateSharedProjectNote(args as { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number });
-    case "td_delete_shared_project_note":
-      return deleteSharedProjectNote(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+    case "td_list_project_docs":
+      return listProjectDocs(evolu, args as { projectId?: string });
+    case "td_create_project_doc":
+      return createProjectDoc(evolu, args as { projectId: string; title: string; content?: string; parentDocId?: string });
+    case "td_update_project_doc":
+      return updateProjectDoc(evolu, args as { id: string; title?: string; content?: string; position?: number; parentDocId?: string });
+    case "td_delete_project_doc":
+      return deleteProjectDoc(evolu, args as { id: string });
+    case "td_list_shared_project_docs":
+      return listSharedProjectDocs(args as { sharedOwnerId: string; ownerSecret: string; projectId?: string });
+    case "td_create_shared_project_doc":
+      return createSharedProjectDoc(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string; parentDocId?: string });
+    case "td_update_shared_project_doc":
+      return updateSharedProjectDoc(args as { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number; parentDocId?: string });
+    case "td_delete_shared_project_doc":
+      return deleteSharedProjectDoc(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     default:
       return undefined;
   }
 }
 
-// --- Local project notes ---
+// --- Local project docs ---
 
-async function listProjectNotes(evolu: EvoluInstance, args: { projectId?: string }) {
+async function listProjectDocs(evolu: EvoluInstance, args: { projectId?: string }) {
   const query = evolu.createQuery((db: any) => {
     let q = db
       .selectFrom("localProjectNote")
-      .select(["id", "projectId", "title", "content", "position"])
+      .select(["id", "projectId", "title", "content", "position", "parentDocId"])
       .where("isDeleted", "is not", SQLITE_TRUE)
-      .where("isDoc", "is not", SQLITE_TRUE)
+      .where("isDoc", "=", SQLITE_TRUE)
       .orderBy("position", "asc");
     if (args.projectId) {
       q = q.where("projectId", "=", args.projectId as ProjectId);
@@ -168,20 +172,22 @@ async function listProjectNotes(evolu: EvoluInstance, args: { projectId?: string
   const result = await evolu.loadQuery(query);
   return {
     count: result.length,
-    notes: result.map((n: any) => ({
-      id: n.id, projectId: n.projectId, title: n.title, content: n.content, position: n.position,
+    docs: result.map((n: any) => ({
+      id: n.id, projectId: n.projectId, title: n.title, content: n.content,
+      position: n.position, parentDocId: n.parentDocId,
     })),
   };
 }
 
-async function createProjectNote(
+async function createProjectDoc(
   evolu: EvoluInstance,
-  args: { projectId: string; title: string; content?: string }
+  args: { projectId: string; title: string; content?: string; parentDocId?: string }
 ) {
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("localProjectNote").select(["position"])
       .where("projectId", "=", args.projectId as ProjectId)
       .where("isDeleted", "is not", SQLITE_TRUE)
+      .where("isDoc", "=", SQLITE_TRUE)
       .orderBy("position", "desc").limit(1)
   );
   const posResult = await evolu.loadQuery(posQuery);
@@ -193,40 +199,43 @@ async function createProjectNote(
     title: NonEmptyString100.orThrow(args.title),
     content: args.content ? EvoluString.orThrow(args.content) : null,
     position: Int.orThrow(maxPos + 1),
+    isDoc: SQLITE_TRUE,
+    parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) throw new Error(`Failed to create note: ${JSON.stringify(result.error)}`);
+  if (!result.ok) throw new Error(`Failed to create document page: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
 
-  return { success: true, noteId: result.value.id, message: `Note created${getSyncWarning()}` };
+  return { success: true, docId: result.value.id, message: `Document page created${getSyncWarning()}` };
 }
 
-async function updateProjectNote(
+async function updateProjectDoc(
   evolu: EvoluInstance,
-  args: { id: string; title?: string; content?: string; position?: number }
+  args: { id: string; title?: string; content?: string; position?: number; parentDocId?: string }
 ) {
   const updates: Record<string, unknown> = { id: args.id as LocalProjectNoteId };
   if (args.title !== undefined) updates.title = NonEmptyString100.orThrow(args.title);
   if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
+  if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
 
   const waiter = createMutationWaiter();
   evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete });
   await waiter.waitForSync();
 
-  return { success: true, message: `Note updated${getSyncWarning()}` };
+  return { success: true, message: `Document page updated${getSyncWarning()}` };
 }
 
-async function deleteProjectNote(evolu: EvoluInstance, args: { id: string }) {
+async function deleteProjectDoc(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
   evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
   await waiter.waitForSync();
-  return { success: true, message: "Note deleted" };
+  return { success: true, message: "Document page deleted" };
 }
 
-// --- Shared project notes ---
+// --- Shared project docs ---
 
-async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret: string; projectId?: string }) {
+async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret: string; projectId?: string }) {
   const projectEvolu = getProjectEvolu();
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
@@ -234,9 +243,9 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
     const query = projectEvolu.createQuery((db: any) => {
       let q = db
         .selectFrom("projectNote")
-        .select(["id", "projectId", "title", "content", "createdBy", "position"])
+        .select(["id", "projectId", "title", "content", "createdBy", "position", "parentDocId"])
         .where("isDeleted", "is not", SQLITE_TRUE)
-        .where("isDoc", "is not", SQLITE_TRUE)
+        .where("isDoc", "=", SQLITE_TRUE)
         .orderBy("position", "asc");
       if (args.projectId) {
         q = q.where("projectId", "=", args.projectId as ProjectId);
@@ -246,9 +255,9 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
     const result = await projectEvolu.loadQuery(query);
     return {
       count: result.length,
-      notes: result.map((n: any) => ({
+      docs: result.map((n: any) => ({
         id: n.id, projectId: n.projectId, title: n.title, content: n.content,
-        createdBy: n.createdBy, position: n.position,
+        createdBy: n.createdBy, position: n.position, parentDocId: n.parentDocId,
       })),
     };
   } finally {
@@ -256,8 +265,8 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
   }
 }
 
-async function createSharedProjectNote(
-  args: { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string }
+async function createSharedProjectDoc(
+  args: { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string; parentDocId?: string }
 ) {
   const projectEvolu = getProjectEvolu();
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
@@ -267,6 +276,7 @@ async function createSharedProjectNote(
       db.selectFrom("projectNote").select(["position"])
         .where("projectId", "=", args.projectId as ProjectId)
         .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("isDoc", "=", SQLITE_TRUE)
         .orderBy("position", "desc").limit(1)
     );
     const posResult = await projectEvolu.loadQuery(posQuery);
@@ -279,19 +289,21 @@ async function createSharedProjectNote(
       content: args.content ? EvoluString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
+      isDoc: SQLITE_TRUE,
+      parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
     }, { onComplete: waiter.onComplete });
 
-    if (!result.ok) throw new Error(`Failed to create shared note: ${JSON.stringify(result.error)}`);
+    if (!result.ok) throw new Error(`Failed to create shared document page: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
 
-    return { success: true, noteId: result.value.id, message: "Shared note created" };
+    return { success: true, docId: result.value.id, message: "Shared document page created" };
   } finally {
     stopUsingSharedOwner(owner);
   }
 }
 
-async function updateSharedProjectNote(
-  args: { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number }
+async function updateSharedProjectDoc(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number; parentDocId?: string }
 ) {
   const projectEvolu = getProjectEvolu();
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
@@ -301,18 +313,19 @@ async function updateSharedProjectNote(
     if (args.title !== undefined) updates.title = NonEmptyString100.orThrow(args.title);
     if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
+    if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
 
     const waiter = createMutationWaiter();
     projectEvolu.update("projectNote", updates as any, { onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
-    return { success: true, message: "Shared note updated" };
+    return { success: true, message: "Shared document page updated" };
   } finally {
     stopUsingSharedOwner(owner);
   }
 }
 
-async function deleteSharedProjectNote(
+async function deleteSharedProjectDoc(
   args: { sharedOwnerId: string; ownerSecret: string; id: string }
 ) {
   const projectEvolu = getProjectEvolu();
@@ -322,7 +335,7 @@ async function deleteSharedProjectNote(
     const waiter = createMutationWaiter();
     projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
     await waiter.waitForSync();
-    return { success: true, message: "Shared note deleted" };
+    return { success: true, message: "Shared document page deleted" };
   } finally {
     stopUsingSharedOwner(owner);
   }
