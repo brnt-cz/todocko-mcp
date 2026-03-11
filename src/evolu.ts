@@ -273,6 +273,8 @@ export const Schema = {
     title: NonEmptyString100,
     content: nullOr(String),
     position: Int,
+    isDoc: nullOr(SqliteBoolean),
+    parentDocId: nullOr(String),
   },
 };
 
@@ -376,6 +378,8 @@ export const ProjectSchema = {
     content: nullOr(String),
     createdBy: nullOr(String),
     position: Int,
+    isDoc: nullOr(SqliteBoolean),
+    parentDocId: nullOr(String),
   },
 };
 
