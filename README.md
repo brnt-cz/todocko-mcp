@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (80)
+## Dostupné nástroje (86)
 
 ### Projekty
 
@@ -261,6 +261,17 @@ Instalátor:
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
 
+### Analytika a přehledy
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_get_dashboard_summary` | Přehled: úkoly dnes, po termínu, odpracováno tento týden, nadcházející deadline |
+| `td_get_team_workload` | Vytížení týmu: odpracováno vs odhad vs kapacita per uživatel za období |
+| `td_list_recurring_tasks` | Seznam opakujících se úkolů s konfigurací opakování |
+| `td_list_overdue_tasks` | Úkoly po termínu (seřazené od nejstaršího) |
+| `td_list_tasks_by_date_range` | Úkoly filtrované podle scheduledDate nebo deadline v daném rozmezí |
+| `td_analyze_dependencies` | Analýza závislostí: blokované úkoly, blokující řetězce, kritická cesta |
+
 ### Diagnostika
 
 | Nástroj | Popis |
@@ -321,6 +332,16 @@ Označ úkol jako nasazený na produkci
 ```
 Jaké deployment stages má projekt?
 Vytvoř novou deployment stage "Staging" pro sdílený projekt
+```
+
+### Přehledy a analytika
+```
+Jaký mám dnes přehled? (dashboard summary)
+Jak je vytížený tým tento týden?
+Jaké úkoly jsou po termínu?
+Zobraz úkoly naplánované na příští týden
+Analyzuj závislosti v projektu TODO
+Jaké mám opakující se úkoly?
 ```
 
 ## Bezpečnost
@@ -496,7 +517,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (80)
+## Available Tools (86)
 
 ### Projects
 
@@ -667,6 +688,17 @@ The installer will:
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
 
+### Analytics & Reports
+
+| Tool | Description |
+|------|-------------|
+| `td_get_dashboard_summary` | Overview: tasks today, overdue, this week's worklog, upcoming deadlines |
+| `td_get_team_workload` | Team workload: logged vs estimate vs capacity per user for a period |
+| `td_list_recurring_tasks` | List recurring tasks with recurrence configuration |
+| `td_list_overdue_tasks` | Overdue tasks (sorted oldest first) |
+| `td_list_tasks_by_date_range` | Tasks filtered by scheduledDate or deadline within a date range |
+| `td_analyze_dependencies` | Dependency analysis: blocked tasks, blocking chains, critical path |
+
 ### Diagnostics
 
 | Tool | Description |
@@ -727,6 +759,16 @@ Mark task as deployed to production
 ```
 What deployment stages does the project have?
 Create a new deployment stage "Staging" for the shared project
+```
+
+### Analytics & Reports
+```
+What's my dashboard summary for today?
+How is the team's workload this week?
+What tasks are overdue?
+Show tasks scheduled for next week
+Analyze dependencies in project TODO
+What recurring tasks do I have?
 ```
 
 ## Security
