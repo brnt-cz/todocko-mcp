@@ -115,7 +115,11 @@ export const taskTools: Tool[] = [
         },
         recurrenceDay: {
           type: "string",
-          description: "Recurrence day info (e.g., 'monday' for weekly)",
+          description: "Recurrence day: for weekly=1-7 (Mon-Sun ISO), for monthly=1-31 (day of month) or 0 (last day), or null to clear",
+        },
+        sprintNumber: {
+          type: "number",
+          description: "Sprint number for the task",
         },
       },
       required: ["projectId"],
@@ -196,7 +200,11 @@ export const taskTools: Tool[] = [
         },
         recurrenceDay: {
           type: "string",
-          description: "Recurrence day info, or null to clear",
+          description: "Recurrence day: for weekly=1-7 (Mon-Sun ISO), for monthly=1-31 (day of month) or 0 (last day), or null to clear",
+        },
+        sprintNumber: {
+          type: "number",
+          description: "Sprint number for the task, or null to clear",
         },
       },
       required: ["id"],
@@ -302,6 +310,7 @@ export async function handleTaskTool(
         recurrenceInterval?: number;
         recurrenceEndDate?: string;
         recurrenceDay?: string;
+        sprintNumber?: number;
       });
     case "td_update_task":
       return updateTask(evolu, args as {
@@ -322,6 +331,7 @@ export async function handleTaskTool(
         recurrenceInterval?: number;
         recurrenceEndDate?: string | null;
         recurrenceDay?: string | null;
+        sprintNumber?: number | null;
       });
     case "td_search_tasks":
       return searchTasks(evolu, args as { query: string; limit?: number });
@@ -388,6 +398,7 @@ async function listTasks(
         "task.position",
         "task.isOnProduction",
         "task.deploymentStageId",
+        "task.sprintNumber",
         "project.id as projectId",
         "project.name as projectName",
         "project.code as projectCode",
@@ -430,6 +441,7 @@ async function listTasks(
       estimate: t.estimate,
       completedAt: t.completedAt,
       isOnProduction: t.isOnProduction === SQLITE_TRUE,
+      sprintNumber: t.sprintNumber ?? null,
       deploymentStage: t.deploymentStageId
         ? {
             id: t.deploymentStageId,
@@ -485,6 +497,7 @@ async function getTask(
         "task.position",
         "task.isOnProduction",
         "task.deploymentStageId",
+        "task.sprintNumber",
         "project.id as projectId",
         "project.name as projectName",
         "project.code as projectCode",
@@ -538,6 +551,7 @@ async function getTask(
     totalLoggedMinutes,
     completedAt: t.completedAt,
     isOnProduction: t.isOnProduction === SQLITE_TRUE,
+    sprintNumber: t.sprintNumber ?? null,
     deploymentStage: t.deploymentStageId
       ? {
           id: t.deploymentStageId,
@@ -578,6 +592,7 @@ async function createTask(
     recurrenceInterval?: number;
     recurrenceEndDate?: string;
     recurrenceDay?: string;
+    sprintNumber?: number;
   }
 ) {
   // Get project to generate task code
@@ -644,6 +659,7 @@ async function createTask(
     recurrenceInterval: args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null,
     recurrenceEndDate: args.recurrenceEndDate || null,
     recurrenceDay: args.recurrenceDay || null,
+    sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
   }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
@@ -686,6 +702,7 @@ async function updateTask(
     recurrenceInterval?: number;
     recurrenceEndDate?: string | null;
     recurrenceDay?: string | null;
+    sprintNumber?: number | null;
   }
 ) {
   const updates: Record<string, unknown> = {
@@ -744,6 +761,9 @@ async function updateTask(
   }
   if (args.recurrenceDay !== undefined) {
     updates.recurrenceDay = args.recurrenceDay || null;
+  }
+  if (args.sprintNumber !== undefined) {
+    updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
   }
 
   const waiter = createMutationWaiter();

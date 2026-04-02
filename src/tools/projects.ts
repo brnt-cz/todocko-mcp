@@ -82,6 +82,14 @@ export const projectTools: Tool[] = [
           type: "boolean",
           description: "Archive or unarchive the project",
         },
+        isHiddenFromFilters: {
+          type: "boolean",
+          description: "Hide project from dashboard filters",
+        },
+        autoApproveMembers: {
+          type: "boolean",
+          description: "Auto-approve new members joining the project",
+        },
       },
       required: ["id"],
     },
@@ -115,7 +123,7 @@ export async function handleProjectTool(
     case "td_create_project":
       return createProject(evolu, args as { name: string; code?: string; color?: string });
     case "td_update_project":
-      return updateProject(evolu, args as { id: string; name?: string; code?: string; color?: string; isArchived?: boolean });
+      return updateProject(evolu, args as { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean });
     case "td_delete_project":
       return deleteProject(evolu, args as { id: string });
     default:
@@ -230,7 +238,7 @@ async function createProject(
 
 async function updateProject(
   evolu: EvoluInstance,
-  args: { id: string; name?: string; code?: string; color?: string; isArchived?: boolean }
+  args: { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean }
 ) {
   const updates: Record<string, unknown> = {
     id: args.id as ProjectId,
@@ -247,6 +255,12 @@ async function updateProject(
   }
   if (args.isArchived !== undefined) {
     updates.isArchived = args.isArchived ? SQLITE_TRUE : null;
+  }
+  if (args.isHiddenFromFilters !== undefined) {
+    updates.isHiddenFromFilters = args.isHiddenFromFilters ? SQLITE_TRUE : null;
+  }
+  if (args.autoApproveMembers !== undefined) {
+    updates.autoApproveMembers = args.autoApproveMembers ? SQLITE_TRUE : null;
   }
 
   const waiter = createMutationWaiter();
