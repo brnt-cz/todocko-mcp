@@ -99,7 +99,7 @@ Instalátor:
 | `td_list_projects` | Seznam všech projektů |
 | `td_get_project` | Detail projektu podle ID nebo kódu |
 | `td_create_project` | Vytvoření nového projektu |
-| `td_update_project` | Aktualizace projektu |
+| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters) |
 | `td_delete_project` | Smazání projektu (soft delete) |
 
 ### Úkoly
@@ -108,8 +108,8 @@ Instalátor:
 |---------|-------|
 | `td_list_tasks` | Seznam úkolů s filtry (projekt, status, priorita, assignee) |
 | `td_get_task` | Detail úkolu podle ID nebo kódu (např. `PROJ-123`) |
-| `td_create_task` | Vytvoření nového úkolu (včetně recurrence) |
-| `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence) |
+| `td_create_task` | Vytvoření nového úkolu (včetně recurrence, sprintNumber) |
+| `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence, sprintNumber) |
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
 | `td_bulk_update_tasks` | Hromadná aktualizace více úkolů |
 | `td_bulk_delete_tasks` | Hromadné smazání více úkolů |
@@ -526,7 +526,7 @@ The installer will:
 | `td_list_projects` | List all projects |
 | `td_get_project` | Get project details by ID or code |
 | `td_create_project` | Create a new project |
-| `td_update_project` | Update a project |
+| `td_update_project` | Update a project (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters) |
 | `td_delete_project` | Delete a project (soft delete) |
 
 ### Tasks
@@ -535,8 +535,8 @@ The installer will:
 |------|-------------|
 | `td_list_tasks` | List tasks with filters (project, status, priority, assignee) |
 | `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`) |
-| `td_create_task` | Create a new task (with recurrence support) |
-| `td_update_task` | Update an existing task (with recurrence support) |
+| `td_create_task` | Create a new task (with recurrence + sprint support) |
+| `td_update_task` | Update an existing task (with recurrence + sprint support) |
 | `td_search_tasks` | Search tasks by text |
 | `td_bulk_update_tasks` | Bulk update multiple tasks |
 | `td_bulk_delete_tasks` | Bulk delete multiple tasks |
