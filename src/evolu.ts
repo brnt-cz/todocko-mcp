@@ -587,6 +587,50 @@ function createEvoluDeps(platformDeps: DbWorkerPlatformDeps, onReloadApp?: () =>
 }
 
 /**
+ * Ensure columns declared in Schema exist in the SQLite database.
+ * Evolu's ensureSchema doesn't always add new columns to existing tables,
+ * which causes loadQuery to hang silently when SELECTing missing columns.
+ */
+function ensureMissingColumns(): void {
+  const dbPath = getDbPath();
+  if (!existsSync(dbPath)) return;
+
+  try {
+    const db = new Database(dbPath);
+
+    // Map of table -> expected columns (from Schema) with their SQLite types
+    const expectedColumns: Record<string, string[]> = {};
+    for (const [tableName, tableSchema] of Object.entries(Schema)) {
+      expectedColumns[tableName] = Object.keys(tableSchema).filter(k => k !== "id");
+    }
+
+    for (const [tableName, columns] of Object.entries(expectedColumns)) {
+      // Check if table exists
+      const tableExists = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+      ).get(tableName);
+      if (!tableExists) continue;
+
+      // Get existing columns
+      const existingCols = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
+      const existingColNames = new Set(existingCols.map(c => c.name));
+
+      // Add missing columns
+      for (const col of columns) {
+        if (!existingColNames.has(col)) {
+          console.error(`Adding missing column ${tableName}.${col}`);
+          db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${col} ANY`).run();
+        }
+      }
+    }
+
+    db.close();
+  } catch (error) {
+    console.error("Error ensuring missing columns:", error);
+  }
+}
+
+/**
  * Initialize Evolu with the given mnemonic.
  *
  * This creates an Evolu instance that syncs with the Todocko relay servers.
@@ -606,6 +650,10 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
 
   const platformDeps = createNodejsPlatformDeps();
   const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
+
+  // Ensure missing columns exist in DB before Evolu starts
+  // Evolu's ensureSchema doesn't always add new columns to existing tables
+  ensureMissingColumns();
 
   // Check if database already has the correct owner
   const ownerAlreadySet = checkExistingOwner(mnemonic);
