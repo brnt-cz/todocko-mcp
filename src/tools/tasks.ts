@@ -438,6 +438,7 @@ async function listTasks(
         "position",
         "isOnProduction",
         "deploymentStageId",
+        "sprintNumber",
         "projectId",
         "assigneeId",
       ])
@@ -496,6 +497,7 @@ async function listTasks(
         estimate: t.estimate,
         completedAt: t.completedAt,
         isOnProduction: t.isOnProduction === SQLITE_TRUE,
+        sprintNumber: t.sprintNumber ?? null,
         deploymentStage: stage
           ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
           : null,
@@ -538,6 +540,7 @@ async function getTask(
         "position",
         "isOnProduction",
         "deploymentStageId",
+        "sprintNumber",
         "projectId",
         "assigneeId",
       ])
@@ -593,6 +596,7 @@ async function getTask(
     totalLoggedMinutes,
     completedAt: t.completedAt,
     isOnProduction: t.isOnProduction === SQLITE_TRUE,
+    sprintNumber: t.sprintNumber ?? null,
     deploymentStage: stage
       ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
       : null,
