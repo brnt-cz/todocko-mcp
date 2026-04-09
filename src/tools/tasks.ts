@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery } from "./helpers.js";
 
 export const taskTools: Tool[] = [
   {
@@ -350,6 +350,48 @@ export async function handleTaskTool(
   }
 }
 
+// Helper functions to load related data without LEFT JOINs
+// Evolu's loadQuery hangs indefinitely with LEFT JOIN queries in Node.js
+
+async function loadProjectsMap(evolu: EvoluInstance, ids: Set<string>): Promise<Map<string, any>> {
+  if (ids.size === 0) return new Map();
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom("project").select(["id", "name", "code", "color"]).where("isDeleted", "is not", SQLITE_TRUE)
+  );
+  const rows = await safeLoadQuery(evolu,query);
+  const map = new Map<string, any>();
+  for (const r of rows as any[]) {
+    if (ids.has(r.id)) map.set(r.id, r);
+  }
+  return map;
+}
+
+async function loadUsersMap(evolu: EvoluInstance, ids: Set<string>): Promise<Map<string, any>> {
+  if (ids.size === 0) return new Map();
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom("user").select(["id", "name"]).where("isDeleted", "is not", SQLITE_TRUE)
+  );
+  const rows = await safeLoadQuery(evolu,query);
+  const map = new Map<string, any>();
+  for (const r of rows as any[]) {
+    if (ids.has(r.id)) map.set(r.id, r);
+  }
+  return map;
+}
+
+async function loadDeploymentStagesMap(evolu: EvoluInstance, ids: Set<string>): Promise<Map<string, any>> {
+  if (ids.size === 0) return new Map();
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom("deploymentStage").select(["id", "name", "color"]).where("isDeleted", "is not", SQLITE_TRUE)
+  );
+  const rows = await safeLoadQuery(evolu,query);
+  const map = new Map<string, any>();
+  for (const r of rows as any[]) {
+    if (ids.has(r.id)) map.set(r.id, r);
+  }
+  return map;
+}
+
 async function listTasks(
   evolu: EvoluInstance,
   args: {
@@ -372,98 +414,99 @@ async function listTasks(
         .where("isDeleted", "is not", SQLITE_TRUE)
         .limit(1)
     );
-    const projectResult = await evolu.loadQuery(projectQuery);
+    const projectResult = await safeLoadQuery(evolu,projectQuery);
     if (projectResult.length > 0) {
       projectIdToFilter = (projectResult[0] as any).id;
     }
   }
 
+  // Query tasks without LEFT JOINs (Evolu loadQuery hangs with joins)
   const query = evolu.createQuery((db: any) => {
     let q = db
       .selectFrom("task")
-      .leftJoin("project", "task.projectId", "project.id")
-      .leftJoin("user", "task.assigneeId", "user.id")
-      .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
       .select([
-        "task.id",
-        "task.title",
-        "task.name",
-        "task.status",
-        "task.priority",
-        "task.deadline",
-        "task.scheduledDate",
-        "task.isBlocked",
-        "task.estimate",
-        "task.completedAt",
-        "task.position",
-        "task.isOnProduction",
-        "task.deploymentStageId",
-        "task.sprintNumber",
-        "project.id as projectId",
-        "project.name as projectName",
-        "project.code as projectCode",
-        "project.color as projectColor",
-        "user.id as assigneeId",
-        "user.name as assigneeName",
-        "deploymentStage.name as deploymentStageName",
-        "deploymentStage.color as deploymentStageColor",
+        "id",
+        "title",
+        "name",
+        "status",
+        "priority",
+        "deadline",
+        "scheduledDate",
+        "isBlocked",
+        "estimate",
+        "completedAt",
+        "position",
+        "isOnProduction",
+        "deploymentStageId",
+        "projectId",
+        "assigneeId",
       ])
-      .where("task.isDeleted", "is not", SQLITE_TRUE);
+      .where("isDeleted", "is not", SQLITE_TRUE);
 
     if (projectIdToFilter) {
-      q = q.where("task.projectId", "=", projectIdToFilter);
+      q = q.where("projectId", "=", projectIdToFilter);
     }
     if (args.status) {
-      q = q.where("task.status", "=", args.status);
+      q = q.where("status", "=", args.status);
     }
     if (args.priority) {
-      q = q.where("task.priority", "=", args.priority);
+      q = q.where("priority", "=", args.priority);
     }
     if (args.assigneeId) {
-      q = q.where("task.assigneeId", "=", args.assigneeId as UserId);
+      q = q.where("assigneeId", "=", args.assigneeId as UserId);
     }
 
-    return q.orderBy("task.position", "asc").limit(args.limit || 50);
+    return q.orderBy("position", "asc").limit(args.limit || 50);
   });
 
-  const result = await evolu.loadQuery(query);
+  const result = await safeLoadQuery(evolu,query);
+
+  // Collect unique IDs for enrichment
+  const projectIds = new Set<string>();
+  const userIds = new Set<string>();
+  const stageIds = new Set<string>();
+  for (const t of result as any[]) {
+    if (t.projectId) projectIds.add(t.projectId);
+    if (t.assigneeId) userIds.add(t.assigneeId);
+    if (t.deploymentStageId) stageIds.add(t.deploymentStageId);
+  }
+
+  // Load related data in parallel (separate queries, no joins)
+  const [projectsMap, usersMap, stagesMap] = await Promise.all([
+    loadProjectsMap(evolu, projectIds),
+    loadUsersMap(evolu, userIds),
+    loadDeploymentStagesMap(evolu, stageIds),
+  ]);
+
   return {
     count: result.length,
-    tasks: result.map((t: any) => ({
-      id: t.id,
-      code: t.title,
-      name: t.name,
-      status: t.status,
-      priority: t.priority,
-      deadline: t.deadline,
-      scheduledDate: t.scheduledDate,
-      isBlocked: t.isBlocked === SQLITE_TRUE,
-      estimate: t.estimate,
-      completedAt: t.completedAt,
-      isOnProduction: t.isOnProduction === SQLITE_TRUE,
-      sprintNumber: t.sprintNumber ?? null,
-      deploymentStage: t.deploymentStageId
-        ? {
-            id: t.deploymentStageId,
-            name: t.deploymentStageName,
-            color: t.deploymentStageColor,
-          }
-        : null,
-      project: t.projectId
-        ? {
-            id: t.projectId,
-            name: t.projectName,
-            code: t.projectCode,
-            color: t.projectColor,
-          }
-        : null,
-      assignee: t.assigneeId
-        ? {
-            id: t.assigneeId,
-            name: t.assigneeName,
-          }
-        : null,
-    })),
+    tasks: result.map((t: any) => {
+      const project = projectsMap.get(t.projectId);
+      const assignee = usersMap.get(t.assigneeId);
+      const stage = stagesMap.get(t.deploymentStageId);
+      return {
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        deadline: t.deadline,
+        scheduledDate: t.scheduledDate,
+        isBlocked: t.isBlocked === SQLITE_TRUE,
+        estimate: t.estimate,
+        completedAt: t.completedAt,
+        isOnProduction: t.isOnProduction === SQLITE_TRUE,
+        deploymentStage: stage
+          ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
+          : null,
+        project: project
+          ? { id: t.projectId, name: project.name, code: project.code, color: project.color }
+          : null,
+        assignee: assignee
+          ? { id: t.assigneeId, name: assignee.name }
+          : null,
+      };
+    }),
   };
 }
 
@@ -475,66 +518,65 @@ async function getTask(
     throw new Error("Either id or code is required");
   }
 
+  // Query task without LEFT JOINs (Evolu loadQuery hangs with joins)
   const query = evolu.createQuery((db: any) => {
     let q = db
       .selectFrom("task")
-      .leftJoin("project", "task.projectId", "project.id")
-      .leftJoin("user", "task.assigneeId", "user.id")
-      .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
       .select([
-        "task.id",
-        "task.title",
-        "task.name",
-        "task.description",
-        "task.status",
-        "task.priority",
-        "task.deadline",
-        "task.scheduledDate",
-        "task.isBlocked",
-        "task.blockedReason",
-        "task.estimate",
-        "task.completedAt",
-        "task.position",
-        "task.isOnProduction",
-        "task.deploymentStageId",
-        "task.sprintNumber",
-        "project.id as projectId",
-        "project.name as projectName",
-        "project.code as projectCode",
-        "project.color as projectColor",
-        "user.id as assigneeId",
-        "user.name as assigneeName",
-        "deploymentStage.name as deploymentStageName",
-        "deploymentStage.color as deploymentStageColor",
+        "id",
+        "title",
+        "name",
+        "description",
+        "status",
+        "priority",
+        "deadline",
+        "scheduledDate",
+        "isBlocked",
+        "blockedReason",
+        "estimate",
+        "completedAt",
+        "position",
+        "isOnProduction",
+        "deploymentStageId",
+        "projectId",
+        "assigneeId",
       ])
-      .where("task.isDeleted", "is not", SQLITE_TRUE);
+      .where("isDeleted", "is not", SQLITE_TRUE);
 
     if (args.id) {
-      q = q.where("task.id", "=", args.id as TaskId);
+      q = q.where("id", "=", args.id as TaskId);
     } else if (args.code) {
-      q = q.where("task.title", "=", args.code as unknown as typeof NonEmptyString100.Type);
+      q = q.where("title", "=", args.code as unknown as typeof NonEmptyString100.Type);
     }
 
     return q.limit(1);
   });
 
-  const result = await evolu.loadQuery(query);
+  const result = await safeLoadQuery(evolu,query);
   if (result.length === 0) {
     return { error: "Task not found" };
   }
 
   const t = result[0] as any;
 
-  // Get worklogs for total logged time
-  const worklogsQuery = evolu.createQuery((db: any) =>
-    db
-      .selectFrom("worklog")
-      .select(["durationMinutes"])
-      .where("taskId", "=", t.id)
-      .where("isDeleted", "is not", SQLITE_TRUE)
-  );
-  const worklogs = await evolu.loadQuery(worklogsQuery);
+  // Load related data and worklogs in parallel (no joins)
+  const [projectsMap, usersMap, stagesMap, worklogs] = await Promise.all([
+    t.projectId ? loadProjectsMap(evolu, new Set([t.projectId])) : Promise.resolve(new Map()),
+    t.assigneeId ? loadUsersMap(evolu, new Set([t.assigneeId])) : Promise.resolve(new Map()),
+    t.deploymentStageId ? loadDeploymentStagesMap(evolu, new Set([t.deploymentStageId])) : Promise.resolve(new Map()),
+    evolu.loadQuery(evolu.createQuery((db: any) =>
+      db
+        .selectFrom("worklog")
+        .select(["durationMinutes"])
+        .where("taskId", "=", t.id)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    )),
+  ]);
+
   const totalLoggedMinutes = worklogs.reduce((sum: number, w: any) => sum + (w.durationMinutes || 0), 0);
+  const project = projectsMap.get(t.projectId);
+  const assignee = usersMap.get(t.assigneeId);
+  const stage = stagesMap.get(t.deploymentStageId);
 
   return {
     id: t.id,
@@ -551,27 +593,14 @@ async function getTask(
     totalLoggedMinutes,
     completedAt: t.completedAt,
     isOnProduction: t.isOnProduction === SQLITE_TRUE,
-    sprintNumber: t.sprintNumber ?? null,
-    deploymentStage: t.deploymentStageId
-      ? {
-          id: t.deploymentStageId,
-          name: t.deploymentStageName,
-          color: t.deploymentStageColor,
-        }
+    deploymentStage: stage
+      ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
       : null,
-    project: t.projectId
-      ? {
-          id: t.projectId,
-          name: t.projectName,
-          code: t.projectCode,
-          color: t.projectColor,
-        }
+    project: project
+      ? { id: t.projectId, name: project.name, code: project.code, color: project.color }
       : null,
-    assignee: t.assigneeId
-      ? {
-          id: t.assigneeId,
-          name: t.assigneeName,
-        }
+    assignee: assignee
+      ? { id: t.assigneeId, name: assignee.name }
       : null,
   };
 }
@@ -604,7 +633,7 @@ async function createTask(
       .where("isDeleted", "is not", SQLITE_TRUE)
       .limit(1)
   );
-  const projectResult = await evolu.loadQuery(projectQuery);
+  const projectResult = await safeLoadQuery(evolu,projectQuery);
   if (projectResult.length === 0) {
     throw new Error("Project not found");
   }
@@ -617,7 +646,7 @@ async function createTask(
       .select(["title"])
       .where("projectId", "=", project.id)
   );
-  const existingTasks = await evolu.loadQuery(tasksQuery);
+  const existingTasks = await safeLoadQuery(evolu,tasksQuery);
 
   const projectCode = project.code || "TASK";
   let maxNum = 0;
@@ -635,7 +664,7 @@ async function createTask(
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("task").select(["position"]).orderBy("position", "desc").limit(1)
   );
-  const posResult = await evolu.loadQuery(posQuery);
+  const posResult = await safeLoadQuery(evolu,posQuery);
   const maxPosition = posResult.length > 0 ? ((posResult[0] as any).position || 0) : 0;
 
   // Create task with onComplete tracking
@@ -786,26 +815,23 @@ async function searchTasks(
   const searchQuery = args.query.toLowerCase();
   const limit = args.limit || 20;
 
+  // Query tasks without LEFT JOINs (Evolu loadQuery hangs with joins)
   const query = evolu.createQuery((db: any) =>
     db
       .selectFrom("task")
-      .leftJoin("project", "task.projectId", "project.id")
       .select([
-        "task.id",
-        "task.title",
-        "task.name",
-        "task.description",
-        "task.status",
-        "task.priority",
-        "project.id as projectId",
-        "project.name as projectName",
-        "project.code as projectCode",
-        "project.color as projectColor",
+        "id",
+        "title",
+        "name",
+        "description",
+        "status",
+        "priority",
+        "projectId",
       ])
-      .where("task.isDeleted", "is not", SQLITE_TRUE)
+      .where("isDeleted", "is not", SQLITE_TRUE)
   );
 
-  const allTasks = await evolu.loadQuery(query);
+  const allTasks = await safeLoadQuery(evolu,query);
 
   const filtered = allTasks.filter((t: any) => {
     const title = (t.title || "").toLowerCase();
@@ -820,24 +846,29 @@ async function searchTasks(
 
   const limited = filtered.slice(0, limit);
 
+  // Enrich with project data
+  const projectIds = new Set<string>();
+  for (const t of limited as any[]) {
+    if (t.projectId) projectIds.add(t.projectId);
+  }
+  const projectsMap = await loadProjectsMap(evolu, projectIds);
+
   return {
     count: limited.length,
     totalMatches: filtered.length,
-    tasks: limited.map((t: any) => ({
-      id: t.id,
-      code: t.title,
-      name: t.name,
-      status: t.status,
-      priority: t.priority,
-      project: t.projectId
-        ? {
-            id: t.projectId,
-            name: t.projectName,
-            code: t.projectCode,
-            color: t.projectColor,
-          }
-        : null,
-    })),
+    tasks: limited.map((t: any) => {
+      const project = projectsMap.get(t.projectId);
+      return {
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        project: project
+          ? { id: t.projectId, name: project.name, code: project.code, color: project.color }
+          : null,
+      };
+    }),
   };
 }
 
@@ -920,7 +951,7 @@ async function bulkDeleteTasks(
           .where("taskId", "=", taskId as TaskId)
           .where("isDeleted", "is not", SQLITE_TRUE)
       );
-      const worklogs = await evolu.loadQuery(worklogsQuery);
+      const worklogs = await safeLoadQuery(evolu,worklogsQuery);
       for (const w of worklogs) {
         evolu.update("worklog", { id: (w as any).id, isDeleted: SQLITE_TRUE } as any);
       }
@@ -933,7 +964,7 @@ async function bulkDeleteTasks(
           .where("taskId", "=", taskId as TaskId)
           .where("isDeleted", "is not", SQLITE_TRUE)
       );
-      const attachments = await evolu.loadQuery(attachmentsQuery);
+      const attachments = await safeLoadQuery(evolu,attachmentsQuery);
       for (const a of attachments) {
         evolu.update("attachment", { id: (a as any).id, data: null, isDeleted: SQLITE_TRUE } as any);
       }
