@@ -1,4 +1,4 @@
-import { getSyncHealth, trackOnComplete } from "../evolu.js";
+import { getSyncHealth, trackOnComplete, type EvoluInstance } from "../evolu.js";
 
 // Network delay after onComplete - time for WebSocket to send data to relay
 // onComplete means local DB is updated; this delay allows network round-trip
@@ -44,4 +44,18 @@ export async function waitForSync(): Promise<void> {
 export function getSyncWarning(): string {
   const health = getSyncHealth();
   return health.lastError ? ` (sync warning: ${health.lastError})` : '';
+}
+
+/**
+ * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
+ * If the query doesn't resolve within the timeout, throws an error.
+ */
+export async function safeLoadQuery(evolu: EvoluInstance, query: any, timeoutMs = 15000): Promise<any[]> {
+  const result = await Promise.race([
+    evolu.loadQuery(query),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`loadQuery timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+  return result as any[];
 }
