@@ -119,6 +119,7 @@ export const Schema = {
     color: String,
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
+    autoApproveMembers: nullOr(SqliteBoolean),
     position: Int,
   },
   task: {
@@ -143,6 +144,7 @@ export const Schema = {
     recurrenceInterval: nullOr(Int),
     recurrenceEndDate: nullOr(String),
     recurrenceDay: nullOr(Int),
+    sprintNumber: nullOr(Int),
   },
   tag: {
     id: TagId,
@@ -197,6 +199,7 @@ export const Schema = {
     joinedAt: String,
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
+    autoApproveMembers: nullOr(SqliteBoolean),
   },
   // Task comments
   taskComment: {
@@ -287,6 +290,7 @@ export const ProjectSchema = {
     color: String,
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
+    autoApproveMembers: nullOr(SqliteBoolean),
     position: Int,
   },
   projectMember: {
@@ -321,6 +325,7 @@ export const ProjectSchema = {
     recurrenceInterval: nullOr(Int),
     recurrenceEndDate: nullOr(String),
     recurrenceDay: nullOr(Int),
+    sprintNumber: nullOr(Int),
   },
   tag: {
     id: TagId,
