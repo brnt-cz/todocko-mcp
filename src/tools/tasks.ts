@@ -257,6 +257,10 @@ export const taskTools: Tool[] = [
           type: "string",
           description: "Deployment stage ID, or null to clear",
         },
+        sprintNumber: {
+          type: "number",
+          description: "Sprint number for the tasks, or null to clear",
+        },
       },
       required: ["taskIds"],
     },
@@ -342,6 +346,7 @@ export async function handleTaskTool(
         priority?: string;
         assigneeId?: string | null;
         deploymentStageId?: string | null;
+        sprintNumber?: number | null;
       });
     case "td_bulk_delete_tasks":
       return bulkDeleteTasks(evolu, args as { taskIds: string[] });
@@ -884,6 +889,7 @@ async function bulkUpdateTasks(
     priority?: string;
     assigneeId?: string | null;
     deploymentStageId?: string | null;
+    sprintNumber?: number | null;
   }
 ) {
   if (!args.taskIds || args.taskIds.length === 0) {
@@ -915,6 +921,9 @@ async function bulkUpdateTasks(
       }
       if (args.deploymentStageId !== undefined) {
         updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
+      }
+      if (args.sprintNumber !== undefined) {
+        updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
       }
 
       evolu.update("task", updates as any);
