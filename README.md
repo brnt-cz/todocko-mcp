@@ -111,8 +111,9 @@ Instalátor:
 | `td_create_task` | Vytvoření nového úkolu (včetně recurrence, sprintNumber) |
 | `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence, sprintNumber) |
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
-| `td_bulk_update_tasks` | Hromadná aktualizace více úkolů |
+| `td_bulk_update_tasks` | Hromadná aktualizace více úkolů (včetně sprintNumber) |
 | `td_bulk_delete_tasks` | Hromadné smazání více úkolů |
+| `td_list_git_events` | Git aktivita pro úkol (commits, PR) z relay serveru |
 
 ### Uživatelé
 
@@ -251,7 +252,7 @@ Instalátor:
 |---------|-------|
 | `td_list_shared_projects` | Seznam sdílených projektů |
 | `td_list_shared_tasks` | Seznam úkolů ze sdíleného projektu |
-| `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu |
+| `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu (všechna pole včetně recurrence, estimate, blocking) |
 | `td_list_shared_deployment_stages` | Seznam deployment stages pro sdílený projekt |
 | `td_create_shared_deployment_stage` | Vytvoření deployment stage ve sdíleném projektu |
 | `td_list_shared_repository_links` | Seznam repozitářových linků sdíleného projektu |

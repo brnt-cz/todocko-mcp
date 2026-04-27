@@ -4,6 +4,7 @@ import {
   SQLITE_TRUE,
   type TaskId,
   type ProjectId,
+  type UserId,
   type DeploymentStageId,
   type RepositoryLinkId,
   type EvoluInstance,
@@ -109,9 +110,58 @@ export const sharedTools: Tool[] = [
           type: "boolean",
           description: "Set production badge",
         },
+        description: {
+          type: "string",
+          description: "Task description (HTML supported)",
+        },
+        deadline: {
+          type: "string",
+          description: "Deadline in ISO format, or null to clear",
+        },
+        scheduledDate: {
+          type: "string",
+          description: "Scheduled date (YYYY-MM-DD), or null to clear",
+        },
+        assigneeId: {
+          type: "string",
+          description: "User ID to assign, or null to unassign",
+        },
+        estimate: {
+          type: "number",
+          description: "Time estimate in minutes",
+        },
+        isBlocked: {
+          type: "boolean",
+          description: "Set blocked status",
+        },
+        blockedReason: {
+          type: "string",
+          description: "Reason for being blocked",
+        },
         deploymentStageId: {
           type: "string",
           description: "Deployment stage ID, or null to clear",
+        },
+        recurrenceType: {
+          type: "string",
+          enum: ["none", "daily", "weekly", "monthly", "yearly", "custom"],
+          description: "Recurrence type",
+        },
+        recurrenceInterval: {
+          type: "number",
+          description: "Recurrence interval (e.g., every 2 weeks)",
+        },
+        recurrenceEndDate: {
+          type: "string",
+          description: "Recurrence end date (ISO format), or null to clear",
+        },
+        recurrenceDay: {
+          type: "string",
+          description: "Recurrence day: for weekly=1-7 (Mon-Sun ISO), for monthly=1-31 (day of month) or 0 (last day), or null to clear",
+        },
+        sprintNumber: {
+          type: "number",
+          description: "Sprint number for the task, or null to clear",
         },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
@@ -232,10 +282,22 @@ export async function handleSharedTool(
         ownerSecret: string;
         id: string;
         name?: string;
+        description?: string;
         status?: string;
         priority?: string;
+        deadline?: string | null;
+        scheduledDate?: string | null;
+        assigneeId?: string | null;
+        estimate?: number;
+        isBlocked?: boolean;
+        blockedReason?: string;
         isOnProduction?: boolean;
         deploymentStageId?: string | null;
+        recurrenceType?: string;
+        recurrenceInterval?: number;
+        recurrenceEndDate?: string | null;
+        recurrenceDay?: string | null;
+        sprintNumber?: number | null;
       });
     case "td_create_shared_deployment_stage":
       return createSharedDeploymentStage(args as {
@@ -482,10 +544,22 @@ async function updateSharedTask(
     ownerSecret: string;
     id: string;
     name?: string;
+    description?: string;
     status?: string;
     priority?: string;
+    deadline?: string | null;
+    scheduledDate?: string | null;
+    assigneeId?: string | null;
+    estimate?: number;
+    isBlocked?: boolean;
+    blockedReason?: string;
     isOnProduction?: boolean;
     deploymentStageId?: string | null;
+    recurrenceType?: string;
+    recurrenceInterval?: number;
+    recurrenceEndDate?: string | null;
+    recurrenceDay?: string | null;
+    sprintNumber?: number | null;
   }
 ) {
   const projectEvolu = getProjectEvolu();
@@ -505,6 +579,9 @@ async function updateSharedTask(
     if (args.name !== undefined) {
       updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
     }
+    if (args.description !== undefined) {
+      updates.description = args.description ? NonEmptyString1000.orThrow(args.description) : null;
+    }
     if (args.status !== undefined) {
       updates.status = args.status;
       if (args.status === "done") {
@@ -516,11 +593,44 @@ async function updateSharedTask(
     if (args.priority !== undefined) {
       updates.priority = args.priority;
     }
+    if (args.deadline !== undefined) {
+      updates.deadline = args.deadline;
+    }
+    if (args.scheduledDate !== undefined) {
+      updates.scheduledDate = args.scheduledDate;
+    }
+    if (args.assigneeId !== undefined) {
+      updates.assigneeId = args.assigneeId ? (args.assigneeId as UserId) : null;
+    }
+    if (args.estimate !== undefined) {
+      updates.estimate = args.estimate ? Int.orThrow(args.estimate) : null;
+    }
+    if (args.isBlocked !== undefined) {
+      updates.isBlocked = args.isBlocked ? SQLITE_TRUE : null;
+    }
+    if (args.blockedReason !== undefined) {
+      updates.blockedReason = args.blockedReason ? NonEmptyString1000.orThrow(args.blockedReason) : null;
+    }
     if (args.isOnProduction !== undefined) {
       updates.isOnProduction = args.isOnProduction ? SQLITE_TRUE : null;
     }
     if (args.deploymentStageId !== undefined) {
       updates.deploymentStageId = args.deploymentStageId ? (args.deploymentStageId as DeploymentStageId) : null;
+    }
+    if (args.recurrenceType !== undefined) {
+      updates.recurrenceType = args.recurrenceType || null;
+    }
+    if (args.recurrenceInterval !== undefined) {
+      updates.recurrenceInterval = args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null;
+    }
+    if (args.recurrenceEndDate !== undefined) {
+      updates.recurrenceEndDate = args.recurrenceEndDate || null;
+    }
+    if (args.recurrenceDay !== undefined) {
+      updates.recurrenceDay = args.recurrenceDay || null;
+    }
+    if (args.sprintNumber !== undefined) {
+      updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
     }
 
     const waiter = createMutationWaiter();

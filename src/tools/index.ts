@@ -24,6 +24,7 @@ import { projectNoteTools, handleProjectNoteTool } from "./projectNotes.js";
 import { projectDocTools, handleProjectDocTool } from "./projectDocs.js";
 import { systemNotificationTools, handleSystemNotificationTool } from "./systemNotifications.js";
 import { analyticsTools, handleAnalyticsTool } from "./analytics.js";
+import { gitEventTools, handleGitEventTool } from "./gitEvents.js";
 
 // Aggregated tool definitions
 export const tools: Tool[] = [
@@ -48,6 +49,7 @@ export const tools: Tool[] = [
   ...sharedTools,
   ...systemNotificationTools,
   ...analyticsTools,
+  ...gitEventTools,
   ...diagnosticTools,
 ];
 
@@ -74,6 +76,7 @@ const handlers: Array<(name: string, args: Record<string, unknown>, evolu: Evolu
   handleSharedTool,
   handleSystemNotificationTool,
   handleAnalyticsTool,
+  (name, args, _evolu) => handleGitEventTool(name, args),
   (name, args, _evolu) => handleDiagnosticTool(name, args),
 ];
 
