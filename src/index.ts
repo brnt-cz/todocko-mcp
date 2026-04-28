@@ -1,4 +1,18 @@
 #!/usr/bin/env node
+
+// CRITICAL: Redirect all console output to stderr BEFORE any imports.
+// StdioServerTransport uses stdout for JSON-RPC — any console.log() from
+// Evolu (enableLogging) or other libs would corrupt the protocol and cause
+// "Connection closed" errors.
+const _origLog = console.log;
+const _origInfo = console.info;
+const _origWarn = console.warn;
+const _origDebug = console.debug;
+console.log = (...args: unknown[]) => console.error(...args);
+console.info = (...args: unknown[]) => console.error(...args);
+console.warn = (...args: unknown[]) => console.error(...args);
+console.debug = (...args: unknown[]) => console.error(...args);
+
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -103,6 +117,14 @@ async function main() {
     process.exit(1);
   }
 }
+
+// Prevent silent crashes — log to stderr and keep running if possible
+process.on("uncaughtException", (error) => {
+  console.error("[todocko-mcp] Uncaught exception:", error);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[todocko-mcp] Unhandled rejection:", reason);
+});
 
 main().catch((error) => {
   console.error("Fatal error:", error);
