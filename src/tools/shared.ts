@@ -391,7 +391,7 @@ async function listSharedTasks(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const query = projectEvolu.createQuery((db: any) => {
@@ -489,7 +489,7 @@ async function listSharedDeploymentStages(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const query = projectEvolu.createQuery((db: any) =>
@@ -569,7 +569,7 @@ async function updateSharedTask(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const updates: Record<string, unknown> = {
@@ -663,7 +663,7 @@ async function createSharedDeploymentStage(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const waiter = createMutationWaiter();
@@ -703,7 +703,7 @@ async function listSharedRepositoryLinks(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const query = projectEvolu.createQuery((db: any) =>
@@ -771,7 +771,7 @@ async function createSharedRepositoryLink(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
     const posQuery = projectEvolu.createQuery((db: any) =>

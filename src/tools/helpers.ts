@@ -2,7 +2,7 @@ import { getSyncHealth, trackOnComplete, type EvoluInstance } from "../evolu.js"
 
 // Network delay after onComplete - time for WebSocket to send data to relay
 // onComplete means local DB is updated; this delay allows network round-trip
-export const NETWORK_DELAY_MS = 3000;
+export const NETWORK_DELAY_MS = 500;
 
 /**
  * Wait for a mutation to complete locally (via onComplete), then wait for network sync.
@@ -20,10 +20,10 @@ export function createMutationWaiter(): { onComplete: () => void; waitForSync: (
       if (resolveComplete) resolveComplete();
     },
     waitForSync: async () => {
-      // Wait for onComplete (max 5s safety net)
+      // Wait for onComplete (max 3s safety net)
       await Promise.race([
         completePromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
       ]);
       // Then wait for network round-trip
       await new Promise((resolve) => setTimeout(resolve, NETWORK_DELAY_MS));

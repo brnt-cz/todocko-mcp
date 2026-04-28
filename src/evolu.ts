@@ -498,7 +498,7 @@ export async function testWebSocketConnectivity(): Promise<Record<string, string
  */
 function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
   return {
-    console: createConsole({ enableLogging: true }),
+    console: createConsole({ enableLogging: false }),
     createSqliteDriver: createBetterSqliteDriver,
     createWebSocket: createWebSocket,
     randomBytes: createRandomBytes(),
@@ -672,7 +672,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       evoluInstance = createEvolu(evoluDeps)(Schema, {
         name: SimpleName.orThrow(DB_NAME),
         transports: transports,
-        enableLogging: true,
+        enableLogging: false,
       });
     } else {
       // Need to restore owner first
@@ -694,7 +694,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       evoluInstance = createEvolu(evoluDeps)(Schema, {
         name: SimpleName.orThrow(DB_NAME),
         transports: [], // No sync yet - will add after restore
-        enableLogging: true,
+        enableLogging: false,
       });
 
       // Restore owner from mnemonic
@@ -716,7 +716,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
         evoluInstance = createEvolu(newEvoluDeps)(Schema, {
           name: SimpleName.orThrow(DB_NAME),
           transports: transports,
-          enableLogging: true,
+          enableLogging: false,
         });
       } else {
         // Just add transports
@@ -755,7 +755,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     }
 
     // Wait for initial sync - use shorter timeout if WS is connected
-    const syncWaitMs = anyConnected ? 8000 : 3000;
+    const syncWaitMs = anyConnected ? 3000 : 1000;
     console.error(`Evolu created, waiting ${syncWaitMs}ms for initial sync...`);
     setTimeout(() => {
       syncHealth.evoluReady = true;
