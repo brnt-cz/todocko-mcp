@@ -108,8 +108,8 @@ Instalátor:
 |---------|-------|
 | `td_list_tasks` | Seznam úkolů s filtry (projekt, status, priorita, assignee) |
 | `td_get_task` | Detail úkolu podle ID nebo kódu (např. `PROJ-123`) |
-| `td_create_task` | Vytvoření nového úkolu (včetně recurrence, sprintNumber) |
-| `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence, sprintNumber) |
+| `td_create_task` | Vytvoření nového úkolu (včetně recurrence, sprintNumber, parentTaskId) |
+| `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence, sprintNumber, parentTaskId) |
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
 | `td_bulk_update_tasks` | Hromadná aktualizace více úkolů (včetně sprintNumber) |
 | `td_bulk_delete_tasks` | Hromadné smazání více úkolů |
@@ -335,6 +335,12 @@ Jaké deployment stages má projekt?
 Vytvoř novou deployment stage "Staging" pro sdílený projekt
 ```
 
+### Sub-úkoly
+```
+Vytvoř sub-úkol k úkolu TODO-15 v projektu TODO
+Odpoj úkol TODO-20 od rodičovského úkolu (parentTaskId: null)
+```
+
 ### Přehledy a analytika
 ```
 Jaký mám dnes přehled? (dashboard summary)
@@ -536,8 +542,8 @@ The installer will:
 |------|-------------|
 | `td_list_tasks` | List tasks with filters (project, status, priority, assignee) |
 | `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`) |
-| `td_create_task` | Create a new task (with recurrence + sprint support) |
-| `td_update_task` | Update an existing task (with recurrence + sprint support) |
+| `td_create_task` | Create a new task (with recurrence, sprint, parentTaskId support) |
+| `td_update_task` | Update an existing task (with recurrence, sprint, parentTaskId support) |
 | `td_search_tasks` | Search tasks by text |
 | `td_bulk_update_tasks` | Bulk update multiple tasks |
 | `td_bulk_delete_tasks` | Bulk delete multiple tasks |
@@ -760,6 +766,12 @@ Mark task as deployed to production
 ```
 What deployment stages does the project have?
 Create a new deployment stage "Staging" for the shared project
+```
+
+### Sub-tasks
+```
+Create a sub-task for task TODO-15 in project TODO
+Detach task TODO-20 from its parent (parentTaskId: null)
 ```
 
 ### Analytics & Reports
