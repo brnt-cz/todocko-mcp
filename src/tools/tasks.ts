@@ -121,6 +121,10 @@ export const taskTools: Tool[] = [
           type: "number",
           description: "Sprint number for the task",
         },
+        parentTaskId: {
+          type: "string",
+          description: "Parent task ID to create this as a sub-task",
+        },
       },
       required: ["projectId"],
     },
@@ -205,6 +209,10 @@ export const taskTools: Tool[] = [
         sprintNumber: {
           type: "number",
           description: "Sprint number for the task, or null to clear",
+        },
+        parentTaskId: {
+          type: "string",
+          description: "Parent task ID, or null to detach from parent",
         },
       },
       required: ["id"],
@@ -315,6 +323,7 @@ export async function handleTaskTool(
         recurrenceEndDate?: string;
         recurrenceDay?: string;
         sprintNumber?: number;
+        parentTaskId?: string;
       });
     case "td_update_task":
       return updateTask(evolu, args as {
@@ -336,6 +345,7 @@ export async function handleTaskTool(
         recurrenceEndDate?: string | null;
         recurrenceDay?: string | null;
         sprintNumber?: number | null;
+        parentTaskId?: string | null;
       });
     case "td_search_tasks":
       return searchTasks(evolu, args as { query: string; limit?: number });
@@ -444,6 +454,7 @@ async function listTasks(
         "isOnProduction",
         "deploymentStageId",
         "sprintNumber",
+        "parentTaskId",
         "projectId",
         "assigneeId",
       ])
@@ -503,6 +514,7 @@ async function listTasks(
         completedAt: t.completedAt,
         isOnProduction: t.isOnProduction === SQLITE_TRUE,
         sprintNumber: t.sprintNumber ?? null,
+        parentTaskId: t.parentTaskId ?? null,
         deploymentStage: stage
           ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
           : null,
@@ -546,6 +558,7 @@ async function getTask(
         "isOnProduction",
         "deploymentStageId",
         "sprintNumber",
+        "parentTaskId",
         "projectId",
         "assigneeId",
       ])
@@ -602,6 +615,7 @@ async function getTask(
     completedAt: t.completedAt,
     isOnProduction: t.isOnProduction === SQLITE_TRUE,
     sprintNumber: t.sprintNumber ?? null,
+    parentTaskId: t.parentTaskId ?? null,
     deploymentStage: stage
       ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
       : null,
@@ -631,6 +645,7 @@ async function createTask(
     recurrenceEndDate?: string;
     recurrenceDay?: string;
     sprintNumber?: number;
+    parentTaskId?: string;
   }
 ) {
   // Get project to generate task code
@@ -698,7 +713,8 @@ async function createTask(
     recurrenceEndDate: args.recurrenceEndDate || null,
     recurrenceDay: args.recurrenceDay || null,
     sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
-  }, { onComplete: waiter.onComplete });
+    ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
+  } as any, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
     throw new Error(`Failed to create task: ${JSON.stringify(result.error)}`);
@@ -741,6 +757,7 @@ async function updateTask(
     recurrenceEndDate?: string | null;
     recurrenceDay?: string | null;
     sprintNumber?: number | null;
+    parentTaskId?: string | null;
   }
 ) {
   const updates: Record<string, unknown> = {
@@ -802,6 +819,9 @@ async function updateTask(
   }
   if (args.sprintNumber !== undefined) {
     updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
+  }
+  if (args.parentTaskId !== undefined) {
+    updates.parentTaskId = args.parentTaskId ? (args.parentTaskId as TaskId) : null;
   }
 
   const waiter = createMutationWaiter();
