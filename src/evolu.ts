@@ -145,6 +145,7 @@ export const Schema = {
     recurrenceEndDate: nullOr(String),
     recurrenceDay: nullOr(Int),
     sprintNumber: nullOr(Int),
+    parentTaskId: nullOr(TaskId),
   },
   tag: {
     id: TagId,
@@ -326,6 +327,7 @@ export const ProjectSchema = {
     recurrenceEndDate: nullOr(String),
     recurrenceDay: nullOr(Int),
     sprintNumber: nullOr(Int),
+    parentTaskId: nullOr(TaskId),
   },
   tag: {
     id: TagId,
