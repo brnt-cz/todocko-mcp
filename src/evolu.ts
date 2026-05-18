@@ -756,6 +756,25 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       console.error("WARNING: Cannot connect to any relay server! Sync will not work.");
     }
 
+    // Fail fast if the SQLite native binding can't be loaded.
+    // Without this check the dbWorker init silently hangs forever and
+    // every loadQuery times out — see README "Troubleshooting".
+    if (evoluInstance.appOwner?.then) {
+      const probeStarted = Date.now();
+      Promise.race([
+        evoluInstance.appOwner.then(() => true, () => false),
+        new Promise<boolean>((res) => setTimeout(() => res(false), 8000)),
+      ]).then((ok) => {
+        if (!ok) {
+          console.error(
+            `[todocko-mcp] FATAL: Evolu dbWorker init did not complete within ${Date.now()-probeStarted}ms. ` +
+            `Most likely cause: better-sqlite3 native binding was built against a different Node.js ABI. ` +
+            `Fix: cd ${process.cwd()} && cd node_modules/better-sqlite3 && npx node-gyp rebuild --release`,
+          );
+        }
+      });
+    }
+
     // Wait for initial sync - use shorter timeout if WS is connected
     const syncWaitMs = anyConnected ? 3000 : 1000;
     console.error(`Evolu created, waiting ${syncWaitMs}ms for initial sync...`);
