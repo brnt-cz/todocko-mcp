@@ -11,7 +11,7 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Požadavky
 
-- Node.js 18+
+- **Node.js 22+** (Evolu používá `Set.prototype.difference`, který je dostupný od Node 22)
 - Todocko účet s daty synchronizovanými přes Evolu
 
 ## Instalace
@@ -400,7 +400,7 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 ## Troubleshooting
 
 ### Server se nespustí
-- Zkontrolujte, že máte Node.js 18+
+- Zkontrolujte, že máte Node.js 22+
 - Zkontrolujte, že jste spustili `npm run build`
 - Zkontrolujte logy v Claude Desktop
 
@@ -415,6 +415,21 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - V Claude Code použijte `/mcp` pro reload
 - Zkontrolujte konfigurační soubor
 - Zkontrolujte cestu k dist/index.js
+
+### Každý `loadQuery` skončí timeoutem (`loadQuery timed out after 15000ms`)
+Příčina: `better-sqlite3` native binding byl zkompilován proti jiné Node.js ABI verzi, než pod kterou MCP server běží. `new Database()` selže s `ERR_DLOPEN_FAILED`, Evolu dbWorker init nikdy nedoběhne a všechny `loadQuery` volání visí navždy. Mutace (insert/update) reportují success, ale ve skutečnosti se nezapíšou.
+
+Symptom v praxi: `td_sync_status` hlásí `ok`, `errorCount: 0`, ale `td_get_task`, `td_list_*` apod. timeoutují.
+
+Fix — přebuildit native binding proti aktuálnímu Node:
+```bash
+cd ~/.todocko-mcp # případně cesta, kde máš nainstalované todocko-mcp
+cd node_modules/better-sqlite3
+npx node-gyp rebuild --release
+```
+Pak `/mcp` reconnect v Claude Code.
+
+Mismatch je typický, pokud upgradneš Node.js (např. z v22 na v25) nebo přepneš mezi nvm a linuxbrew/brew Node. Při instalaci installer použije `node` z `PATH` — pokud `claude` později spouští MCP přes jiný node binary, binding nesedí.
 
 ## Vývoj
 
@@ -445,7 +460,7 @@ MCP (Model Context Protocol) server for working with [Todocko](https://app.todoc
 
 ## Requirements
 
-- Node.js 18+
+- **Node.js 22+** (Evolu uses `Set.prototype.difference`, available from Node 22)
 - Todocko account with data synchronized via Evolu
 
 ## Installation
@@ -848,6 +863,21 @@ The database contains the owner ID from the previous mnemonic. After deletion, a
 - In Claude Code, use `/mcp` for reload
 - Check the configuration file
 - Check the path to dist/index.js
+
+### Every `loadQuery` ends with a timeout (`loadQuery timed out after 15000ms`)
+Cause: the `better-sqlite3` native binding was compiled against a different Node.js ABI than the one running the MCP server. `new Database()` fails with `ERR_DLOPEN_FAILED`, the Evolu dbWorker init never completes, and every `loadQuery` hangs forever. Mutations (insert/update) report success but are silently lost.
+
+Typical symptoms: `td_sync_status` reports `ok` with `errorCount: 0`, but `td_get_task`, `td_list_*`, etc. all time out.
+
+Fix — rebuild the native binding against the current Node:
+```bash
+cd ~/.todocko-mcp # or wherever todocko-mcp is installed
+cd node_modules/better-sqlite3
+npx node-gyp rebuild --release
+```
+Then `/mcp` reconnect in Claude Code.
+
+This mismatch typically appears after upgrading Node.js (e.g. v22 → v25) or switching between nvm and linuxbrew/brew Node, because the installer builds the binding against the `node` from `PATH`, but `claude` may later spawn the MCP with a different node binary.
 
 ## Development
 
