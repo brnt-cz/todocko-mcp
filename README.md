@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (86)
+## Dostupné nástroje (87)
 
 ### Projekty
 
@@ -278,6 +278,7 @@ Instalátor:
 | Nástroj | Popis |
 |---------|-------|
 | `td_sync_status` | Stav synchronizace |
+| `td_force_sync` | Vynutí sync round-trip s relayem (užitečné, když chceš mít jistotu, že vidíš nejnovější data z jiného zařízení) |
 
 ## Příklady použití
 
@@ -539,7 +540,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (86)
+## Available Tools (87)
 
 ### Projects
 
@@ -726,6 +727,7 @@ The installer will:
 | Tool | Description |
 |------|-------------|
 | `td_sync_status` | Sync status |
+| `td_force_sync` | Force a sync round-trip with the relay (useful when you want to make sure you're reading the latest data from another device) |
 
 ## Usage Examples
 
