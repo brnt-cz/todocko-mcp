@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { getSyncHealth, testWebSocketConnectivity } from "../evolu.js";
+import { getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
 
 export const diagnosticTools: Tool[] = [
   {
@@ -15,6 +15,23 @@ export const diagnosticTools: Tool[] = [
       },
     },
   },
+  {
+    name: "td_force_sync",
+    description: "Force a sync round-trip with the relay. Re-attaches transports to make sure the WebSocket is live, then waits for incoming sync messages to settle and returns a snapshot of how many table changes arrived. Use this before reading data when you suspect another device just wrote something.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        waitMs: {
+          type: "number",
+          description: "How long to wait for incoming sync activity, in ms (default: 3000, min: 200, max: 30000)",
+        },
+        reconnect: {
+          type: "boolean",
+          description: "If true, detach and re-attach transports before waiting (forces a fresh WebSocket round-trip). Default: true.",
+        },
+      },
+    },
+  },
 ];
 
 export async function handleDiagnosticTool(
@@ -24,6 +41,8 @@ export async function handleDiagnosticTool(
   switch (name) {
     case "td_sync_status":
       return syncStatus(args as { retest?: boolean });
+    case "td_force_sync":
+      return forceSyncImpl(args as { waitMs?: number; reconnect?: boolean });
     default:
       return undefined;
   }

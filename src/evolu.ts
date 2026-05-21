@@ -415,6 +415,8 @@ interface SyncHealth {
   wsConnectivity: Map<string, 'untested' | 'ok' | 'failed'>;
   evoluReady: boolean;
   onCompleteCount: number;
+  /** Per-table count of incoming change events observed via subscribeQuery. */
+  incomingChangesByTable: Map<string, number>;
 }
 
 const syncHealth: SyncHealth = {
@@ -424,6 +426,7 @@ const syncHealth: SyncHealth = {
   wsConnectivity: new Map(RELAY_SERVERS.map(url => [url, 'untested' as const])),
   evoluReady: false,
   onCompleteCount: 0,
+  incomingChangesByTable: new Map(),
 };
 
 /**
@@ -452,6 +455,94 @@ export function getSyncHealth(): {
 /** Track onComplete calls from mutations */
 export function trackOnComplete(): void {
   syncHealth.onCompleteCount++;
+}
+
+/**
+ * Subscribe to a small per-table count() query and increment the per-table
+ * change counter every time Evolu signals the result changed.
+ *
+ * subscribeQuery only fires when a query's result differs from the previous
+ * value, so a `select count(*) from <table>` query gives us a cheap proxy for
+ * "something in this table was inserted or deleted via local mutation or
+ * incoming sync". It misses pure updates that don't change the row count,
+ * which is acceptable for a force-sync probe — those will still be visible to
+ * the next read after the wait elapses.
+ */
+function attachChangeTrackers(evolu: EvoluInstance, tableNames: readonly string[]): void {
+  for (const table of tableNames) {
+    try {
+      // Subscribe to `count(*)` of the table. Evolu's makePatches compares
+      // row values with eqSqliteValue, so when the count changes a patch is
+      // emitted, the row store gets a new reference and the listener fires.
+      // (We initially tried `select id order by id desc limit 1`, but Evolu's
+      // generated ids are not monotonic in lexicographic order, so the result
+      // often didn't change on insert.)
+      const query = evolu.createQuery((db: any) =>
+        db.selectFrom(table).select((eb: any) => eb.fn.countAll().as("cnt")),
+      );
+      evolu.loadQuery(query).catch(() => {});
+      evolu.subscribeQuery(query)(() => {
+        const next = (syncHealth.incomingChangesByTable.get(table) ?? 0) + 1;
+        syncHealth.incomingChangesByTable.set(table, next);
+      });
+    } catch (err) {
+      console.error(`[force-sync] could not attach tracker for ${table}:`, err);
+    }
+  }
+}
+
+/**
+ * Force a sync round-trip with the relay.
+ *
+ * Strategy:
+ * 1. Optionally re-test WebSocket connectivity so the caller knows the relay
+ *    is reachable at this exact moment.
+ * 2. Snapshot the per-table change counters.
+ * 3. Wait `waitMs` for incoming sync messages to settle.
+ * 4. Return the diff so the caller knows which tables saw activity.
+ */
+export async function forceSync(args: { waitMs?: number; reconnect?: boolean }): Promise<unknown> {
+  const evolu = getEvolu();
+  if (!evolu) {
+    return { error: "Evolu not initialized" };
+  }
+
+  const waitMs = Math.max(200, Math.min(args.waitMs ?? 3000, 30000));
+  const reconnect = args.reconnect ?? true;
+
+  const snapshot = (): Record<string, number> =>
+    Object.fromEntries(syncHealth.incomingChangesByTable);
+
+  const before = snapshot();
+  const beforeErrors = syncHealth.errorCount;
+  const startedAt = Date.now();
+
+  if (reconnect) {
+    await testWebSocketConnectivity();
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+
+  const after = snapshot();
+  const changedTables: Record<string, number> = {};
+  const allTables = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const table of allTables) {
+    const delta = (after[table] ?? 0) - (before[table] ?? 0);
+    if (delta > 0) changedTables[table] = delta;
+  }
+
+  return {
+    waitedMs: Date.now() - startedAt,
+    reconnected: reconnect,
+    wsConnectivity: Object.fromEntries(syncHealth.wsConnectivity),
+    changedTables,
+    newErrors: syncHealth.errorCount - beforeErrors,
+    lastError: syncHealth.lastError,
+    hint:
+      Object.keys(changedTables).length > 0
+        ? "Incoming changes detected — query the affected tables to read the fresh data."
+        : "No change events observed during the wait. Either nothing changed, or changes were updates that don't move row counts — querying tables you suspect of having edits will still return the latest state.",
+  };
 }
 
 /**
@@ -743,6 +834,9 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
         }
       });
     }
+
+    // Attach change trackers so td_force_sync can report per-table activity.
+    attachChangeTrackers(evoluInstance, Object.keys(Schema));
 
     // Test WebSocket connectivity to relay servers
     console.error("Testing WebSocket connectivity to relay servers...");
