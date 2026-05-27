@@ -20,6 +20,18 @@ export const activityLogTools: Tool[] = [
           type: "string",
           description: "Filter by action type (e.g., 'created', 'updated', 'deleted')",
         },
+        entityType: {
+          type: "string",
+          description: "Filter by entity type (e.g., 'task', 'comment', 'worklog')",
+        },
+        from: {
+          type: "string",
+          description: "Only entries on/after this ISO date/datetime (inclusive)",
+        },
+        to: {
+          type: "string",
+          description: "Only entries on/before this ISO date/datetime (inclusive)",
+        },
         limit: {
           type: "number",
           description: "Maximum results (default: 50)",
@@ -36,7 +48,7 @@ export async function handleActivityLogTool(
 ): Promise<unknown> {
   switch (name) {
     case "td_list_activity_log":
-      return listActivityLog(evolu, args as { taskId?: string; actorId?: string; action?: string; limit?: number });
+      return listActivityLog(evolu, args as { taskId?: string; actorId?: string; action?: string; entityType?: string; from?: string; to?: string; limit?: number });
     default:
       return undefined;
   }
@@ -44,7 +56,7 @@ export async function handleActivityLogTool(
 
 async function listActivityLog(
   evolu: EvoluInstance,
-  args: { taskId?: string; actorId?: string; action?: string; limit?: number }
+  args: { taskId?: string; actorId?: string; action?: string; entityType?: string; from?: string; to?: string; limit?: number }
 ) {
   const query = evolu.createQuery((db: any) => {
     let q = db
@@ -75,6 +87,15 @@ async function listActivityLog(
     }
     if (args.action) {
       q = q.where("activityLog.action", "=", args.action);
+    }
+    if (args.entityType) {
+      q = q.where("activityLog.entityType", "=", args.entityType);
+    }
+    if (args.from) {
+      q = q.where("activityLog.createdAt", ">=", args.from);
+    }
+    if (args.to) {
+      q = q.where("activityLog.createdAt", "<=", args.to);
     }
 
     return q.limit(args.limit || 50);

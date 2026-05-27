@@ -101,6 +101,12 @@ export type LocalProjectNoteId = typeof LocalProjectNoteId.Type;
 export const ProjectNoteId = id("ProjectNote");
 export type ProjectNoteId = typeof ProjectNoteId.Type;
 
+export const NoteAttachmentId = id("NoteAttachment");
+export type NoteAttachmentId = typeof NoteAttachmentId.Type;
+
+export const LocalNoteAttachmentId = id("LocalNoteAttachment");
+export type LocalNoteAttachmentId = typeof LocalNoteAttachmentId.Type;
+
 export const Schema = {
   user: {
     id: UserId,
@@ -280,6 +286,14 @@ export const Schema = {
     isDoc: nullOr(SqliteBoolean),
     parentDocId: nullOr(String),
   },
+  localNoteAttachment: {
+    id: LocalNoteAttachmentId,
+    noteId: LocalProjectNoteId,
+    filename: NonEmptyString100,
+    mimeType: String,
+    data: nullOr(String), // Base64 encoded content
+    size: Int,
+  },
 };
 
 // Schema for shared projects (todocko-shared database)
@@ -303,6 +317,8 @@ export const ProjectSchema = {
     userAvatarUrl: nullOr(String),
     permission: String,
     joinedAt: String,
+    isKicked: nullOr(SqliteBoolean),
+    isBlocked: nullOr(SqliteBoolean),
   },
   task: {
     id: TaskId,
@@ -387,6 +403,14 @@ export const ProjectSchema = {
     position: Int,
     isDoc: nullOr(SqliteBoolean),
     parentDocId: nullOr(String),
+  },
+  noteAttachment: {
+    id: NoteAttachmentId,
+    noteId: ProjectNoteId,
+    filename: NonEmptyString100,
+    mimeType: String,
+    data: nullOr(String), // Base64 encoded content
+    size: Int,
   },
 };
 

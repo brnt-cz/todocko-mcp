@@ -7,12 +7,18 @@ import {
   type UserId,
   type DeploymentStageId,
   type RepositoryLinkId,
+  type ProjectMemberId,
+  type ProjectNoteId,
+  type NoteAttachmentId,
   type EvoluInstance,
   getProjectEvolu,
   getSharedOwner,
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { basename, dirname } from "path";
+import { lookup } from "mime-types";
 import { createMutationWaiter } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
@@ -254,6 +260,93 @@ export const sharedTools: Tool[] = [
       required: ["sharedOwnerId", "ownerSecret", "projectId", "url"],
     },
   },
+  {
+    name: "td_list_shared_members",
+    description: "List members of a shared project (name, permission, kicked/blocked state)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        projectId: { type: "string", description: "Filter by project ID within the shared owner (optional)" },
+        includeKicked: { type: "boolean", description: "Include kicked members (default: false)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_update_shared_member",
+    description: "Update a shared project member: change permission, block/unblock or kick.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "ProjectMember ID (required)" },
+        permission: { type: "string", enum: ["admin", "write", "read"], description: "New permission level" },
+        isBlocked: { type: "boolean", description: "Block (true) or unblock (false) the member's access" },
+        isKicked: { type: "boolean", description: "Kick (true) the member from the project" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_upload_shared_note_attachment",
+    description: "Upload an attachment to a note in a shared project. Provide either a file path or base64-encoded content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        noteId: { type: "string", description: "Shared project note ID (required)" },
+        filePath: { type: "string", description: "Path to the file to upload (mutually exclusive with content)" },
+        content: { type: "string", description: "Base64-encoded file content (mutually exclusive with filePath)" },
+        filename: { type: "string", description: "Filename (required with content, optional for filePath)" },
+        mimeType: { type: "string", description: "MIME type (optional - auto-detected from filename)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "noteId"],
+    },
+  },
+  {
+    name: "td_list_shared_note_attachments",
+    description: "List attachments of a note in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        noteId: { type: "string", description: "Shared project note ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "noteId"],
+    },
+  },
+  {
+    name: "td_download_shared_note_attachment",
+    description: "Download a shared note attachment by ID. Returns base64 content, or saves to a file if savePath is given.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Note attachment ID (required)" },
+        savePath: { type: "string", description: "Optional path to save the file to disk" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_delete_shared_note_attachment",
+    description: "Delete a shared note attachment (soft delete)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Note attachment ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
 ];
 
 export async function handleSharedTool(
@@ -321,6 +414,51 @@ export async function handleSharedTool(
         type?: string;
         url: string;
         label?: string;
+      });
+    case "td_list_shared_members":
+      return listSharedMembers(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        projectId?: string;
+        includeKicked?: boolean;
+      });
+    case "td_update_shared_member":
+      return updateSharedMember(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
+        permission?: string;
+        isBlocked?: boolean;
+        isKicked?: boolean;
+      });
+    case "td_upload_shared_note_attachment":
+      return uploadSharedNoteAttachment(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        noteId: string;
+        filePath?: string;
+        content?: string;
+        filename?: string;
+        mimeType?: string;
+      });
+    case "td_list_shared_note_attachments":
+      return listSharedNoteAttachments(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        noteId: string;
+      });
+    case "td_download_shared_note_attachment":
+      return downloadSharedNoteAttachment(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
+        savePath?: string;
+      });
+    case "td_delete_shared_note_attachment":
+      return deleteSharedNoteAttachment(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
       });
     default:
       return undefined;
@@ -804,6 +942,337 @@ async function createSharedRepositoryLink(
       success: true,
       linkId: result.value.id,
       message: "Repository link created successfully",
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedMembers(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    projectId?: string;
+    includeKicked?: boolean;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) => {
+      let q = db
+        .selectFrom("projectMember")
+        .select([
+          "id",
+          "projectId",
+          "userAppOwnerId",
+          "userName",
+          "userColor",
+          "userAvatarUrl",
+          "permission",
+          "joinedAt",
+          "isKicked",
+          "isBlocked",
+        ])
+        .where("isDeleted", "is not", SQLITE_TRUE);
+
+      if (args.projectId) {
+        q = q.where("projectId", "=", args.projectId as ProjectId);
+      }
+      if (!args.includeKicked) {
+        q = q.where("isKicked", "is not", SQLITE_TRUE);
+      }
+
+      return q.orderBy("joinedAt", "asc");
+    });
+
+    const result = await projectEvolu.loadQuery(query);
+
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((m: any) => (m.ownerId as string | undefined) === actualOwnerId);
+
+    return {
+      count: filtered.length,
+      sharedOwnerId: actualOwnerId,
+      members: filtered.map((m: any) => ({
+        id: m.id,
+        projectId: m.projectId,
+        userAppOwnerId: m.userAppOwnerId,
+        userName: m.userName,
+        userColor: m.userColor,
+        userAvatarUrl: m.userAvatarUrl,
+        permission: m.permission,
+        joinedAt: m.joinedAt,
+        isKicked: m.isKicked === SQLITE_TRUE,
+        isBlocked: m.isBlocked === SQLITE_TRUE,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedMember(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    id: string;
+    permission?: string;
+    isBlocked?: boolean;
+    isKicked?: boolean;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const updates: Record<string, unknown> = {
+      id: args.id as ProjectMemberId,
+    };
+
+    if (args.permission !== undefined) {
+      updates.permission = args.permission;
+    }
+    if (args.isBlocked !== undefined) {
+      updates.isBlocked = args.isBlocked ? SQLITE_TRUE : null;
+    }
+    if (args.isKicked !== undefined) {
+      updates.isKicked = args.isKicked ? SQLITE_TRUE : null;
+    }
+
+    const waiter = createMutationWaiter();
+    projectEvolu.update("projectMember", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    await waiter.waitForSync();
+
+    return {
+      success: true,
+      message: "Shared project member updated successfully",
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function uploadSharedNoteAttachment(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    noteId: string;
+    filePath?: string;
+    content?: string;
+    filename?: string;
+    mimeType?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+  if (!args.filePath && !args.content) {
+    throw new Error("Either filePath or content is required");
+  }
+  if (args.filePath && args.content) {
+    throw new Error("Provide either filePath or content, not both");
+  }
+
+  let fileContent: string;
+  let filename: string;
+  let mimeType: string;
+  let size: number;
+
+  if (args.filePath) {
+    if (!existsSync(args.filePath)) {
+      throw new Error(`File not found: ${args.filePath}`);
+    }
+    const fileBuffer = readFileSync(args.filePath);
+    fileContent = fileBuffer.toString("base64");
+    size = fileBuffer.length;
+    filename = args.filename || basename(args.filePath);
+    mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
+  } else {
+    if (!args.filename) {
+      throw new Error("filename is required when using content parameter");
+    }
+    fileContent = args.content!;
+    filename = args.filename;
+    mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
+    size = Math.ceil((fileContent.length * 3) / 4);
+  }
+
+  if (filename.length > 100) {
+    throw new Error("Filename must be 100 characters or less");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert("noteAttachment", {
+      noteId: args.noteId as ProjectNoteId,
+      filename: NonEmptyString100.orThrow(filename),
+      mimeType,
+      data: fileContent,
+      size: Int.orThrow(size),
+    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+
+    if (!result.ok) {
+      throw new Error(`Failed to upload shared note attachment: ${JSON.stringify(result.error)}`);
+    }
+
+    await waiter.waitForSync();
+
+    return {
+      success: true,
+      attachmentId: result.value.id,
+      filename,
+      mimeType,
+      size,
+      message: `Attachment "${filename}" uploaded to shared note successfully`,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedNoteAttachments(
+  args: { sharedOwnerId: string; ownerSecret: string; noteId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("noteAttachment")
+        .select(["id", "noteId", "filename", "mimeType", "size"])
+        .where("noteId", "=", args.noteId as ProjectNoteId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("data", "is not", null)
+    );
+
+    const result = await projectEvolu.loadQuery(query);
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((a: any) => (a.ownerId as string | undefined) === actualOwnerId);
+
+    return {
+      count: filtered.length,
+      attachments: filtered.map((a: any) => ({
+        id: a.id,
+        noteId: a.noteId,
+        filename: a.filename,
+        mimeType: a.mimeType,
+        size: a.size,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function downloadSharedNoteAttachment(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("noteAttachment")
+        .select(["id", "filename", "mimeType", "data", "size"])
+        .where("id", "=", args.id as NoteAttachmentId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .limit(1)
+    );
+
+    const result = await projectEvolu.loadQuery(query);
+    if (result.length === 0) {
+      return { error: "Shared note attachment not found" };
+    }
+
+    const a = result[0] as any;
+    if (!a.data) {
+      return { error: "Attachment data is empty (may have been deleted)" };
+    }
+
+    if (args.savePath) {
+      const dir = dirname(args.savePath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
+      return {
+        success: true,
+        filePath: args.savePath,
+        filename: a.filename,
+        mimeType: a.mimeType,
+        size: a.size,
+      };
+    }
+
+    return {
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      data: a.data,
+      size: a.size,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedNoteAttachment(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const waiter = createMutationWaiter();
+    projectEvolu.update("noteAttachment", {
+      id: args.id as NoteAttachmentId,
+      data: null,
+      isDeleted: SQLITE_TRUE,
+    } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    await waiter.waitForSync();
+
+    return {
+      success: true,
+      message: "Shared note attachment deleted successfully",
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
