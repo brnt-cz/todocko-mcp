@@ -7,6 +7,7 @@ import {
   type UserId,
   type DeploymentStageId,
   type RepositoryLinkId,
+  type ProjectMemberId,
   type EvoluInstance,
   getProjectEvolu,
   getSharedOwner,
@@ -254,6 +255,36 @@ export const sharedTools: Tool[] = [
       required: ["sharedOwnerId", "ownerSecret", "projectId", "url"],
     },
   },
+  {
+    name: "td_list_shared_members",
+    description: "List members of a shared project (name, permission, kicked/blocked state)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        projectId: { type: "string", description: "Filter by project ID within the shared owner (optional)" },
+        includeKicked: { type: "boolean", description: "Include kicked members (default: false)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_update_shared_member",
+    description: "Update a shared project member: change permission, block/unblock or kick.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "ProjectMember ID (required)" },
+        permission: { type: "string", enum: ["admin", "write", "read"], description: "New permission level" },
+        isBlocked: { type: "boolean", description: "Block (true) or unblock (false) the member's access" },
+        isKicked: { type: "boolean", description: "Kick (true) the member from the project" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
 ];
 
 export async function handleSharedTool(
@@ -321,6 +352,22 @@ export async function handleSharedTool(
         type?: string;
         url: string;
         label?: string;
+      });
+    case "td_list_shared_members":
+      return listSharedMembers(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        projectId?: string;
+        includeKicked?: boolean;
+      });
+    case "td_update_shared_member":
+      return updateSharedMember(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
+        permission?: string;
+        isBlocked?: boolean;
+        isKicked?: boolean;
       });
     default:
       return undefined;
@@ -804,6 +851,124 @@ async function createSharedRepositoryLink(
       success: true,
       linkId: result.value.id,
       message: "Repository link created successfully",
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedMembers(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    projectId?: string;
+    includeKicked?: boolean;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const query = projectEvolu.createQuery((db: any) => {
+      let q = db
+        .selectFrom("projectMember")
+        .select([
+          "id",
+          "projectId",
+          "userAppOwnerId",
+          "userName",
+          "userColor",
+          "userAvatarUrl",
+          "permission",
+          "joinedAt",
+          "isKicked",
+          "isBlocked",
+        ])
+        .where("isDeleted", "is not", SQLITE_TRUE);
+
+      if (args.projectId) {
+        q = q.where("projectId", "=", args.projectId as ProjectId);
+      }
+      if (!args.includeKicked) {
+        q = q.where("isKicked", "is not", SQLITE_TRUE);
+      }
+
+      return q.orderBy("joinedAt", "asc");
+    });
+
+    const result = await projectEvolu.loadQuery(query);
+
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((m: any) => (m.ownerId as string | undefined) === actualOwnerId);
+
+    return {
+      count: filtered.length,
+      sharedOwnerId: actualOwnerId,
+      members: filtered.map((m: any) => ({
+        id: m.id,
+        projectId: m.projectId,
+        userAppOwnerId: m.userAppOwnerId,
+        userName: m.userName,
+        userColor: m.userColor,
+        userAvatarUrl: m.userAvatarUrl,
+        permission: m.permission,
+        joinedAt: m.joinedAt,
+        isKicked: m.isKicked === SQLITE_TRUE,
+        isBlocked: m.isBlocked === SQLITE_TRUE,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedMember(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    id: string;
+    permission?: string;
+    isBlocked?: boolean;
+    isKicked?: boolean;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const updates: Record<string, unknown> = {
+      id: args.id as ProjectMemberId,
+    };
+
+    if (args.permission !== undefined) {
+      updates.permission = args.permission;
+    }
+    if (args.isBlocked !== undefined) {
+      updates.isBlocked = args.isBlocked ? SQLITE_TRUE : null;
+    }
+    if (args.isKicked !== undefined) {
+      updates.isKicked = args.isKicked ? SQLITE_TRUE : null;
+    }
+
+    const waiter = createMutationWaiter();
+    projectEvolu.update("projectMember", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    await waiter.waitForSync();
+
+    return {
+      success: true,
+      message: "Shared project member updated successfully",
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);

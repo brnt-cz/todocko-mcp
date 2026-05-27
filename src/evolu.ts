@@ -303,6 +303,8 @@ export const ProjectSchema = {
     userAvatarUrl: nullOr(String),
     permission: String,
     joinedAt: String,
+    isKicked: nullOr(SqliteBoolean),
+    isBlocked: nullOr(SqliteBoolean),
   },
   task: {
     id: TaskId,

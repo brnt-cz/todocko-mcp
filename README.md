@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (87)
+## Dostupné nástroje (89)
 
 ### Projekty
 
@@ -261,6 +261,8 @@ Instalátor:
 | `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
+| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav) |
+| `td_update_shared_member` | Změna oprávnění / block / kick člena sdíleného projektu |
 
 ### Analytika a přehledy
 
@@ -540,7 +542,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (87)
+## Available Tools (89)
 
 ### Projects
 
@@ -710,6 +712,8 @@ The installer will:
 | `td_create_shared_project_note` | Create a note in a shared project |
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
+| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state) |
+| `td_update_shared_member` | Change permission / block / kick a shared project member |
 
 ### Analytics & Reports
 
