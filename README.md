@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (93)
+## Dostupné nástroje (97)
 
 ### Projekty
 
@@ -267,6 +267,10 @@ Instalátor:
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
 | `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav) |
 | `td_update_shared_member` | Změna oprávnění / block / kick člena sdíleného projektu |
+| `td_upload_shared_note_attachment` | Nahrání přílohy k poznámce sdíleného projektu |
+| `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
+| `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
+| `td_delete_shared_note_attachment` | Smazání přílohy poznámky sdíleného projektu |
 
 ### Analytika a přehledy
 
@@ -546,7 +550,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (93)
+## Available Tools (97)
 
 ### Projects
 
@@ -722,6 +726,10 @@ The installer will:
 | `td_delete_shared_project_note` | Delete a note in a shared project |
 | `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state) |
 | `td_update_shared_member` | Change permission / block / kick a shared project member |
+| `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
+| `td_list_shared_note_attachments` | List attachments of a shared project note |
+| `td_download_shared_note_attachment` | Download a shared note attachment |
+| `td_delete_shared_note_attachment` | Delete a shared note attachment |
 
 ### Analytics & Reports
 
