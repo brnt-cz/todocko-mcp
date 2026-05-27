@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (89)
+## Dostupné nástroje (93)
 
 ### Projekty
 
@@ -142,6 +142,10 @@ Instalátor:
 | `td_list_attachments` | Seznam příloh úkolu |
 | `td_download_attachment` | Stažení přílohy |
 | `td_delete_attachment` | Smazání přílohy |
+| `td_upload_note_attachment` | Nahrání přílohy k lokální poznámce projektu |
+| `td_list_note_attachments` | Seznam příloh lokální poznámky |
+| `td_download_note_attachment` | Stažení přílohy poznámky |
+| `td_delete_note_attachment` | Smazání přílohy poznámky |
 
 ### Komentáře
 
@@ -221,7 +225,7 @@ Instalátor:
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_activity_log` | Seznam zápisů aktivity (read-only) |
+| `td_list_activity_log` | Seznam zápisů aktivity s filtry (úkol, aktor, akce, typ entity, datum od/do) — read-only |
 
 ### Poznámky k projektu
 
@@ -542,7 +546,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (89)
+## Available Tools (93)
 
 ### Projects
 
@@ -593,6 +597,10 @@ The installer will:
 | `td_list_attachments` | List attachments for a task |
 | `td_download_attachment` | Download an attachment |
 | `td_delete_attachment` | Delete an attachment |
+| `td_upload_note_attachment` | Upload an attachment to a local project note |
+| `td_list_note_attachments` | List attachments of a local note |
+| `td_download_note_attachment` | Download a note attachment |
+| `td_delete_note_attachment` | Delete a note attachment |
 
 ### Comments
 
@@ -672,7 +680,7 @@ The installer will:
 
 | Tool | Description |
 |------|-------------|
-| `td_list_activity_log` | List activity log entries (read-only) |
+| `td_list_activity_log` | List activity log entries with filters (task, actor, action, entityType, date from/to) — read-only |
 
 ### Project Notes
 

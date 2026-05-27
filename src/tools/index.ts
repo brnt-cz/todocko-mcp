@@ -7,6 +7,7 @@ import { taskTools, handleTaskTool } from "./tasks.js";
 import { userTools, handleUserTool } from "./users.js";
 import { worklogTools, handleWorklogTool } from "./worklogs.js";
 import { attachmentTools, handleAttachmentTool } from "./attachments.js";
+import { noteAttachmentTools, handleNoteAttachmentTool } from "./noteAttachments.js";
 import { deploymentStageTools, handleDeploymentStageTool } from "./deploymentStages.js";
 import { repositoryLinkTools, handleRepositoryLinkTool } from "./repositoryLinks.js";
 import { sharedTools, handleSharedTool } from "./shared.js";
@@ -33,6 +34,7 @@ export const tools: Tool[] = [
   ...userTools,
   ...worklogTools,
   ...attachmentTools,
+  ...noteAttachmentTools,
   ...deploymentStageTools,
   ...repositoryLinkTools,
   ...taskCommentTools,
@@ -60,6 +62,7 @@ const handlers: Array<(name: string, args: Record<string, unknown>, evolu: Evolu
   handleUserTool,
   handleWorklogTool,
   handleAttachmentTool,
+  handleNoteAttachmentTool,
   handleDeploymentStageTool,
   handleRepositoryLinkTool,
   handleTaskCommentTool,
