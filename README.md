@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (97)
+## Dostupné nástroje (109)
 
 ### Projekty
 
@@ -550,7 +550,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (97)
+## Available Tools (109)
 
 ### Projects
 
