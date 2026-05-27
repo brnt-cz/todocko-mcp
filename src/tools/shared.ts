@@ -539,6 +539,7 @@ async function listSharedTasks(
         .leftJoin("deploymentStage", "task.deploymentStageId", "deploymentStage.id")
         .select([
           "task.id",
+          "task.ownerId as ownerId",
           "task.title",
           "task.name",
           "task.status",
@@ -636,6 +637,7 @@ async function listSharedDeploymentStages(
         .leftJoin("project", "deploymentStage.projectId", "project.id")
         .select([
           "deploymentStage.id",
+          "deploymentStage.ownerId as ownerId",
           "deploymentStage.name",
           "deploymentStage.color",
           "deploymentStage.position",
@@ -850,6 +852,7 @@ async function listSharedRepositoryLinks(
         .leftJoin("project", "repositoryLink.projectId", "project.id")
         .select([
           "repositoryLink.id",
+          "repositoryLink.ownerId as ownerId",
           "repositoryLink.type",
           "repositoryLink.url",
           "repositoryLink.label",
@@ -971,6 +974,7 @@ async function listSharedMembers(
         .selectFrom("projectMember")
         .select([
           "id",
+          "ownerId",
           "projectId",
           "userAppOwnerId",
           "userName",
@@ -1165,7 +1169,7 @@ async function listSharedNoteAttachments(
     const query = projectEvolu.createQuery((db: any) =>
       db
         .selectFrom("noteAttachment")
-        .select(["id", "noteId", "filename", "mimeType", "size"])
+        .select(["id", "ownerId", "noteId", "filename", "mimeType", "size"])
         .where("noteId", "=", args.noteId as ProjectNoteId)
         .where("isDeleted", "is not", SQLITE_TRUE)
         .where("data", "is not", null)

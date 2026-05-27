@@ -243,7 +243,7 @@ async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret:
     const query = projectEvolu.createQuery((db: any) => {
       let q = db
         .selectFrom("projectNote")
-        .select(["id", "projectId", "title", "content", "createdBy", "position", "parentDocId"])
+        .select(["id", "ownerId", "projectId", "title", "content", "createdBy", "position", "parentDocId"])
         .where("isDeleted", "is not", SQLITE_TRUE)
         .where("isDoc", "=", SQLITE_TRUE)
         .orderBy("position", "asc");
@@ -253,9 +253,11 @@ async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret:
       return q;
     });
     const result = await projectEvolu.loadQuery(query);
+    const actualOwnerId = owner.id as string;
+    const filtered = result.filter((n: any) => (n.ownerId as string | undefined) === actualOwnerId);
     return {
-      count: result.length,
-      docs: result.map((n: any) => ({
+      count: filtered.length,
+      docs: filtered.map((n: any) => ({
         id: n.id, projectId: n.projectId, title: n.title, content: n.content,
         createdBy: n.createdBy, position: n.position, parentDocId: n.parentDocId,
       })),
