@@ -2,6 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
 import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery } from "./helpers.js";
+import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
 export const taskTools: Tool[] = [
   {
@@ -125,6 +126,18 @@ export const taskTools: Tool[] = [
           type: "string",
           description: "Parent task ID to create this as a sub-task",
         },
+        code: {
+          type: "string",
+          description: "Override auto-generated task code (e.g., 'TODO-134'). Use only to restore deleted tasks.",
+        },
+        completedAt: {
+          type: "string",
+          description: "ISO timestamp for when the task was completed (only meaningful when status='done').",
+        },
+        isOnProduction: {
+          type: "boolean",
+          description: "Set production badge.",
+        },
       },
       required: ["projectId"],
     },
@@ -213,6 +226,10 @@ export const taskTools: Tool[] = [
         parentTaskId: {
           type: "string",
           description: "Parent task ID, or null to detach from parent",
+        },
+        isDeleted: {
+          type: "boolean",
+          description: "Soft-delete flag. Pass false to restore a previously deleted task.",
         },
       },
       required: ["id"],
@@ -324,6 +341,9 @@ export async function handleTaskTool(
         recurrenceDay?: string;
         sprintNumber?: number;
         parentTaskId?: string;
+        code?: string;
+        completedAt?: string;
+        isOnProduction?: boolean;
       });
     case "td_update_task":
       return updateTask(evolu, args as {
@@ -346,6 +366,7 @@ export async function handleTaskTool(
         recurrenceDay?: string | null;
         sprintNumber?: number | null;
         parentTaskId?: string | null;
+        isDeleted?: boolean;
       });
     case "td_search_tasks":
       return searchTasks(evolu, args as { query: string; limit?: number });
@@ -646,6 +667,9 @@ async function createTask(
     recurrenceDay?: string;
     sprintNumber?: number;
     parentTaskId?: string;
+    code?: string;
+    completedAt?: string;
+    isOnProduction?: boolean;
   }
 ) {
   // Get project to generate task code
@@ -673,16 +697,30 @@ async function createTask(
   const existingTasks = await safeLoadQuery(evolu,tasksQuery);
 
   const projectCode = project.code || "TASK";
-  let maxNum = 0;
-  const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
-  for (const t of existingTasks) {
-    const match = (t as any).title?.match(codeRegex);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
+  let taskCode: string;
+  if (args.code) {
+    // Validate format and uniqueness
+    const codeRegex = new RegExp(`^${projectCode}-\\d+$`);
+    if (!codeRegex.test(args.code)) {
+      throw new Error(`Code "${args.code}" does not match project format "${projectCode}-NNN"`);
     }
+    const conflict = existingTasks.some((t: any) => t.title === args.code);
+    if (conflict) {
+      throw new Error(`Code "${args.code}" is already used by another task`);
+    }
+    taskCode = args.code;
+  } else {
+    let maxNum = 0;
+    const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
+    for (const t of existingTasks) {
+      const match = (t as any).title?.match(codeRegex);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    }
+    taskCode = `${projectCode}-${maxNum + 1}`;
   }
-  const taskCode = `${projectCode}-${maxNum + 1}`;
 
   // Get max position
   const posQuery = evolu.createQuery((db: any) =>
@@ -705,7 +743,8 @@ async function createTask(
     assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
     estimate: args.estimate ? Int.orThrow(args.estimate) : null,
     position: Int.orThrow(maxPosition + 1),
-    completedAt: null,
+    completedAt: args.completedAt || null,
+    isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
     isBlocked: null,
     blockedReason: null,
     recurrenceType: args.recurrenceType || null,
@@ -722,6 +761,8 @@ async function createTask(
 
   // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
   evolu.update("task", { id: result.value.id, status: args.status || "todo" } as any);
+
+  logTaskCreate(evolu, result.value.id);
 
   // Wait for onComplete + network sync
   await waiter.waitForSync();
@@ -758,11 +799,16 @@ async function updateTask(
     recurrenceDay?: string | null;
     sprintNumber?: number | null;
     parentTaskId?: string | null;
+    isDeleted?: boolean;
   }
 ) {
   const updates: Record<string, unknown> = {
     id: args.id as TaskId,
   };
+
+  if (args.isDeleted !== undefined) {
+    updates.isDeleted = args.isDeleted ? SQLITE_TRUE : null;
+  }
 
   if (args.name !== undefined) {
     updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
@@ -824,8 +870,25 @@ async function updateTask(
     updates.parentTaskId = args.parentTaskId ? (args.parentTaskId as TaskId) : null;
   }
 
+  // Load existing task to diff for activity log (best-effort — never fail update on this)
+  let oldTask: Record<string, unknown> = {};
+  try {
+    const oldQuery = evolu.createQuery((db: any) =>
+      db.selectFrom("task")
+        .select([...TRACKED_TASK_FIELDS])
+        .where("id", "=", args.id as TaskId)
+        .limit(1)
+    );
+    const rows = await safeLoadQuery(evolu, oldQuery);
+    if (rows && rows.length > 0) oldTask = rows[0] as Record<string, unknown>;
+  } catch {
+    // ignore — activity log just won't have diff
+  }
+
   const waiter = createMutationWaiter();
   evolu.update("task", updates as any, { onComplete: waiter.onComplete });
+
+  logTaskUpdate(evolu, args.id, oldTask, updates);
 
   await waiter.waitForSync();
 
@@ -946,7 +1009,22 @@ async function bulkUpdateTasks(
         updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
       }
 
+      let oldTask: Record<string, unknown> = {};
+      try {
+        const oldQuery = evolu.createQuery((db: any) =>
+          db.selectFrom("task")
+            .select([...TRACKED_TASK_FIELDS])
+            .where("id", "=", taskId as TaskId)
+            .limit(1)
+        );
+        const rows = await safeLoadQuery(evolu, oldQuery);
+        if (rows && rows.length > 0) oldTask = rows[0] as Record<string, unknown>;
+      } catch {
+        // ignore — no old-state diff is fine
+      }
+
       evolu.update("task", updates as any);
+      logTaskUpdate(evolu, taskId, oldTask, updates);
       successCount++;
     } catch {
       skippedCount++;
@@ -1004,6 +1082,7 @@ async function bulkDeleteTasks(
 
       // Delete the task itself
       evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE } as any);
+      logTaskDelete(evolu, taskId);
       successCount++;
     } catch {
       skippedCount++;

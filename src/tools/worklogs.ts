@@ -2,6 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString1000, Int, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type WorklogId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { logActivity } from "../utils/activityLog.js";
 
 export const worklogTools: Tool[] = [
   {
@@ -177,6 +178,13 @@ async function addWorklog(
   if (!result.ok) {
     throw new Error(`Failed to add worklog: ${JSON.stringify(result.error)}`);
   }
+
+  logActivity(evolu, {
+    taskId: args.taskId,
+    action: "added",
+    entityType: "worklog",
+    newValue: String(args.durationMinutes),
+  });
 
   await waiter.waitForSync();
 

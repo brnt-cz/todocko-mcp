@@ -2,6 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type TaskCommentId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { logActivity } from "../utils/activityLog.js";
 
 export const taskCommentTools: Tool[] = [
   {
@@ -141,6 +142,12 @@ async function createTaskComment(
   if (!result.ok) {
     throw new Error(`Failed to create comment: ${JSON.stringify(result.error)}`);
   }
+
+  logActivity(evolu, {
+    taskId: args.taskId,
+    action: "added",
+    entityType: "comment",
+  });
 
   await waiter.waitForSync();
 

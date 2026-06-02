@@ -2,6 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ChecklistItemId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { logActivity } from "../utils/activityLog.js";
 
 export const checklistItemTools: Tool[] = [
   {
@@ -157,6 +158,13 @@ async function createChecklistItem(
     throw new Error(`Failed to create checklist item: ${JSON.stringify(result.error)}`);
   }
 
+  logActivity(evolu, {
+    taskId: args.taskId,
+    action: "added",
+    entityType: "checklistItem",
+    newValue: args.title,
+  });
+
   await waiter.waitForSync();
 
   return {
@@ -184,8 +192,36 @@ async function updateChecklistItem(
     updates.position = Int.orThrow(args.position);
   }
 
+  // Look up parent taskId + current title for activity log
+  let parentTaskId: string | null = null;
+  let itemTitle: string | null = null;
+  try {
+    const itemQuery = evolu.createQuery((db: any) =>
+      db.selectFrom("checklistItem")
+        .select(["taskId", "title"])
+        .where("id", "=", args.id as ChecklistItemId)
+        .limit(1)
+    );
+    const rows = await evolu.loadQuery(itemQuery);
+    if (rows && rows.length > 0) {
+      parentTaskId = (rows[0] as any).taskId;
+      itemTitle = (rows[0] as any).title;
+    }
+  } catch {
+    // ignore — log without taskId
+  }
+
   const waiter = createMutationWaiter();
   evolu.update("checklistItem", updates as any, { onComplete: waiter.onComplete });
+
+  if (args.isChecked !== undefined) {
+    logActivity(evolu, {
+      taskId: parentTaskId,
+      action: args.isChecked ? "checked" : "unchecked",
+      entityType: "checklistItem",
+      newValue: itemTitle,
+    });
+  }
 
   await waiter.waitForSync();
 
