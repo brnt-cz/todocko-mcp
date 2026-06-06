@@ -11,8 +11,19 @@ import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-// WebSocket polyfill for Node.js - must be set before importing Evolu
-globalThis.WebSocket = WebSocket as unknown as typeof globalThis.WebSocket;
+// WebSocket polyfill for Node.js — Evolu calls `new WebSocket(url)` without
+// options, so the Node `ws` library doesn't send an Origin header by default.
+// We advertise a fixed Origin so the relay can whitelist this MCP specifically
+// instead of having to allow all originless clients (`no-origin`). See TODO-169.
+const TODOCKO_MCP_ORIGIN = "https://todocko-mcp";
+
+class TodockoMcpWebSocket extends WebSocket {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols, { origin: TODOCKO_MCP_ORIGIN });
+  }
+}
+
+globalThis.WebSocket = TodockoMcpWebSocket as unknown as typeof globalThis.WebSocket;
 
 import { createEvolu } from "@evolu/common/local-first";
 import {

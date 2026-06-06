@@ -370,6 +370,10 @@ Jaké mám opakující se úkoly?
 - V konfiguraci MCP serveru je fráze bezpečná (AI k ní nemá přístup)
 - Kdokoli s vaší frází má plný přístup k vašim datům
 
+### WebSocket Origin (TODO-169)
+
+MCP server při WebSocket připojení k relay posílá hlavičku `Origin: https://todocko-mcp`. Sdílený relay (`relay.todocko.cz`) má tuto hodnotu povolenou ve whitelistu Access Control. Pokud používáš vlastní relay, musíš ji přidat do `tiers.json.allowedDomains`, jinak relay odmítne připojení s `403 Forbidden` na WS upgrade.
+
 ## Umístění dat
 
 Databáze jsou uloženy v adresáři `~/.todocko/`:
