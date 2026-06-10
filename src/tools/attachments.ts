@@ -226,11 +226,14 @@ async function deleteAttachment(
   args: { id: string }
 ) {
   const waiter = createMutationWaiter();
-  evolu.update("attachment", {
+  const result = evolu.update("attachment", {
     id: args.id as AttachmentId,
     data: null,
     isDeleted: SQLITE_TRUE,
   } as any, { onComplete: waiter.onComplete });
+  if (!result.ok) {
+    throw new Error(`Failed to delete attachment: ${JSON.stringify(result.error)}`);
+  }
 
   await waiter.waitForSync();
 

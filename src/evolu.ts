@@ -777,7 +777,9 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
   // Parse and validate the mnemonic FIRST
   const mnemonicResult = Mnemonic.from(mnemonic.trim());
   if (!mnemonicResult.ok) {
-    console.error("Invalid mnemonic:", mnemonicResult.error);
+    // TODO-90 M7: never log mnemonicResult.error — the Evolu error object carries
+    // the rejected value (often a typo of the real phrase). Log only that it failed.
+    console.error("Invalid BIP39 mnemonic phrase (validation failed)");
     throw new Error("Invalid BIP39 mnemonic phrase");
   }
 
