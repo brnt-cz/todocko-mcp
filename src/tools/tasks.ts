@@ -886,7 +886,10 @@ async function updateTask(
   }
 
   const waiter = createMutationWaiter();
-  evolu.update("task", updates as any, { onComplete: waiter.onComplete });
+  const updateResult = evolu.update("task", updates as any, { onComplete: waiter.onComplete });
+  if (!updateResult.ok) {
+    throw new Error(`Failed to update task: ${JSON.stringify(updateResult.error)}`);
+  }
 
   logTaskUpdate(evolu, args.id, oldTask, updates);
 
@@ -1023,7 +1026,10 @@ async function bulkUpdateTasks(
         // ignore — no old-state diff is fine
       }
 
-      evolu.update("task", updates as any);
+      // TODO-90 M11: check the Result — update() doesn't throw, so without this
+      // a failed mutation would still be counted as a success.
+      const r = evolu.update("task", updates as any);
+      if (!r.ok) throw new Error(`update failed: ${JSON.stringify(r.error)}`);
       logTaskUpdate(evolu, taskId, oldTask, updates);
       successCount++;
     } catch {
@@ -1080,8 +1086,10 @@ async function bulkDeleteTasks(
         evolu.update("attachment", { id: (a as any).id, data: null, isDeleted: SQLITE_TRUE } as any);
       }
 
-      // Delete the task itself
-      evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE } as any);
+      // Delete the task itself. TODO-90 M11: check the Result so a failed
+      // delete is reported as skipped, not silently counted as success.
+      const r = evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE } as any);
+      if (!r.ok) throw new Error(`delete failed: ${JSON.stringify(r.error)}`);
       logTaskDelete(evolu, taskId);
       successCount++;
     } catch {

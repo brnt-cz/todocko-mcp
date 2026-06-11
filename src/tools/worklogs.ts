@@ -166,6 +166,22 @@ async function addWorklog(
     userId?: string;
   }
 ) {
+  // TODO-90 M12: verify the task exists, otherwise a typo'd taskId logs time
+  // into the void — the worklog never shows up (the UI filters by task) and the
+  // logged effort is silently lost. Mirrors uploadAttachment's check.
+  const taskQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("task")
+      .select(["id"])
+      .where("id", "=", args.taskId as TaskId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1)
+  );
+  const taskResult = await evolu.loadQuery(taskQuery);
+  if (taskResult.length === 0) {
+    throw new Error("Task not found");
+  }
+
   const waiter = createMutationWaiter();
   const result = evolu.insert("worklog", {
     taskId: args.taskId as TaskId,
@@ -214,7 +230,10 @@ async function updateWorklog(
   }
 
   const waiter = createMutationWaiter();
-  evolu.update("worklog", updates as any, { onComplete: waiter.onComplete });
+  const result = evolu.update("worklog", updates as any, { onComplete: waiter.onComplete });
+  if (!result.ok) {
+    throw new Error(`Failed to update worklog: ${JSON.stringify(result.error)}`);
+  }
 
   await waiter.waitForSync();
 
@@ -226,10 +245,13 @@ async function updateWorklog(
 
 async function deleteWorklog(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("worklog", {
+  const result = evolu.update("worklog", {
     id: args.id as WorklogId,
     isDeleted: SQLITE_TRUE,
   } as any, { onComplete: waiter.onComplete });
+  if (!result.ok) {
+    throw new Error(`Failed to delete worklog: ${JSON.stringify(result.error)}`);
+  }
 
   await waiter.waitForSync();
 

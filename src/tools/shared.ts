@@ -774,7 +774,10 @@ async function updateSharedTask(
     }
 
     const waiter = createMutationWaiter();
-    projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) {
+      throw new Error(`Failed to update shared task: ${JSON.stringify(result.error)}`);
+    }
     await waiter.waitForSync();
 
     return {
@@ -1058,7 +1061,10 @@ async function updateSharedMember(
     }
 
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectMember", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("projectMember", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) {
+      throw new Error(`Failed to update shared member: ${JSON.stringify(result.error)}`);
+    }
     await waiter.waitForSync();
 
     return {
