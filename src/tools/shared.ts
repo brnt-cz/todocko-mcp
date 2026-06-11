@@ -405,6 +405,79 @@ export const sharedTools: Tool[] = [
     },
   },
   {
+    name: "td_update_shared_repository_link",
+    description: "Update a repository link in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Repository link ID (required)" },
+        type: { type: "string", enum: ["github", "gitlab", "bitbucket", "azure", "custom"], description: "Repository type" },
+        url: { type: "string", description: "Repository URL" },
+        label: { type: "string", description: "Label, or empty string to clear" },
+        position: { type: "number", description: "Order position" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_delete_shared_repository_link",
+    description: "Soft-delete a repository link in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Repository link ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_update_shared_deployment_stage",
+    description: "Update a deployment stage in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Deployment stage ID (required)" },
+        name: { type: "string", description: "Stage name" },
+        color: { type: "string", description: "Hex color for badge" },
+        position: { type: "number", description: "Order position" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_delete_shared_deployment_stage",
+    description: "Soft-delete a deployment stage in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Deployment stage ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_update_shared_project",
+    description: "Update shared-project metadata (archive / hide from filters). Finds the project owned by the given sharedOwnerId.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        isArchived: { type: "boolean", description: "Archive / unarchive the project" },
+        isHiddenFromFilters: { type: "boolean", description: "Hide the project from filters" },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
     name: "td_list_shared_members",
     description: "List members of a shared project (name, permission, kicked/blocked state)",
     inputSchema: {
@@ -609,6 +682,16 @@ export async function handleSharedTool(
         url: string;
         label?: string;
       });
+    case "td_update_shared_repository_link":
+      return updateSharedRepositoryLink(args as { sharedOwnerId: string; ownerSecret: string; id: string; type?: string; url?: string; label?: string; position?: number });
+    case "td_delete_shared_repository_link":
+      return deleteSharedRepositoryLink(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+    case "td_update_shared_deployment_stage":
+      return updateSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string; position?: number });
+    case "td_delete_shared_deployment_stage":
+      return deleteSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+    case "td_update_shared_project":
+      return updateSharedProject(args as { sharedOwnerId: string; ownerSecret: string; isArchived?: boolean; isHiddenFromFilters?: boolean });
     case "td_list_shared_members":
       return listSharedMembers(args as {
         sharedOwnerId: string;
@@ -1542,6 +1625,122 @@ async function createSharedRepositoryLink(
       linkId: result.value.id,
       message: "Repository link created successfully",
     };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedRepositoryLink(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; type?: string; url?: string; label?: string; position?: number }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const updates: Record<string, unknown> = { id: args.id as RepositoryLinkId };
+    if (args.type !== undefined) updates.type = args.type;
+    if (args.url !== undefined) updates.url = NonEmptyString1000.orThrow(args.url);
+    if (args.label !== undefined) updates.label = args.label ? NonEmptyString100.orThrow(args.label) : null;
+    if (args.position !== undefined) updates.position = Int.orThrow(args.position);
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("repositoryLink", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to update shared repository link: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared repository link updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedRepositoryLink(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("repositoryLink", { id: args.id as RepositoryLinkId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared repository link: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared repository link deleted successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedDeploymentStage(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string; position?: number }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const updates: Record<string, unknown> = { id: args.id as DeploymentStageId };
+    if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+    if (args.color !== undefined) updates.color = args.color;
+    if (args.position !== undefined) updates.position = Int.orThrow(args.position);
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("deploymentStage", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to update shared deployment stage: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared deployment stage updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedDeploymentStage(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared deployment stage: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared deployment stage deleted successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedProject(
+  args: { sharedOwnerId: string; ownerSecret: string; isArchived?: boolean; isHiddenFromFilters?: boolean }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const projectQuery = projectEvolu.createQuery((db: any) =>
+      db.selectFrom("project").select(["id", "ownerId"]).where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const projects = ((await projectEvolu.loadQuery(projectQuery)) as any[]).filter(
+      (p) => (p.ownerId as string) === (sharedOwner.id as string)
+    );
+    if (projects.length === 0) throw new Error("Project not found for this shared owner");
+
+    const updates: Record<string, unknown> = { id: projects[0].id };
+    if (args.isArchived !== undefined) updates.isArchived = args.isArchived ? SQLITE_TRUE : null;
+    if (args.isHiddenFromFilters !== undefined) updates.isHiddenFromFilters = args.isHiddenFromFilters ? SQLITE_TRUE : null;
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("project", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to update shared project: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared project updated successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
