@@ -174,6 +174,48 @@ export const sharedTools: Tool[] = [
     },
   },
   {
+    name: "td_create_shared_task",
+    description: "Create a task in a shared project. Requires sharedOwnerId + ownerSecret from td_list_shared_projects. The task code is auto-generated from the project code unless 'code' is provided.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        projectId: { type: "string", description: "Project ID within the shared project (required)" },
+        name: { type: "string", description: "Human-readable task name/summary" },
+        description: { type: "string", description: "Task description (HTML supported)" },
+        status: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"], description: "Task status (default: todo)" },
+        priority: { type: "string", enum: ["low", "medium", "high", "urgent"], description: "Task priority (default: medium)" },
+        deadline: { type: "string", description: "Deadline in ISO format" },
+        scheduledDate: { type: "string", description: "Scheduled date (YYYY-MM-DD)" },
+        assigneeId: { type: "string", description: "User ID to assign" },
+        estimate: { type: "number", description: "Time estimate in minutes" },
+        isOnProduction: { type: "boolean", description: "Set production badge" },
+        recurrenceType: { type: "string", enum: ["none", "daily", "weekly", "monthly", "yearly", "custom"], description: "Recurrence type" },
+        recurrenceInterval: { type: "number", description: "Recurrence interval (e.g., every 2 weeks)" },
+        recurrenceEndDate: { type: "string", description: "Recurrence end date (ISO format)" },
+        recurrenceDay: { type: "string", description: "Recurrence day: weekly=1-7 (Mon-Sun), monthly=1-31 or 0 (last day)" },
+        sprintNumber: { type: "number", description: "Sprint number" },
+        parentTaskId: { type: "string", description: "Parent task ID to create this as a sub-task" },
+        code: { type: "string", description: "Override auto-generated task code (e.g., 'PROJ-12'). Must match the project code format." },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "projectId"],
+    },
+  },
+  {
+    name: "td_delete_shared_task",
+    description: "Soft-delete a task in a shared project (cascades to its checklist items). Requires sharedOwnerId + ownerSecret from td_list_shared_projects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
     name: "td_create_shared_deployment_stage",
     description: "Create a deployment stage in a shared project",
     inputSchema: {
@@ -391,6 +433,34 @@ export async function handleSharedTool(
         recurrenceEndDate?: string | null;
         recurrenceDay?: string | null;
         sprintNumber?: number | null;
+      });
+    case "td_create_shared_task":
+      return createSharedTask(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        projectId: string;
+        name?: string;
+        description?: string;
+        status?: string;
+        priority?: string;
+        deadline?: string;
+        scheduledDate?: string;
+        assigneeId?: string;
+        estimate?: number;
+        isOnProduction?: boolean;
+        recurrenceType?: string;
+        recurrenceInterval?: number;
+        recurrenceEndDate?: string;
+        recurrenceDay?: string;
+        sprintNumber?: number;
+        parentTaskId?: string;
+        code?: string;
+      });
+    case "td_delete_shared_task":
+      return deleteSharedTask(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
       });
     case "td_create_shared_deployment_stage":
       return createSharedDeploymentStage(args as {
@@ -783,6 +853,191 @@ async function updateSharedTask(
     return {
       success: true,
       message: "Shared task updated successfully",
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedTask(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    projectId: string;
+    name?: string;
+    description?: string;
+    status?: string;
+    priority?: string;
+    deadline?: string;
+    scheduledDate?: string;
+    assigneeId?: string;
+    estimate?: number;
+    isOnProduction?: boolean;
+    recurrenceType?: string;
+    recurrenceInterval?: number;
+    recurrenceEndDate?: string;
+    recurrenceDay?: string;
+    sprintNumber?: number;
+    parentTaskId?: string;
+    code?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    // Resolve the project (scoped to this shared owner) to derive the task code.
+    const projectQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("project")
+        .select(["id", "code", "ownerId"])
+        .where("id", "=", args.projectId as ProjectId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .limit(1)
+    );
+    const projects = (await projectEvolu.loadQuery(projectQuery)) as any[];
+    const project = projects.find((p) => (p.ownerId as string) === (sharedOwner.id as string));
+    if (!project) {
+      throw new Error("Project not found in this shared project");
+    }
+
+    // Existing tasks of THIS owner (for code numbering + max position).
+    const tasksQuery = projectEvolu.createQuery((db: any) =>
+      db.selectFrom("task").select(["title", "position", "projectId", "ownerId"])
+    );
+    const allTasks = ((await projectEvolu.loadQuery(tasksQuery)) as any[]).filter(
+      (t) => (t.ownerId as string) === (sharedOwner.id as string)
+    );
+    const projectTasks = allTasks.filter((t) => (t.projectId as string) === (project.id as string));
+
+    const projectCode = project.code || "TASK";
+    let taskCode: string;
+    if (args.code) {
+      const codeRegex = new RegExp(`^${projectCode}-\\d+$`);
+      if (!codeRegex.test(args.code)) {
+        throw new Error(`Code "${args.code}" does not match project format "${projectCode}-NNN"`);
+      }
+      if (projectTasks.some((t) => t.title === args.code)) {
+        throw new Error(`Code "${args.code}" is already used by another task`);
+      }
+      taskCode = args.code;
+    } else {
+      let maxNum = 0;
+      const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
+      for (const t of projectTasks) {
+        const match = (t.title as string | undefined)?.match(codeRegex);
+        if (match) {
+          const num = parseInt(match[1]!, 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+      taskCode = `${projectCode}-${maxNum + 1}`;
+    }
+
+    const maxPosition = allTasks.reduce((m, t) => Math.max(m, (t.position as number) || 0), 0);
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert(
+      "task",
+      {
+        projectId: args.projectId as ProjectId,
+        title: NonEmptyString100.orThrow(taskCode),
+        name: args.name ? NonEmptyString100.orThrow(args.name) : null,
+        description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+        status: args.status || "todo",
+        priority: args.priority || "medium",
+        deadline: args.deadline || null,
+        scheduledDate: args.scheduledDate || null,
+        assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
+        estimate: args.estimate ? Int.orThrow(args.estimate) : null,
+        position: Int.orThrow(maxPosition + 1),
+        isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
+        isBlocked: null,
+        blockedReason: null,
+        completedAt: null,
+        recurrenceType: args.recurrenceType || null,
+        recurrenceInterval: args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null,
+        recurrenceEndDate: args.recurrenceEndDate || null,
+        recurrenceDay: args.recurrenceDay || null,
+        sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
+        ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
+      } as any,
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+
+    if (!result.ok) {
+      throw new Error(`Failed to create shared task: ${JSON.stringify(result.error)}`);
+    }
+
+    // Touch with an update so Evolu sets updatedAt (only set on update, not insert).
+    projectEvolu.update("task", { id: result.value.id, status: args.status || "todo" } as any, { ownerId: sharedOwner.id });
+
+    await waiter.waitForSync();
+
+    return {
+      success: true,
+      taskId: result.value.id,
+      taskCode,
+      message: `Shared task ${taskCode} created successfully`,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedTask(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    id: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    // Cascade: soft-delete the task's checklist items (matches the app).
+    const ciQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("checklistItem")
+        .select(["id", "ownerId"])
+        .where("taskId", "=", args.id as TaskId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const items = ((await projectEvolu.loadQuery(ciQuery)) as any[]).filter(
+      (c) => (c.ownerId as string) === (sharedOwner.id as string)
+    );
+    for (const it of items) {
+      projectEvolu.update("checklistItem", { id: it.id, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id });
+    }
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update(
+      "task",
+      { id: args.id as TaskId, isDeleted: SQLITE_TRUE } as any,
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+    if (!result.ok) {
+      throw new Error(`Failed to delete shared task: ${JSON.stringify(result.error)}`);
+    }
+
+    await waiter.waitForSync();
+
+    return {
+      success: true,
+      message: `Shared task deleted successfully (cascaded ${items.length} checklist item(s))`,
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);

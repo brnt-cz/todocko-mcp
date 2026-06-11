@@ -305,6 +305,17 @@ export const taskTools: Tool[] = [
       required: ["taskIds"],
     },
   },
+  {
+    name: "td_delete_task",
+    description: "Soft-delete a single personal task (cascades to its worklogs and attachments). For shared-project tasks use td_delete_shared_task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["id"],
+    },
+  },
 ];
 
 export async function handleTaskTool(
@@ -381,6 +392,8 @@ export async function handleTaskTool(
       });
     case "td_bulk_delete_tasks":
       return bulkDeleteTasks(evolu, args as { taskIds: string[] });
+    case "td_delete_task":
+      return deleteTask(evolu, args as { id: string });
     default:
       return undefined;
   }
@@ -1104,5 +1117,60 @@ async function bulkDeleteTasks(
     successCount,
     skippedCount,
     message: `Bulk delete complete: ${successCount} deleted, ${skippedCount} skipped`,
+  };
+}
+
+async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
+  if (!args.id) {
+    throw new Error("id is required");
+  }
+
+  // Verify the task exists (and grab its code for the message).
+  const taskQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("task")
+      .select(["id", "title"])
+      .where("id", "=", args.id as TaskId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1)
+  );
+  const found = await safeLoadQuery(evolu, taskQuery);
+  if (found.length === 0) {
+    throw new Error("Task not found");
+  }
+  const code = (found[0] as any).title as string;
+
+  // Cascade soft-delete worklogs + attachments (matches td_bulk_delete_tasks).
+  const worklogs = await safeLoadQuery(
+    evolu,
+    evolu.createQuery((db: any) =>
+      db.selectFrom("worklog").select(["id"]).where("taskId", "=", args.id as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
+    )
+  );
+  for (const w of worklogs) {
+    evolu.update("worklog", { id: (w as any).id, isDeleted: SQLITE_TRUE } as any);
+  }
+  const attachments = await safeLoadQuery(
+    evolu,
+    evolu.createQuery((db: any) =>
+      db.selectFrom("attachment").select(["id"]).where("taskId", "=", args.id as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
+    )
+  );
+  for (const a of attachments) {
+    evolu.update("attachment", { id: (a as any).id, data: null, isDeleted: SQLITE_TRUE } as any);
+  }
+
+  const waiter = createMutationWaiter();
+  const result = evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  if (!result.ok) {
+    throw new Error(`Failed to delete task: ${JSON.stringify(result.error)}`);
+  }
+  logTaskDelete(evolu, args.id);
+
+  await waiter.waitForSync();
+
+  return {
+    success: true,
+    message: `Task ${code} deleted successfully${getSyncWarning()}`,
   };
 }
