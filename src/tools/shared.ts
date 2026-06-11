@@ -10,6 +10,8 @@ import {
   type ProjectMemberId,
   type ProjectNoteId,
   type NoteAttachmentId,
+  type WorklogId,
+  type ChecklistItemId,
   type EvoluInstance,
   getProjectEvolu,
   getSharedOwner,
@@ -211,6 +213,106 @@ export const sharedTools: Tool[] = [
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         id: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_list_shared_worklogs",
+    description: "List worklogs for a task in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_add_shared_worklog",
+    description: "Add a worklog to a task in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+        durationMinutes: { type: "number", description: "Duration in minutes (required)" },
+        description: { type: "string", description: "Description of work done" },
+        loggedAt: { type: "string", description: "Date when work was done (YYYY-MM-DD, default: today)" },
+        userId: { type: "string", description: "User ID who did the work (optional)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId", "durationMinutes"],
+    },
+  },
+  {
+    name: "td_delete_shared_worklog",
+    description: "Soft-delete a worklog in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Worklog ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_list_shared_checklist_items",
+    description: "List checklist items for a task in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_create_shared_checklist_item",
+    description: "Create a checklist item on a task in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+        title: { type: "string", description: "Checklist item text (required)" },
+        position: { type: "number", description: "Position (default: appended to the end)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId", "title"],
+    },
+  },
+  {
+    name: "td_update_shared_checklist_item",
+    description: "Update a checklist item in a shared project (toggle done, rename, reorder).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Checklist item ID (required)" },
+        title: { type: "string", description: "New text" },
+        isChecked: { type: "boolean", description: "Checked state" },
+        position: { type: "number", description: "New position" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_delete_shared_checklist_item",
+    description: "Soft-delete a checklist item in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Checklist item ID (required)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -462,6 +564,28 @@ export async function handleSharedTool(
         ownerSecret: string;
         id: string;
       });
+    case "td_list_shared_worklogs":
+      return listSharedWorklogs(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
+    case "td_add_shared_worklog":
+      return addSharedWorklog(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        taskId: string;
+        durationMinutes: number;
+        description?: string;
+        loggedAt?: string;
+        userId?: string;
+      });
+    case "td_delete_shared_worklog":
+      return deleteSharedWorklog(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+    case "td_list_shared_checklist_items":
+      return listSharedChecklistItems(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
+    case "td_create_shared_checklist_item":
+      return createSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; title: string; position?: number });
+    case "td_update_shared_checklist_item":
+      return updateSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; isChecked?: boolean; position?: number });
+    case "td_delete_shared_checklist_item":
+      return deleteSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_create_shared_deployment_stage":
       return createSharedDeploymentStage(args as {
         sharedOwnerId: string;
@@ -1039,6 +1163,220 @@ async function deleteSharedTask(
       success: true,
       message: `Shared task deleted successfully (cascaded ${items.length} checklist item(s))`,
     };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedWorklogs(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("worklog")
+        .select(["id", "ownerId", "taskId", "userId", "durationMinutes", "description", "loggedAt"])
+        .where("taskId", "=", args.taskId as TaskId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter(
+      (w) => (w.ownerId as string) === (sharedOwner.id as string)
+    );
+    return {
+      count: rows.length,
+      worklogs: rows.map((w) => ({
+        id: w.id,
+        taskId: w.taskId,
+        userId: w.userId,
+        durationMinutes: w.durationMinutes,
+        description: w.description,
+        loggedAt: w.loggedAt,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function addSharedWorklog(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    taskId: string;
+    durationMinutes: number;
+    description?: string;
+    loggedAt?: string;
+    userId?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    // Verify the task exists in this shared project (avoid orphan worklogs).
+    const taskQuery = projectEvolu.createQuery((db: any) =>
+      db.selectFrom("task").select(["id", "ownerId"]).where("id", "=", args.taskId as TaskId).where("isDeleted", "is not", SQLITE_TRUE).limit(1)
+    );
+    const tasks = ((await projectEvolu.loadQuery(taskQuery)) as any[]).filter((t) => (t.ownerId as string) === (sharedOwner.id as string));
+    if (tasks.length === 0) throw new Error("Task not found in this shared project");
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert(
+      "worklog",
+      {
+        taskId: args.taskId as TaskId,
+        userId: args.userId ? (args.userId as UserId) : null,
+        durationMinutes: Int.orThrow(args.durationMinutes),
+        description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+        loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
+      },
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+    if (!result.ok) throw new Error(`Failed to add shared worklog: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, worklogId: result.value.id, message: "Shared worklog added successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedWorklog(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("worklog", { id: args.id as WorklogId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared worklog: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared worklog deleted successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedChecklistItems(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("checklistItem")
+        .select(["id", "ownerId", "taskId", "title", "isChecked", "position"])
+        .where("taskId", "=", args.taskId as TaskId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("position", "asc")
+    );
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter(
+      (c) => (c.ownerId as string) === (sharedOwner.id as string)
+    );
+    return {
+      count: rows.length,
+      items: rows.map((c) => ({
+        id: c.id,
+        taskId: c.taskId,
+        title: c.title,
+        isChecked: c.isChecked === SQLITE_TRUE,
+        position: c.position,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedChecklistItem(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string; title: string; position?: number }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    let position: number;
+    if (args.position !== undefined) {
+      position = args.position;
+    } else {
+      const posQuery = projectEvolu.createQuery((db: any) =>
+        db.selectFrom("checklistItem").select(["position", "ownerId", "taskId"]).where("taskId", "=", args.taskId as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
+      );
+      const existing = ((await projectEvolu.loadQuery(posQuery)) as any[]).filter((c) => (c.ownerId as string) === (sharedOwner.id as string));
+      position = existing.reduce((m: number, c: any) => Math.max(m, (c.position as number) || 0), 0) + 1;
+    }
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert(
+      "checklistItem",
+      {
+        taskId: args.taskId as TaskId,
+        title: NonEmptyString1000.orThrow(args.title),
+        isChecked: null,
+        position: Int.orThrow(position),
+      },
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+    if (!result.ok) throw new Error(`Failed to create shared checklist item: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, checklistItemId: result.value.id, message: "Shared checklist item created successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedChecklistItem(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; isChecked?: boolean; position?: number }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const updates: Record<string, unknown> = { id: args.id as ChecklistItemId };
+    if (args.title !== undefined) updates.title = NonEmptyString1000.orThrow(args.title);
+    if (args.isChecked !== undefined) updates.isChecked = args.isChecked ? SQLITE_TRUE : null;
+    if (args.position !== undefined) updates.position = Int.orThrow(args.position);
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("checklistItem", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to update shared checklist item: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared checklist item updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedChecklistItem(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("checklistItem", { id: args.id as ChecklistItemId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared checklist item: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared checklist item deleted successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
