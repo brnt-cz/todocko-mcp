@@ -12,6 +12,7 @@ import {
   type NoteAttachmentId,
   type WorklogId,
   type ChecklistItemId,
+  type AttachmentId,
   type EvoluInstance,
   getProjectEvolu,
   getSharedOwner,
@@ -478,6 +479,63 @@ export const sharedTools: Tool[] = [
     },
   },
   {
+    name: "td_upload_shared_attachment",
+    description: "Upload a file attachment to a task in a shared project. Provide either filePath or base64 content.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+        filePath: { type: "string", description: "Absolute path to the file to upload (or use content)" },
+        content: { type: "string", description: "Base64-encoded file content (or use filePath)" },
+        filename: { type: "string", description: "File name (required when using content)" },
+        mimeType: { type: "string", description: "MIME type (auto-detected from filename if omitted)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_list_shared_attachments",
+    description: "List file attachments of a task in a shared project (metadata only, no data).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_download_shared_attachment",
+    description: "Download a task attachment from a shared project. Returns base64 data, or writes to savePath if provided.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Attachment ID (required)" },
+        savePath: { type: "string", description: "Absolute path to write the file to (optional)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_delete_shared_attachment",
+    description: "Soft-delete a task attachment in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Attachment ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
     name: "td_list_shared_members",
     description: "List members of a shared project (name, permission, kicked/blocked state)",
     inputSchema: {
@@ -692,6 +750,22 @@ export async function handleSharedTool(
       return deleteSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_update_shared_project":
       return updateSharedProject(args as { sharedOwnerId: string; ownerSecret: string; isArchived?: boolean; isHiddenFromFilters?: boolean });
+    case "td_upload_shared_attachment":
+      return uploadSharedAttachment(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        taskId: string;
+        filePath?: string;
+        content?: string;
+        filename?: string;
+        mimeType?: string;
+      });
+    case "td_list_shared_attachments":
+      return listSharedAttachments(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
+    case "td_download_shared_attachment":
+      return downloadSharedAttachment(args as { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string });
+    case "td_delete_shared_attachment":
+      return deleteSharedAttachment(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_list_shared_members":
       return listSharedMembers(args as {
         sharedOwnerId: string;
@@ -2076,6 +2150,154 @@ async function deleteSharedNoteAttachment(
       success: true,
       message: "Shared note attachment deleted successfully",
     };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function uploadSharedAttachment(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    taskId: string;
+    filePath?: string;
+    content?: string;
+    filename?: string;
+    mimeType?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  if (!args.filePath && !args.content) throw new Error("Either filePath or content is required");
+  if (args.filePath && args.content) throw new Error("Provide either filePath or content, not both");
+
+  let fileContent: string;
+  let filename: string;
+  let mimeType: string;
+  let size: number;
+
+  if (args.filePath) {
+    if (!existsSync(args.filePath)) throw new Error(`File not found: ${args.filePath}`);
+    const fileBuffer = readFileSync(args.filePath);
+    fileContent = fileBuffer.toString("base64");
+    size = fileBuffer.length;
+    filename = args.filename || basename(args.filePath);
+    mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
+  } else {
+    if (!args.filename) throw new Error("filename is required when using content parameter");
+    fileContent = args.content!;
+    filename = args.filename;
+    mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
+    size = Math.ceil((fileContent.length * 3) / 4);
+  }
+
+  if (filename.length > 100) throw new Error("Filename must be 100 characters or less");
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    // Verify the task exists in this shared project.
+    const taskQuery = projectEvolu.createQuery((db: any) =>
+      db.selectFrom("task").select(["id", "ownerId"]).where("id", "=", args.taskId as TaskId).where("isDeleted", "is not", SQLITE_TRUE).limit(1)
+    );
+    const tasks = ((await projectEvolu.loadQuery(taskQuery)) as any[]).filter((t) => (t.ownerId as string) === (sharedOwner.id as string));
+    if (tasks.length === 0) throw new Error("Task not found in this shared project");
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert("attachment", {
+      taskId: args.taskId as TaskId,
+      filename: NonEmptyString100.orThrow(filename),
+      mimeType,
+      data: fileContent,
+      size: Int.orThrow(size),
+    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+
+    if (!result.ok) throw new Error(`Failed to upload shared attachment: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+
+    return { success: true, attachmentId: result.value.id, filename, mimeType, size, message: `Attachment "${filename}" uploaded to shared task successfully` };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedAttachments(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("attachment")
+        .select(["id", "ownerId", "taskId", "filename", "mimeType", "size"])
+        .where("taskId", "=", args.taskId as TaskId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("data", "is not", null)
+    );
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter((a) => (a.ownerId as string) === (sharedOwner.id as string));
+    return {
+      count: rows.length,
+      attachments: rows.map((a) => ({ id: a.id, taskId: a.taskId, filename: a.filename, mimeType: a.mimeType, size: a.size })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function downloadSharedAttachment(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("attachment")
+        .select(["id", "filename", "mimeType", "data", "size"])
+        .where("id", "=", args.id as AttachmentId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .limit(1)
+    );
+    const result = await projectEvolu.loadQuery(query);
+    if (result.length === 0) return { error: "Shared attachment not found" };
+    const a = result[0] as any;
+    if (!a.data) return { error: "Attachment data is empty (may have been deleted)" };
+
+    if (args.savePath) {
+      const dir = dirname(args.savePath);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
+      return { success: true, filePath: args.savePath, filename: a.filename, mimeType: a.mimeType, size: a.size };
+    }
+    return { id: a.id, filename: a.filename, mimeType: a.mimeType, data: a.data, size: a.size };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedAttachment(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared attachment: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared attachment deleted successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
