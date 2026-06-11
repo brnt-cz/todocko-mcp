@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (109)
+## Dostupné nástroje (132)
 
 ### Projekty
 
@@ -113,6 +113,7 @@ Instalátor:
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
 | `td_bulk_update_tasks` | Hromadná aktualizace více úkolů (včetně sprintNumber) |
 | `td_bulk_delete_tasks` | Hromadné smazání více úkolů |
+| `td_delete_task` | Smazání jednoho úkolu (soft delete, kaskáda na worklogy a přílohy) |
 | `td_list_git_events` | Git aktivita pro úkol (commits, PR) z relay serveru |
 
 ### Uživatelé
@@ -241,6 +242,9 @@ Instalátor:
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_deployment_stages` | Seznam deployment stages pro projekt |
+| `td_create_deployment_stage` | Vytvoření deployment stage |
+| `td_update_deployment_stage` | Aktualizace deployment stage |
+| `td_delete_deployment_stage` | Smazání deployment stage (soft delete) |
 
 ### Repository linky
 
@@ -248,6 +252,7 @@ Instalátor:
 |---------|-------|
 | `td_list_repository_links` | Seznam repozitářových linků |
 | `td_create_repository_link` | Vytvoření repozitářového linku |
+| `td_update_repository_link` | Aktualizace repozitářového linku |
 | `td_delete_repository_link` | Smazání repozitářového linku |
 
 ### Sdílené projekty
@@ -256,11 +261,29 @@ Instalátor:
 |---------|-------|
 | `td_list_shared_projects` | Seznam sdílených projektů |
 | `td_list_shared_tasks` | Seznam úkolů ze sdíleného projektu |
+| `td_create_shared_task` | Vytvoření úkolu ve sdíleném projektu (auto-generovaný kód) |
 | `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu (všechna pole včetně recurrence, estimate, blocking) |
+| `td_delete_shared_task` | Smazání úkolu ve sdíleném projektu (soft delete, kaskáda na checklist) |
+| `td_update_shared_project` | Aktualizace metadat sdíleného projektu (archivace / skrytí z filtrů) |
+| `td_list_shared_worklogs` | Seznam worklogů úkolu ve sdíleném projektu |
+| `td_add_shared_worklog` | Přidání worklogu k úkolu ve sdíleném projektu |
+| `td_delete_shared_worklog` | Smazání worklogu ve sdíleném projektu |
+| `td_list_shared_checklist_items` | Seznam položek checklistu úkolu ve sdíleném projektu |
+| `td_create_shared_checklist_item` | Přidání položky checklistu ve sdíleném projektu |
+| `td_update_shared_checklist_item` | Aktualizace položky checklistu ve sdíleném projektu |
+| `td_delete_shared_checklist_item` | Smazání položky checklistu ve sdíleném projektu |
+| `td_upload_shared_attachment` | Nahrání přílohy k úkolu ve sdíleném projektu |
+| `td_list_shared_attachments` | Seznam příloh úkolu ve sdíleném projektu |
+| `td_download_shared_attachment` | Stažení přílohy úkolu sdíleného projektu |
+| `td_delete_shared_attachment` | Smazání přílohy úkolu sdíleného projektu |
 | `td_list_shared_deployment_stages` | Seznam deployment stages pro sdílený projekt |
 | `td_create_shared_deployment_stage` | Vytvoření deployment stage ve sdíleném projektu |
+| `td_update_shared_deployment_stage` | Aktualizace deployment stage ve sdíleném projektu |
+| `td_delete_shared_deployment_stage` | Smazání deployment stage ve sdíleném projektu |
 | `td_list_shared_repository_links` | Seznam repozitářových linků sdíleného projektu |
 | `td_create_shared_repository_link` | Vytvoření repozitářového linku ve sdíleném projektu |
+| `td_update_shared_repository_link` | Aktualizace repozitářového linku ve sdíleném projektu |
+| `td_delete_shared_repository_link` | Smazání repozitářového linku ve sdíleném projektu |
 | `td_list_shared_project_notes` | Seznam poznámek sdíleného projektu |
 | `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
