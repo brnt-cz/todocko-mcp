@@ -45,6 +45,21 @@ export const repositoryLinkTools: Tool[] = [
     },
   },
   {
+    name: "td_update_repository_link",
+    description: "Update a repository link for a project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Repository link ID (required)" },
+        type: { type: "string", enum: ["github", "gitlab", "bitbucket", "azure", "custom"], description: "Repository type" },
+        url: { type: "string", description: "Repository URL" },
+        label: { type: "string", description: "Label, or empty string to clear" },
+        position: { type: "number", description: "Order position" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "td_delete_repository_link",
     description: "Delete a repository link",
     inputSchema: {
@@ -75,6 +90,8 @@ export async function handleRepositoryLinkTool(
         url: string;
         label?: string;
       });
+    case "td_update_repository_link":
+      return updateRepositoryLink(evolu, args as { id: string; type?: string; url?: string; label?: string; position?: number });
     case "td_delete_repository_link":
       return deleteRepositoryLink(evolu, args as { id: string });
     default:
@@ -170,6 +187,25 @@ async function createRepositoryLink(
     linkId: result.value.id,
     message: "Repository link created successfully",
   };
+}
+
+async function updateRepositoryLink(
+  evolu: EvoluInstance,
+  args: { id: string; type?: string; url?: string; label?: string; position?: number }
+) {
+  const updates: Record<string, unknown> = { id: args.id as RepositoryLinkId };
+  if (args.type !== undefined) updates.type = args.type;
+  if (args.url !== undefined) updates.url = NonEmptyString1000.orThrow(args.url);
+  if (args.label !== undefined) updates.label = args.label ? NonEmptyString100.orThrow(args.label) : null;
+  if (args.position !== undefined) updates.position = Int.orThrow(args.position);
+
+  const waiter = createMutationWaiter();
+  const result = evolu.update("repositoryLink", updates as any, { onComplete: waiter.onComplete });
+  if (!result.ok) {
+    throw new Error(`Failed to update repository link: ${JSON.stringify(result.error)}`);
+  }
+  await waiter.waitForSync();
+  return { success: true, message: "Repository link updated successfully" };
 }
 
 async function deleteRepositoryLink(
