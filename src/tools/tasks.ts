@@ -829,7 +829,10 @@ async function updateTask(
   };
 
   if (args.isDeleted !== undefined) {
-    updates.isDeleted = args.isDeleted ? SQLITE_TRUE : null;
+    // Restore (false) must write 0, not null: the task.isDeleted column is a
+    // non-nullable SqliteBoolean (0|1), so Evolu's update validator rejects
+    // null. Read queries filter `isDeleted is not 1`, so 0 == visible again.
+    updates.isDeleted = (args.isDeleted ? SQLITE_TRUE : (0 as unknown as typeof SQLITE_TRUE));
   }
 
   if (args.name !== undefined) {
