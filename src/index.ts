@@ -78,18 +78,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       content: [
         {
           type: "text",
-          text: `Error: ${errorMessage}`,
+          text: `Error: ${formatError(error)}`,
         },
       ],
       isError: true,
     };
   }
 });
+
+/**
+ * Format an error for the MCP response, unwrapping the `cause` chain.
+ *
+ * Evolu's `Type.orThrow()` throws `new Error("getOrThrow", { cause })` where the
+ * actual reason (e.g. a String1000 maxLength validation failure) lives in
+ * `cause`. Surfacing only `error.message` produced an opaque "getOrThrow" with
+ * no diagnostic value, so we append the cause chain here.
+ */
+function formatError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  let message = error.message;
+  let cause: unknown = (error as { cause?: unknown }).cause;
+  const seen = new Set<unknown>([error]);
+
+  while (cause != null && !seen.has(cause)) {
+    seen.add(cause);
+    if (cause instanceof Error) {
+      message += ` (cause: ${cause.message})`;
+      cause = (cause as { cause?: unknown }).cause;
+    } else {
+      const text = typeof cause === "string" ? cause : JSON.stringify(cause);
+      message += ` (cause: ${text})`;
+      break;
+    }
+  }
+
+  return message;
+}
 
 async function main() {
   // Check for mnemonic

@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery } from "./helpers.js";
+import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength } from "./helpers.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
 export const taskTools: Tool[] = [
@@ -685,6 +685,10 @@ async function createTask(
     isOnProduction?: boolean;
   }
 ) {
+  // Validate field lengths up-front for clear errors (Evolu caps these).
+  assertMaxLength(args.name, 100, "name");
+  assertMaxLength(args.description, 1000, "description");
+
   // Get project to generate task code
   const projectQuery = evolu.createQuery((db: any) =>
     db
@@ -815,6 +819,11 @@ async function updateTask(
     isDeleted?: boolean;
   }
 ) {
+  // Validate field lengths up-front for clear errors (Evolu caps these).
+  assertMaxLength(args.name, 100, "name");
+  assertMaxLength(args.description, 1000, "description");
+  assertMaxLength(args.blockedReason, 1000, "blockedReason");
+
   const updates: Record<string, unknown> = {
     id: args.id as TaskId,
   };
