@@ -47,6 +47,25 @@ export function getSyncWarning(): string {
 }
 
 /**
+ * Validate that a string field does not exceed Evolu's max length.
+ *
+ * Evolu's `NonEmptyStringN.orThrow()` throws an opaque "getOrThrow" error on
+ * overflow (the real reason is buried in `cause`). Calling this first yields a
+ * clear, actionable message naming the field and the offending length.
+ */
+export function assertMaxLength(
+  value: string | null | undefined,
+  max: number,
+  field: string
+): void {
+  if (value != null && value.length > max) {
+    throw new Error(
+      `Field "${field}" is too long: ${value.length} characters (max ${max}).`
+    );
+  }
+}
+
+/**
  * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
  * If the query doesn't resolve within the timeout, throws an error.
  */
