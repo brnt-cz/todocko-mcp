@@ -385,26 +385,26 @@ Analyzuj závislosti v projektu TODO
 Jaké mám opakující se úkoly?
 ```
 
-## Linux CLI (`td`) (TODO-160)
+## Linux CLI (`todo`) (TODO-160)
 
-Vedle MCP serveru je v balíčku i CLI `td` pro rychlé osobní ovládání z terminálu — sdílí stejnou databázi i `TODOCKO_MNEMONIC` jako MCP. Po `npm link` (nebo globální instalaci) je dostupné jako `td`.
+Vedle MCP serveru je v balíčku i CLI `todo` pro rychlé osobní ovládání z terminálu — sdílí stejnou databázi i `TODOCKO_MNEMONIC` jako MCP. Po `npm link` (nebo globální instalaci) je dostupné jako `todo`.
 
 ```bash
 # Přidání úkolu (bez -p použije první projekt)
-td add "Opravit login"
-td add "Opravit login" -p TODO --priority high --scheduled today
+todo add "Opravit login"
+todo add "Opravit login" -p TODO --priority high --scheduled today
 
 # Změna stavu (identifikace kódem úkolu)
-td done TODO-160          # status=done
-td start TODO-160         # status=in_progress
-td mv TODO-160 review     # backlog|todo|in_progress|review|done
+todo done TODO-160          # status=done
+todo start TODO-160         # status=in_progress
+todo mv TODO-160 review     # backlog|todo|in_progress|review|done
 
 # Worklog
-td log TODO-160 1h30m "ladění OAuth"
-td worklogs TODO-160      # tabulka worklogů
+todo log TODO-160 1h30m "ladění OAuth"
+todo worklogs TODO-160      # tabulka worklogů
 
 # Strojový výstup na všech příkazech
-td add "X" --json
+todo add "X" --json
 ```
 
 - **Architektura:** `src/cli.ts` (commander) → mapuje argumenty na existující tool handlery (`handleToolCall`), žádná duplicitní business logika. Kód úkolu se překládá na ID přes `td_get_task`.

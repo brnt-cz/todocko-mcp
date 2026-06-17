@@ -8,7 +8,7 @@ import { fail } from './cli/format.js';
 
 const program = new Command();
 program
-  .name('td')
+  .name('todo')
   .description('Todocko CLI — rychlé osobní ovládání z terminálu')
   .version('1.0.0')
   .option('--json', 'strojový JSON výstup');
