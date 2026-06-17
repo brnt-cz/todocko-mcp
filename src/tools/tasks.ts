@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength } from "./helpers.js";
+import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH } from "./helpers.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
 export const taskTools: Tool[] = [
@@ -687,7 +687,7 @@ async function createTask(
 ) {
   // Validate field lengths up-front for clear errors (Evolu caps these).
   assertMaxLength(args.name, 100, "name");
-  assertMaxLength(args.description, 1000, "description");
+  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
 
   // Get project to generate task code
   const projectQuery = evolu.createQuery((db: any) =>
@@ -704,12 +704,15 @@ async function createTask(
   }
   const project = projectResult[0] as any;
 
-  // Get next task number for this project
+  // Get next task number for this project. Exclude soft-deleted tasks so the
+  // counter matches the app (max of VISIBLE codes + 1). Counting tombstones
+  // made codes jump past deleted duplicates (e.g. straight to 350). (TODO-181)
   const tasksQuery = evolu.createQuery((db: any) =>
     db
       .selectFrom("task")
       .select(["title"])
       .where("projectId", "=", project.id)
+      .where("isDeleted", "is not", SQLITE_TRUE)
   );
   const existingTasks = await safeLoadQuery(evolu,tasksQuery);
 
@@ -752,7 +755,7 @@ async function createTask(
     projectId: args.projectId as ProjectId,
     title: NonEmptyString100.orThrow(taskCode),
     name: args.name ? NonEmptyString100.orThrow(args.name) : null,
-    description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+    description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
     status: args.status || "todo",
     priority: args.priority || "medium",
     deadline: args.deadline || null,
@@ -821,7 +824,7 @@ async function updateTask(
 ) {
   // Validate field lengths up-front for clear errors (Evolu caps these).
   assertMaxLength(args.name, 100, "name");
-  assertMaxLength(args.description, 1000, "description");
+  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
   assertMaxLength(args.blockedReason, 1000, "blockedReason");
 
   const updates: Record<string, unknown> = {
@@ -839,7 +842,7 @@ async function updateTask(
     updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
   }
   if (args.description !== undefined) {
-    updates.description = args.description ? NonEmptyString1000.orThrow(args.description) : null;
+    updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
   }
   if (args.status !== undefined) {
     updates.status = args.status;

@@ -1,4 +1,14 @@
 import { getSyncHealth, trackOnComplete, type EvoluInstance } from "../evolu.js";
+import { maxLength, NonEmptyString } from "@evolu/common";
+
+/**
+ * Description fields (task/shared task) are stored in an unbounded `String`
+ * column, so the app UI imposes no limit. Evolu's built-in `NonEmptyString1000`
+ * was far too tight for real descriptions; this raises the MCP guardrail to a
+ * generous 10000 while still rejecting accidental megabyte payloads. (TODO-181)
+ */
+export const NonEmptyString10000 = maxLength(10000)(NonEmptyString);
+export const MAX_DESCRIPTION_LENGTH = 10000;
 
 // Network delay after onComplete - time for WebSocket to send data to relay
 // onComplete means local DB is updated; this delay allows network round-trip
