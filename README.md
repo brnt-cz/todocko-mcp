@@ -389,6 +389,8 @@ Jaké mám opakující se úkoly?
 
 Vedle MCP serveru je v balíčku i CLI `todo` pro rychlé osobní ovládání z terminálu — sdílí stejnou databázi i `TODOCKO_MNEMONIC` jako MCP. Po `npm link` (nebo globální instalaci) je dostupné jako `todo`.
 
+📖 **Podrobný návod: [CLI.md](CLI.md)**
+
 ```bash
 # Přidání úkolu (bez -p použije první projekt)
 todo add "Opravit login"
