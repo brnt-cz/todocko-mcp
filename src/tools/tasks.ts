@@ -1116,7 +1116,7 @@ async function bulkDeleteTasks(
 
       // Delete the task itself. TODO-90 M11: check the Result so a failed
       // delete is reported as skipped, not silently counted as success.
-      const r = evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE } as any);
+      const r = evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any);
       if (!r.ok) throw new Error(`delete failed: ${JSON.stringify(r.error)}`);
       logTaskDelete(evolu, taskId);
       successCount++;
@@ -1176,7 +1176,7 @@ async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
   }
 
   const waiter = createMutationWaiter();
-  const result = evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  const result = evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onComplete: waiter.onComplete });
   if (!result.ok) {
     throw new Error(`Failed to delete task: ${JSON.stringify(result.error)}`);
   }

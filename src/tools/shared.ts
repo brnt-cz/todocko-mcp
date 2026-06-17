@@ -1318,7 +1318,7 @@ async function deleteSharedTask(
     const waiter = createMutationWaiter();
     const result = projectEvolu.update(
       "task",
-      { id: args.id as TaskId, isDeleted: SQLITE_TRUE } as any,
+      { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any,
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
     if (!result.ok) {
