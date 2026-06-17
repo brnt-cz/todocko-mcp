@@ -22,7 +22,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter } from "./helpers.js";
+import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -1062,6 +1062,9 @@ async function updateSharedTask(
   useSharedOwner(sharedOwner);
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
+  // Clear, actionable errors before the opaque Evolu orThrow (TODO-181)
+  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
+
   try {
     const updates: Record<string, unknown> = {
       id: args.id as TaskId,
@@ -1071,7 +1074,7 @@ async function updateSharedTask(
       updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
     }
     if (args.description !== undefined) {
-      updates.description = args.description ? NonEmptyString1000.orThrow(args.description) : null;
+      updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
     }
     if (args.status !== undefined) {
       updates.status = args.status;
@@ -1172,6 +1175,9 @@ async function createSharedTask(
   useSharedOwner(sharedOwner);
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
+  // Clear, actionable error before the opaque Evolu orThrow (TODO-181)
+  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
+
   try {
     // Resolve the project (scoped to this shared owner) to derive the task code.
     const projectQuery = projectEvolu.createQuery((db: any) =>
@@ -1189,8 +1195,13 @@ async function createSharedTask(
     }
 
     // Existing tasks of THIS owner (for code numbering + max position).
+    // Exclude soft-deleted tasks so the code counter matches the app and does
+    // not jump past tombstoned (e.g. deleted-duplicate) codes. (TODO-181)
     const tasksQuery = projectEvolu.createQuery((db: any) =>
-      db.selectFrom("task").select(["title", "position", "projectId", "ownerId"])
+      db
+        .selectFrom("task")
+        .select(["title", "position", "projectId", "ownerId"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
     );
     const allTasks = ((await projectEvolu.loadQuery(tasksQuery)) as any[]).filter(
       (t) => (t.ownerId as string) === (sharedOwner.id as string)
@@ -1230,7 +1241,7 @@ async function createSharedTask(
         projectId: args.projectId as ProjectId,
         title: NonEmptyString100.orThrow(taskCode),
         name: args.name ? NonEmptyString100.orThrow(args.name) : null,
-        description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+        description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
         status: args.status || "todo",
         priority: args.priority || "medium",
         deadline: args.deadline || null,
@@ -1307,7 +1318,7 @@ async function deleteSharedTask(
     const waiter = createMutationWaiter();
     const result = projectEvolu.update(
       "task",
-      { id: args.id as TaskId, isDeleted: SQLITE_TRUE } as any,
+      { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any,
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
     if (!result.ok) {

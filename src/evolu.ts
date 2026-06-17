@@ -163,6 +163,7 @@ export const Schema = {
     recurrenceDay: nullOr(Int),
     sprintNumber: nullOr(Int),
     parentTaskId: nullOr(TaskId),
+    deletedAt: nullOr(String), // trash timestamp, mirrors app (TODO-179/182)
   },
   tag: {
     id: TagId,
@@ -355,6 +356,7 @@ export const ProjectSchema = {
     recurrenceDay: nullOr(Int),
     sprintNumber: nullOr(Int),
     parentTaskId: nullOr(TaskId),
+    deletedAt: nullOr(String), // trash timestamp, mirrors app (TODO-179/182)
   },
   tag: {
     id: TagId,
