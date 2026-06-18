@@ -1,5 +1,40 @@
 import { getSyncHealth, trackOnComplete, type EvoluInstance } from "../evolu.js";
 import { maxLength, NonEmptyString } from "@evolu/common";
+import { resolve, join, sep } from "path";
+import { homedir } from "os";
+
+/**
+ * Resolve a user-supplied attachment `savePath` to an absolute path confined to
+ * an allowed base directory (default ~/Downloads, override via
+ * TODOCKO_DOWNLOAD_DIR). Rejects absolute/`..` escapes so a download can't
+ * overwrite arbitrary files (e.g. ~/.ssh/authorized_keys, ~/.bashrc) when the
+ * MCP/CLI is driven by an agent acting on untrusted content. (TODO-184)
+ */
+export function resolveDownloadPath(savePath: string): string {
+  const base = resolve(process.env.TODOCKO_DOWNLOAD_DIR || join(homedir(), "Downloads"));
+  const target = resolve(base, savePath);
+  if (target !== base && !target.startsWith(base + sep)) {
+    throw new Error(
+      `savePath "${savePath}" escapes the allowed download directory (${base}). ` +
+        `Use a relative path inside it, or set TODOCKO_DOWNLOAD_DIR.`,
+    );
+  }
+  return target;
+}
+
+/** Max decoded attachment size accepted by upload tools (memory/DB DoS guard, TODO-190). */
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/** Reject an attachment whose base64 `content` decodes to more than the allowed size. */
+export function assertAttachmentSize(base64: string): void {
+  // 4 base64 chars ≈ 3 bytes; ignore padding for the estimate.
+  const approxBytes = Math.floor((base64.length * 3) / 4);
+  if (approxBytes > MAX_ATTACHMENT_BYTES) {
+    throw new Error(
+      `Attachment too large: ~${Math.round(approxBytes / 1024 / 1024)} MB (max ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB).`,
+    );
+  }
+}
 
 /**
  * Description fields (task/shared task) are stored in an unbounded `String`

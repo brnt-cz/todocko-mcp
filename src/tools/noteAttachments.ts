@@ -9,7 +9,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter } from "./helpers.js";
+import { createMutationWaiter, resolveDownloadPath, assertAttachmentSize } from "./helpers.js";
 
 // Attachments for LOCAL project notes (localNoteAttachment table, AppOwner).
 // Shared-project note attachments (noteAttachment in ProjectSchema) are not
@@ -49,7 +49,7 @@ export const noteAttachmentTools: Tool[] = [
       type: "object",
       properties: {
         id: { type: "string", description: "Note attachment ID (required)" },
-        savePath: { type: "string", description: "Optional path to save the file to disk" },
+        savePath: { type: "string", description: "Optional path to save the file to disk, RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); escapes are rejected" },
       },
       required: ["id"],
     },
@@ -124,6 +124,7 @@ async function uploadNoteAttachment(
   if (filename.length > 100) {
     throw new Error("Filename must be 100 characters or less");
   }
+  assertAttachmentSize(fileContent);
 
   // Verify note exists
   const noteQuery = evolu.createQuery((db: any) =>
@@ -213,14 +214,15 @@ async function downloadNoteAttachment(
   }
 
   if (args.savePath) {
-    const dir = dirname(args.savePath);
+    const target = resolveDownloadPath(args.savePath);
+    const dir = dirname(target);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
+    writeFileSync(target, Buffer.from(a.data, "base64"));
     return {
       success: true,
-      filePath: args.savePath,
+      filePath: target,
       filename: a.filename,
       mimeType: a.mimeType,
       size: a.size,
