@@ -4,7 +4,7 @@ import { SQLITE_TRUE, type TaskId, type AttachmentId, type EvoluInstance } from 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter } from "./helpers.js";
+import { createMutationWaiter, resolveDownloadPath, assertAttachmentSize } from "./helpers.js";
 
 export const attachmentTools: Tool[] = [
   {
@@ -77,7 +77,7 @@ export const attachmentTools: Tool[] = [
         },
         savePath: {
           type: "string",
-          description: "Optional file path to save the attachment to disk. If provided, writes the file and returns the path instead of base64 content.",
+          description: "Optional path to save the attachment to disk, RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); paths escaping that directory are rejected. If provided, writes the file and returns the path instead of base64 content.",
         },
       },
       required: ["id"],
@@ -156,6 +156,7 @@ async function uploadAttachment(
   if (filename.length > 100) {
     throw new Error("Filename must be 100 characters or less");
   }
+  assertAttachmentSize(fileContent);
 
   // Verify task exists
   const taskQuery = evolu.createQuery((db: any) =>
@@ -267,14 +268,15 @@ async function downloadAttachment(
   }
 
   if (args.savePath) {
-    const dir = dirname(args.savePath);
+    const target = resolveDownloadPath(args.savePath);
+    const dir = dirname(target);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
+    writeFileSync(target, Buffer.from(a.data, "base64"));
     return {
       success: true,
-      filePath: args.savePath,
+      filePath: target,
       filename: a.filename,
       mimeType: a.mimeType,
       size: a.size,

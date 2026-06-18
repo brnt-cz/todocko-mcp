@@ -22,7 +22,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH } from "./helpers.js";
+import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, assertAttachmentSize } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -517,7 +517,7 @@ export const sharedTools: Tool[] = [
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         id: { type: "string", description: "Attachment ID (required)" },
-        savePath: { type: "string", description: "Absolute path to write the file to (optional)" },
+        savePath: { type: "string", description: "Path to write the file to (optional), RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); escapes are rejected" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -604,7 +604,7 @@ export const sharedTools: Tool[] = [
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         id: { type: "string", description: "Note attachment ID (required)" },
-        savePath: { type: "string", description: "Optional path to save the file to disk" },
+        savePath: { type: "string", description: "Optional path to save the file to disk, RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); escapes are rejected" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -2002,6 +2002,7 @@ async function uploadSharedNoteAttachment(
   if (filename.length > 100) {
     throw new Error("Filename must be 100 characters or less");
   }
+  assertAttachmentSize(fileContent);
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
@@ -2110,14 +2111,15 @@ async function downloadSharedNoteAttachment(
     }
 
     if (args.savePath) {
-      const dir = dirname(args.savePath);
+      const target = resolveDownloadPath(args.savePath);
+      const dir = dirname(target);
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
       }
-      writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
+      writeFileSync(target, Buffer.from(a.data, "base64"));
       return {
         success: true,
-        filePath: args.savePath,
+        filePath: target,
         filename: a.filename,
         mimeType: a.mimeType,
         size: a.size,
@@ -2203,6 +2205,7 @@ async function uploadSharedAttachment(
   }
 
   if (filename.length > 100) throw new Error("Filename must be 100 characters or less");
+  assertAttachmentSize(fileContent);
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
@@ -2284,10 +2287,11 @@ async function downloadSharedAttachment(
     if (!a.data) return { error: "Attachment data is empty (may have been deleted)" };
 
     if (args.savePath) {
-      const dir = dirname(args.savePath);
+      const target = resolveDownloadPath(args.savePath);
+      const dir = dirname(target);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(args.savePath, Buffer.from(a.data, "base64"));
-      return { success: true, filePath: args.savePath, filename: a.filename, mimeType: a.mimeType, size: a.size };
+      writeFileSync(target, Buffer.from(a.data, "base64"));
+      return { success: true, filePath: target, filename: a.filename, mimeType: a.mimeType, size: a.size };
     }
     return { id: a.id, filename: a.filename, mimeType: a.mimeType, data: a.data, size: a.size };
   } finally {
