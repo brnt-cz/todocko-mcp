@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
+import { NonEmptyString100, NonEmptyString1000, Int, String as EvoluString } from "@evolu/common";
 import {
   SQLITE_TRUE,
   type TaskId,
@@ -12,6 +12,7 @@ import {
   type NoteAttachmentId,
   type WorklogId,
   type ChecklistItemId,
+  type TaskCommentId,
   type AttachmentId,
   type EvoluInstance,
   getProjectEvolu,
@@ -207,7 +208,7 @@ export const sharedTools: Tool[] = [
   },
   {
     name: "td_delete_shared_task",
-    description: "Soft-delete a task in a shared project (cascades to its checklist items). Requires sharedOwnerId + ownerSecret from td_list_shared_projects.",
+    description: "Soft-delete a task in a shared project (cascades to its checklist items and comments). Requires sharedOwnerId + ownerSecret from td_list_shared_projects.",
     inputSchema: {
       type: "object",
       properties: {
@@ -314,6 +315,61 @@ export const sharedTools: Tool[] = [
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         id: { type: "string", description: "Checklist item ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_list_shared_task_comments",
+    description: "List comments for a task in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_create_shared_task_comment",
+    description: "Add a comment to a task in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+        content: { type: "string", description: "Comment content, HTML supported (required)" },
+        userId: { type: "string", description: "AppOwner OwnerId of the author (optional)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId", "content"],
+    },
+  },
+  {
+    name: "td_update_shared_task_comment",
+    description: "Update a comment in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Comment ID (required)" },
+        content: { type: "string", description: "New comment content (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id", "content"],
+    },
+  },
+  {
+    name: "td_delete_shared_task_comment",
+    description: "Soft-delete a comment in a shared project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Comment ID (required)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -717,6 +773,14 @@ export async function handleSharedTool(
       return updateSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; isChecked?: boolean; position?: number });
     case "td_delete_shared_checklist_item":
       return deleteSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+    case "td_list_shared_task_comments":
+      return listSharedTaskComments(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
+    case "td_create_shared_task_comment":
+      return createSharedTaskComment(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; content: string; userId?: string });
+    case "td_update_shared_task_comment":
+      return updateSharedTaskComment(args as { sharedOwnerId: string; ownerSecret: string; id: string; content: string });
+    case "td_delete_shared_task_comment":
+      return deleteSharedTaskComment(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_create_shared_deployment_stage":
       return createSharedDeploymentStage(args as {
         sharedOwnerId: string;
@@ -1315,6 +1379,21 @@ async function deleteSharedTask(
       projectEvolu.update("checklistItem", { id: it.id, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id });
     }
 
+    // Cascade: soft-delete the task's comments (matches the app).
+    const commentQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskComment")
+        .select(["id", "ownerId"])
+        .where("taskId", "=", args.id as TaskId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const comments = ((await projectEvolu.loadQuery(commentQuery)) as any[]).filter(
+      (c) => (c.ownerId as string) === (sharedOwner.id as string)
+    );
+    for (const c of comments) {
+      projectEvolu.update("taskComment", { id: c.id, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id });
+    }
+
     const waiter = createMutationWaiter();
     const result = projectEvolu.update(
       "task",
@@ -1329,7 +1408,7 @@ async function deleteSharedTask(
 
     return {
       success: true,
-      message: `Shared task deleted successfully (cascaded ${items.length} checklist item(s))`,
+      message: `Shared task deleted successfully (cascaded ${items.length} checklist item(s), ${comments.length} comment(s))`,
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
@@ -1545,6 +1624,111 @@ async function deleteSharedChecklistItem(
     if (!result.ok) throw new Error(`Failed to delete shared checklist item: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared checklist item deleted successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedTaskComments(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskComment")
+        .select(["id", "ownerId", "taskId", "userId", "content", "createdAt", "updatedAt"])
+        .where("taskId", "=", args.taskId as TaskId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("createdAt", "asc")
+    );
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter(
+      (c) => (c.ownerId as string) === (sharedOwner.id as string)
+    );
+    return {
+      count: rows.length,
+      comments: rows.map((c) => ({
+        id: c.id,
+        taskId: c.taskId,
+        userId: c.userId,
+        content: c.content,
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedTaskComment(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string; content: string; userId?: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert(
+      "taskComment",
+      {
+        taskId: args.taskId as TaskId,
+        userId: (args.userId ?? null) as UserId | null,
+        content: EvoluString.orThrow(args.content),
+      },
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+    if (!result.ok) throw new Error(`Failed to create shared comment: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, commentId: result.value.id, message: "Shared comment created successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedTaskComment(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; content: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update(
+      "taskComment",
+      { id: args.id as TaskCommentId, content: EvoluString.orThrow(args.content) } as any,
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+    if (!result.ok) throw new Error(`Failed to update shared comment: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared comment updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedTaskComment(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("taskComment", { id: args.id as TaskCommentId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared comment: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared comment deleted successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }

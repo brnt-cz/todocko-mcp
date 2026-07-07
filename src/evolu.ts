@@ -425,6 +425,13 @@ export const ProjectSchema = {
     data: nullOr(String), // Base64 encoded content
     size: Int,
   },
+  // Task comments (rich text discussion, per shared task)
+  taskComment: {
+    id: TaskCommentId,
+    taskId: TaskId,
+    userId: nullOr(String), // AppOwner OwnerId of author
+    content: String,
+  },
 };
 
 export type Schema = typeof Schema;
