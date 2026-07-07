@@ -90,7 +90,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (132)
+## Dostupné nástroje (136)
 
 ### Projekty
 
@@ -272,6 +272,10 @@ Instalátor:
 | `td_create_shared_checklist_item` | Přidání položky checklistu ve sdíleném projektu |
 | `td_update_shared_checklist_item` | Aktualizace položky checklistu ve sdíleném projektu |
 | `td_delete_shared_checklist_item` | Smazání položky checklistu ve sdíleném projektu |
+| `td_list_shared_task_comments` | Seznam komentářů úkolu ve sdíleném projektu |
+| `td_create_shared_task_comment` | Přidání komentáře k úkolu ve sdíleném projektu |
+| `td_update_shared_task_comment` | Aktualizace komentáře ve sdíleném projektu |
+| `td_delete_shared_task_comment` | Smazání komentáře ve sdíleném projektu |
 | `td_upload_shared_attachment` | Nahrání přílohy k úkolu ve sdíleném projektu |
 | `td_list_shared_attachments` | Seznam příloh úkolu ve sdíleném projektu |
 | `td_download_shared_attachment` | Stažení přílohy úkolu sdíleného projektu |
