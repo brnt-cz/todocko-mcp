@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type TaskTemplateId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const taskTemplateTools: Tool[] = [
   {
@@ -176,7 +176,7 @@ async function updateTaskTemplate(
   if (args.projectId !== undefined) updates.projectId = args.projectId ? (args.projectId as ProjectId) : null;
 
   const waiter = createMutationWaiter();
-  evolu.update("taskTemplate", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateTaskTemplate", evolu.update("taskTemplate", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
   return { success: true, message: `Template updated${getSyncWarning()}` };
@@ -184,7 +184,7 @@ async function updateTaskTemplate(
 
 async function deleteTaskTemplate(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("taskTemplate", { id: args.id as TaskTemplateId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteTaskTemplate", evolu.update("taskTemplate", { id: args.id as TaskTemplateId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Template deleted" };
 }

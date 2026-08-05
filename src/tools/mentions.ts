@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type MentionId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, waitForSync, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const mentionTools: Tool[] = [
   {
@@ -218,10 +218,12 @@ async function createMention(
 
 async function markMentionRead(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("mention", {
-    id: args.id as MentionId,
-    isRead: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("markMentionRead",
+    evolu.update("mention", {
+      id: args.id as MentionId,
+      isRead: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 
@@ -245,10 +247,12 @@ async function markAllMentionsRead(evolu: EvoluInstance, args: { mentionedUserId
   let count = 0;
 
   for (const m of unread) {
-    evolu.update("mention", {
-      id: (m as any).id as MentionId,
-      isRead: SQLITE_TRUE,
-    } as any);
+    assertMutation("markAllMentionsRead",
+      evolu.update("mention", {
+        id: (m as any).id as MentionId,
+        isRead: SQLITE_TRUE,
+      } as any)
+    );
     count++;
   }
 
@@ -263,10 +267,12 @@ async function markAllMentionsRead(evolu: EvoluInstance, args: { mentionedUserId
 
 async function deleteMention(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("mention", {
-    id: args.id as MentionId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteMention",
+    evolu.update("mention", {
+      id: args.id as MentionId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

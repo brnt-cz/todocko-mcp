@@ -11,7 +11,7 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const projectDocTools: Tool[] = [
   // Local project docs (not synced)
@@ -220,7 +220,7 @@ async function updateProjectDoc(
   if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
 
   const waiter = createMutationWaiter();
-  evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateProjectDoc", evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
   return { success: true, message: `Document page updated${getSyncWarning()}` };
@@ -228,7 +228,7 @@ async function updateProjectDoc(
 
 async function deleteProjectDoc(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteProjectDoc", evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Document page deleted" };
 }

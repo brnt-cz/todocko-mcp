@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type RepositoryLinkId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter } from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 
 export const repositoryLinkTools: Tool[] = [
   {
@@ -213,10 +213,12 @@ async function deleteRepositoryLink(
   args: { id: string }
 ) {
   const waiter = createMutationWaiter();
-  evolu.update("repositoryLink", {
-    id: args.id as RepositoryLinkId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteRepositoryLink",
+    evolu.update("repositoryLink", {
+      id: args.id as RepositoryLinkId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

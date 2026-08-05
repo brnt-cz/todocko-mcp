@@ -1088,31 +1088,9 @@ async function bulkDeleteTasks(
 
   for (const taskId of args.taskIds) {
     try {
-      // Delete worklogs for this task
-      const worklogsQuery = evolu.createQuery((db: any) =>
-        db
-          .selectFrom("worklog")
-          .select(["id"])
-          .where("taskId", "=", taskId as TaskId)
-          .where("isDeleted", "is not", SQLITE_TRUE)
-      );
-      const worklogs = await safeLoadQuery(evolu,worklogsQuery);
-      for (const w of worklogs) {
-        evolu.update("worklog", { id: (w as any).id, isDeleted: SQLITE_TRUE } as any);
-      }
-
-      // Delete attachments for this task
-      const attachmentsQuery = evolu.createQuery((db: any) =>
-        db
-          .selectFrom("attachment")
-          .select(["id"])
-          .where("taskId", "=", taskId as TaskId)
-          .where("isDeleted", "is not", SQLITE_TRUE)
-      );
-      const attachments = await safeLoadQuery(evolu,attachmentsQuery);
-      for (const a of attachments) {
-        evolu.update("attachment", { id: (a as any).id, data: null, isDeleted: SQLITE_TRUE } as any);
-      }
+      // Same cascade as the single delete and the app: worklogs, attachments
+      // (content kept) and task links. (TODO-206)
+      await cascadeDeleteTaskChildren(evolu, taskId);
 
       // Delete the task itself. TODO-90 M11: check the Result so a failed
       // delete is reported as skipped, not silently counted as success.
@@ -1135,6 +1113,53 @@ async function bulkDeleteTasks(
   };
 }
 
+/**
+ * Soft-delete a task's children: worklogs, attachments and task links.
+ *
+ * Mirrors the app's deleteTask cascade so a task deleted through MCP is
+ * recoverable in exactly the same way as one deleted in the UI. (TODO-206)
+ *
+ * Child Results are deliberately not asserted: these are tombstones, the task
+ * row itself is checked by the caller, and a rejected child must not turn a
+ * completed delete into a reported failure. The app discards them too.
+ */
+async function cascadeDeleteTaskChildren(evolu: EvoluInstance, taskId: string): Promise<void> {
+  const worklogs = await safeLoadQuery(
+    evolu,
+    evolu.createQuery((db: any) =>
+      db.selectFrom("worklog").select(["id"]).where("taskId", "=", taskId as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
+    )
+  );
+  for (const w of worklogs) {
+    evolu.update("worklog", { id: (w as any).id, isDeleted: SQLITE_TRUE } as any);
+  }
+
+  // Keep `data` — the app does, so the content survives for a restore.
+  const attachments = await safeLoadQuery(
+    evolu,
+    evolu.createQuery((db: any) =>
+      db.selectFrom("attachment").select(["id"]).where("taskId", "=", taskId as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
+    )
+  );
+  for (const a of attachments) {
+    evolu.update("attachment", { id: (a as any).id, isDeleted: SQLITE_TRUE } as any);
+  }
+
+  const links = await safeLoadQuery(
+    evolu,
+    evolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskLink")
+        .select(["id"])
+        .where((eb: any) => eb.or([eb("sourceTaskId", "=", taskId as TaskId), eb("targetTaskId", "=", taskId as TaskId)]))
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    )
+  );
+  for (const l of links) {
+    evolu.update("taskLink", { id: (l as any).id, isDeleted: SQLITE_TRUE } as any);
+  }
+}
+
 async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
   if (!args.id) {
     throw new Error("id is required");
@@ -1155,25 +1180,13 @@ async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
   }
   const code = (found[0] as any).title as string;
 
-  // Cascade soft-delete worklogs + attachments (matches td_bulk_delete_tasks).
-  const worklogs = await safeLoadQuery(
-    evolu,
-    evolu.createQuery((db: any) =>
-      db.selectFrom("worklog").select(["id"]).where("taskId", "=", args.id as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
-    )
-  );
-  for (const w of worklogs) {
-    evolu.update("worklog", { id: (w as any).id, isDeleted: SQLITE_TRUE } as any);
-  }
-  const attachments = await safeLoadQuery(
-    evolu,
-    evolu.createQuery((db: any) =>
-      db.selectFrom("attachment").select(["id"]).where("taskId", "=", args.id as TaskId).where("isDeleted", "is not", SQLITE_TRUE)
-    )
-  );
-  for (const a of attachments) {
-    evolu.update("attachment", { id: (a as any).id, data: null, isDeleted: SQLITE_TRUE } as any);
-  }
+  // Cascade soft-delete worklogs + attachments + task links, matching the app's
+  // deleteTask (todocko/src/composables/useDatabase.ts). Two divergences were
+  // fixed here (TODO-206):
+  //   - attachment `data` is NOT nulled: the app keeps the content so a restored
+  //     task still has its files. Nulling made deletion via MCP lose them for good.
+  //   - taskLink rows are cascaded, otherwise links point at trashed tasks.
+  await cascadeDeleteTaskChildren(evolu, args.id);
 
   const waiter = createMutationWaiter();
   const result = evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onComplete: waiter.onComplete });

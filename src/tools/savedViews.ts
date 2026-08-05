@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type SavedViewId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const savedViewTools: Tool[] = [
   {
@@ -122,7 +122,7 @@ async function updateSavedView(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
-  evolu.update("savedView", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateSavedView", evolu.update("savedView", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
   return { success: true, message: `View updated${getSyncWarning()}` };
@@ -130,7 +130,7 @@ async function updateSavedView(
 
 async function deleteSavedView(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("savedView", { id: args.id as SavedViewId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteSavedView", evolu.update("savedView", { id: args.id as SavedViewId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "View deleted" };
 }
