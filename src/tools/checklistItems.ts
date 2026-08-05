@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ChecklistItemId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const checklistItemTools: Tool[] = [
@@ -212,7 +212,7 @@ async function updateChecklistItem(
   }
 
   const waiter = createMutationWaiter();
-  evolu.update("checklistItem", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateChecklistItem", evolu.update("checklistItem", updates as any, { onComplete: waiter.onComplete }));
 
   if (args.isChecked !== undefined) {
     logActivity(evolu, {
@@ -233,10 +233,12 @@ async function updateChecklistItem(
 
 async function deleteChecklistItem(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("checklistItem", {
-    id: args.id as ChecklistItemId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteChecklistItem",
+    evolu.update("checklistItem", {
+      id: args.id as ChecklistItemId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

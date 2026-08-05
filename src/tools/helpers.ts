@@ -123,3 +123,16 @@ export async function safeLoadQuery(evolu: EvoluInstance, query: any, timeoutMs 
   ]);
   return result as any[];
 }
+
+/**
+ * Throw when an Evolu mutation was rejected.
+ *
+ * Tools answer the caller with `success: true`, so discarding the Result means
+ * reporting a write that Evolu refused — the update/delete tools did exactly
+ * that. The create paths already checked theirs. (TODO-206)
+ */
+export function assertMutation(label: string, result: { readonly ok: boolean }): void {
+  if (!result.ok) {
+    throw new Error(`${label} failed: ${JSON.stringify((result as { readonly error?: unknown }).error)}`);
+  }
+}

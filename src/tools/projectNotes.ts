@@ -11,7 +11,7 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const projectNoteTools: Tool[] = [
   // Local project notes (not synced)
@@ -211,7 +211,7 @@ async function updateProjectNote(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
-  evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateProjectNote", evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
   return { success: true, message: `Note updated${getSyncWarning()}` };
@@ -219,7 +219,7 @@ async function updateProjectNote(
 
 async function deleteProjectNote(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteProjectNote", evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Note deleted" };
 }

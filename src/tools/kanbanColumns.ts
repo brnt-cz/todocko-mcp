@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type KanbanColumnId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const kanbanColumnTools: Tool[] = [
   {
@@ -131,7 +131,7 @@ async function updateKanbanColumn(
   if (args.showInKanban !== undefined) updates.showInKanban = args.showInKanban ? SQLITE_TRUE : null;
 
   const waiter = createMutationWaiter();
-  evolu.update("kanbanColumn", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateKanbanColumn", evolu.update("kanbanColumn", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
   return { success: true, message: `Column updated${getSyncWarning()}` };
@@ -139,7 +139,7 @@ async function updateKanbanColumn(
 
 async function deleteKanbanColumn(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("kanbanColumn", { id: args.id as KanbanColumnId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteKanbanColumn", evolu.update("kanbanColumn", { id: args.id as KanbanColumnId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Column deleted" };
 }

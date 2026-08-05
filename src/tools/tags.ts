@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type TaskTagId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const tagTools: Tool[] = [
   {
@@ -170,17 +170,21 @@ async function deleteTag(evolu: EvoluInstance, args: { id: string }) {
   );
   const links = await evolu.loadQuery(linksQuery);
   for (const link of links) {
-    evolu.update("taskTag", {
-      id: (link as any).id as TaskTagId,
-      isDeleted: SQLITE_TRUE,
-    } as any);
+    assertMutation("deleteTag",
+      evolu.update("taskTag", {
+        id: (link as any).id as TaskTagId,
+        isDeleted: SQLITE_TRUE,
+      } as any)
+    );
   }
 
   const waiter = createMutationWaiter();
-  evolu.update("tag", {
-    id: args.id as TagId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteTag",
+    evolu.update("tag", {
+      id: args.id as TagId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 
@@ -276,10 +280,12 @@ async function removeTagFromTask(evolu: EvoluInstance, args: { taskId: string; t
   }
 
   const waiter = createMutationWaiter();
-  evolu.update("taskTag", {
-    id: (result[0] as any).id as TaskTagId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("removeTagFromTask",
+    evolu.update("taskTag", {
+      id: (result[0] as any).id as TaskTagId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const projectTools: Tool[] = [
   {
@@ -264,7 +264,7 @@ async function updateProject(
   }
 
   const waiter = createMutationWaiter();
-  evolu.update("project", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateProject", evolu.update("project", updates as any, { onComplete: waiter.onComplete }));
 
   await waiter.waitForSync();
 
@@ -276,10 +276,12 @@ async function updateProject(
 
 async function deleteProject(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("project", {
-    id: args.id as ProjectId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteProject",
+    evolu.update("project", {
+      id: args.id as ProjectId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

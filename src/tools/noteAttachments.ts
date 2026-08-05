@@ -9,7 +9,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, resolveDownloadPath, assertAttachmentSize } from "./helpers.js";
+import { createMutationWaiter, resolveDownloadPath, assertAttachmentSize , assertMutation} from "./helpers.js";
 
 // Attachments for LOCAL project notes (localNoteAttachment table, AppOwner).
 // Shared-project note attachments (noteAttachment in ProjectSchema) are not
@@ -243,11 +243,13 @@ async function deleteNoteAttachment(
   args: { id: string }
 ) {
   const waiter = createMutationWaiter();
-  evolu.update("localNoteAttachment", {
-    id: args.id as LocalNoteAttachmentId,
-    data: null,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteNoteAttachment",
+    evolu.update("localNoteAttachment", {
+      id: args.id as LocalNoteAttachmentId,
+      data: null,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

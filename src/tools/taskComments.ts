@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type TaskCommentId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const taskCommentTools: Tool[] = [
@@ -163,10 +163,12 @@ async function updateTaskComment(
   args: { id: string; content: string }
 ) {
   const waiter = createMutationWaiter();
-  evolu.update("taskComment", {
-    id: args.id as TaskCommentId,
-    content: EvoluString.orThrow(args.content),
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("updateTaskComment",
+    evolu.update("taskComment", {
+      id: args.id as TaskCommentId,
+      content: EvoluString.orThrow(args.content),
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 
@@ -178,10 +180,12 @@ async function updateTaskComment(
 
 async function deleteTaskComment(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  evolu.update("taskComment", {
-    id: args.id as TaskCommentId,
-    isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteTaskComment",
+    evolu.update("taskComment", {
+      id: args.id as TaskCommentId,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: waiter.onComplete })
+  );
 
   await waiter.waitForSync();
 

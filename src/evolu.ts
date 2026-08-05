@@ -1014,6 +1014,18 @@ export function getSharedOwner(ownerId: string, ownerSecretBase64: string): Shar
   if (!sharedOwner) {
     const ownerSecret = decodeOwnerSecret(ownerSecretBase64);
     sharedOwner = createSharedOwner(ownerSecret);
+
+    // The owner id is derived from the secret, so a mismatch means the caller
+    // paired the wrong secret with this ownerId. Without this check the write
+    // silently lands in whichever partition the SECRET points at — either
+    // another project, or a phantom owner nobody can ever read back. Reads look
+    // equally plausible, so the caller never learns. (TODO-206)
+    if ((sharedOwner.id as string) !== ownerId) {
+      throw new Error(
+        `ownerSecret does not match sharedOwnerId (derived ${sharedOwner.id as string}, expected ${ownerId})`,
+      );
+    }
+
     sharedOwnersCache.set(sharedOwner.id as string, sharedOwner);
   }
 
