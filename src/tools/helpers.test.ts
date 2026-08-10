@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES } from "./helpers.js";
+import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP } from "./helpers.js";
 import { resolve } from "path";
 
 const BASE = "/tmp/todocko-dl-test";
@@ -42,5 +42,32 @@ describe("assertAttachmentSize", () => {
   it("rejects payloads over the limit", () => {
     const tooBig = "A".repeat(Math.ceil((MAX_ATTACHMENT_BYTES + 1) * 4 / 3) + 8);
     expect(() => assertAttachmentSize(tooBig)).toThrow(/too large/);
+  });
+});
+
+describe("topPositionForNewTask", () => {
+  it("puts a task above an empty column", () => {
+    expect(topPositionForNewTask(0)).toBe(-POSITION_STEP);
+  });
+
+  it("puts a task above a column whose lowest position is 0", () => {
+    expect(topPositionForNewTask(0)).toBeLessThan(0);
+  });
+
+  it("clamps a positive minimum so the result stays above position 0", () => {
+    // A column numbered 10,20,30 has min 10 — the new task must still be <= -10,
+    // otherwise it would land under a row sitting at 0.
+    expect(topPositionForNewTask(10)).toBe(-POSITION_STEP);
+  });
+
+  it("goes below an already negative minimum", () => {
+    expect(topPositionForNewTask(-30)).toBe(-40);
+  });
+
+  it("stacks repeated creations newest-first", () => {
+    const first = topPositionForNewTask(0);
+    const second = topPositionForNewTask(first);
+    const third = topPositionForNewTask(second);
+    expect([first, second, third]).toEqual([-10, -20, -30]);
   });
 });
