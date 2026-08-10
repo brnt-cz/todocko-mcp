@@ -45,6 +45,26 @@ export function assertAttachmentSize(base64: string): void {
 export const NonEmptyString10000 = maxLength(10000)(NonEmptyString);
 export const MAX_DESCRIPTION_LENGTH = 10000;
 
+/** Gap between neighbouring positions, matching the app's renumbering step. */
+export const POSITION_STEP = 10;
+
+/**
+ * Position for a new task so it lands at the TOP of its column, mirroring the
+ * app (TODO-217). Columns render by `position` ascending, so "top" is the
+ * lowest number; MCP used to append with `max + 1`, which put tasks created by
+ * an assistant at the very bottom while the app put its own at the top.
+ *
+ * `minPosition` is the lowest position currently in that column, or 0 when the
+ * column is empty. Clamping at 0 guarantees the result is <= -STEP, so the new
+ * task also sorts above rows whose position is 0.
+ *
+ * Negative positions are fine: the app renumbers a whole column to `index * 10`
+ * on every drag-drop reorder.
+ */
+export function topPositionForNewTask(minPosition: number): number {
+  return Math.min(0, minPosition) - POSITION_STEP;
+}
+
 // Network delay after onComplete - time for WebSocket to send data to relay
 // onComplete means local DB is updated; this delay allows network round-trip
 export const NETWORK_DELAY_MS = 500;

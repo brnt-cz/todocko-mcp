@@ -23,7 +23,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, assertAttachmentSize } from "./helpers.js";
+import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, assertAttachmentSize, topPositionForNewTask } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -1264,7 +1264,7 @@ async function createSharedTask(
     const tasksQuery = projectEvolu.createQuery((db: any) =>
       db
         .selectFrom("task")
-        .select(["title", "position", "projectId", "ownerId"])
+        .select(["title", "position", "projectId", "ownerId", "status"])
         .where("isDeleted", "is not", SQLITE_TRUE)
     );
     const allTasks = ((await projectEvolu.loadQuery(tasksQuery)) as any[]).filter(
@@ -1296,7 +1296,13 @@ async function createSharedTask(
       taskCode = `${projectCode}-${maxNum + 1}`;
     }
 
-    const maxPosition = allTasks.reduce((m, t) => Math.max(m, (t.position as number) || 0), 0);
+    // Lowest position in the TARGET column, so the new task lands on top like
+    // it does in the app (TODO-217). Was the global max across every status.
+    const targetStatus = args.status || "todo";
+    const minPosition = allTasks.reduce(
+      (m, t) => ((t.status as string) === targetStatus ? Math.min(m, (t.position as number) ?? 0) : m),
+      0
+    );
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert(
@@ -1312,7 +1318,7 @@ async function createSharedTask(
         scheduledDate: args.scheduledDate || null,
         assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
         estimate: args.estimate ? Int.orThrow(args.estimate) : null,
-        position: Int.orThrow(maxPosition + 1),
+        position: Int.orThrow(topPositionForNewTask(minPosition)),
         isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
         isBlocked: null,
         blockedReason: null,

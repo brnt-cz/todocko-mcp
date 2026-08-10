@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH } from "./helpers.js";
+import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask } from "./helpers.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
 export const taskTools: Tool[] = [
@@ -742,12 +742,21 @@ async function createTask(
     taskCode = `${projectCode}-${maxNum + 1}`;
   }
 
-  // Get max position
+  // Lowest position in the TARGET column, so the new task lands on top like it
+  // does in the app (TODO-217). This used to take the global max across every
+  // status and append below it, which buried assistant-created tasks.
+  const targetStatus = args.status || "todo";
   const posQuery = evolu.createQuery((db: any) =>
-    db.selectFrom("task").select(["position"]).orderBy("position", "desc").limit(1)
+    db
+      .selectFrom("task")
+      .select(["position"])
+      .where("status", "=", targetStatus)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .orderBy("position", "asc")
+      .limit(1)
   );
-  const posResult = await safeLoadQuery(evolu,posQuery);
-  const maxPosition = posResult.length > 0 ? ((posResult[0] as any).position || 0) : 0;
+  const posResult = await safeLoadQuery(evolu, posQuery);
+  const minPosition = posResult.length > 0 ? ((posResult[0] as any).position ?? 0) : 0;
 
   // Create task with onComplete tracking
   const waiter = createMutationWaiter();
@@ -762,7 +771,7 @@ async function createTask(
     scheduledDate: args.scheduledDate || null,
     assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
     estimate: args.estimate ? Int.orThrow(args.estimate) : null,
-    position: Int.orThrow(maxPosition + 1),
+    position: Int.orThrow(topPositionForNewTask(minPosition)),
     completedAt: args.completedAt || null,
     isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
     isBlocked: null,
