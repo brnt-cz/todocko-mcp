@@ -4,12 +4,19 @@ import type { EvoluInstance } from "../evolu.js";
 const RELAY_URL = process.env.TODOCKO_RELAY_URL || "https://relay.todocko.cz";
 const ADMIN_API_KEY = process.env.TODOCKO_RELAY_ADMIN_KEY || "";
 
-function adminUrl(): string {
-  return RELAY_URL.replace(/:4000\/?$/, "").replace(/\/$/, "");
+// Both APIs are reached through the reverse proxy, not on their container ports.
+//
+// This used to append :4001 for the admin API and :4000 for the public one, and
+// neither worked from outside the host: :4000 times out (nothing forwards it) and
+// :4001 stopped answering when TODO-223 bound it to 127.0.0.1. The proxy is the
+// only supported entrance now, exactly as the app uses it — public endpoints
+// under /api/, the admin API under /admin-api/.
+function baseUrl(): string {
+  return RELAY_URL.replace(/:400[01]\/?$/, "").replace(/\/$/, "");
 }
 
 async function adminFetch(path: string, options?: RequestInit): Promise<unknown> {
-  const url = `${adminUrl()}:4001${path}`;
+  const url = `${baseUrl()}/admin-api${path}`;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -26,7 +33,7 @@ async function adminFetch(path: string, options?: RequestInit): Promise<unknown>
 }
 
 async function publicFetch(path: string): Promise<unknown> {
-  const url = `${adminUrl()}:4000${path}`;
+  const url = `${baseUrl()}${path}`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Relay API error ${response.status}`);
