@@ -974,6 +974,25 @@ npm run build
 # Watch mode for development
 npm run dev
 
+# Tests
+npm test
+
 # Manual run
 TODOCKO_MNEMONIC="your phrase" npm start
 ```
+
+### Testy
+
+Vitest, 24 testů ve dvou souborech. **Běží v CI** (`ci.yml`, push i PR na `main`)
+od TODO-229 — do té doby CI spouštěla jen build, takže se nikdo nedozvěděl, že
+`helpers.test.ts` na Node 18/20 **ani neprojde importem**: přes `helpers.ts`
+tahal `../evolu.js`, jehož inicializace při načtení modulu spadne na
+`crypto.getRandomValues must be defined`.
+
+Proto jsou funkce bez závislosti na Evolu v **`src/tools/pure.ts`** a testují se
+odtud. `helpers.ts` je re-exportuje, takže volající se nemění. Když píšeš helper,
+který Evolu nepotřebuje, patří do `pure.ts` — jinak ho nejde testovat bez
+nastartované databáze.
+
+Testy tak procházejí na Node 18, 20 i 22. Závazná verze pro MCP je **22** (na té
+jede `ci.yml` i `release.yml`).
