@@ -1,20 +1,31 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString } from "@evolu/common";
-import { SQLITE_TRUE, type TaskId, type TagId, type TaskTagId, type EvoluInstance } from "../evolu.js";
+import { SQLITE_TRUE, type TaskId, type TagId, type TaskTagId, type ProjectId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
 export const tagTools: Tool[] = [
   {
     name: "td_list_tags",
-    description: "List all tags",
+    description:
+      "List tags. Returns projectId — tags created before TODO-227 (or via td_create_tag without one) have none and the app never offers them until they are assigned to a project.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        projectId: {
+          type: "string",
+          description: "Only tags of this project. Omit for all tags.",
+        },
+        unassignedOnly: {
+          type: "boolean",
+          description: "Only tags with no project — the ones the app will not offer.",
+        },
+      },
     },
   },
   {
     name: "td_create_tag",
-    description: "Create a new tag",
+    description:
+      "Create a tag. Pass projectId — without it the tag is created unassigned and the app will not offer it anywhere until you assign it (Project settings -> Štítky -> Nezařazené).",
     inputSchema: {
       type: "object",
       properties: {
@@ -26,8 +37,29 @@ export const tagTools: Tool[] = [
           type: "string",
           description: "Hex color (e.g., '#ef4444', default: '#6b7280')",
         },
+        projectId: {
+          type: "string",
+          description: "Project the tag belongs to. Strongly recommended; see the tool description.",
+        },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "td_update_tag",
+    description: "Rename a tag, change its color, or assign it to a project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Tag ID (required)" },
+        name: { type: "string", description: "New name" },
+        color: { type: "string", description: "New hex color" },
+        projectId: {
+          type: "string",
+          description: "Assign to this project. Use to adopt a previously unassigned tag.",
+        },
+      },
+      required: ["id"],
     },
   },
   {
@@ -103,9 +135,11 @@ export async function handleTagTool(
 ): Promise<unknown> {
   switch (name) {
     case "td_list_tags":
-      return listTags(evolu);
+      return listTags(evolu, args as { projectId?: string; unassignedOnly?: boolean });
     case "td_create_tag":
-      return createTag(evolu, args as { name: string; color?: string });
+      return createTag(evolu, args as { name: string; color?: string; projectId?: string });
+    case "td_update_tag":
+      return updateTag(evolu, args as { id: string; name?: string; color?: string; projectId?: string });
     case "td_delete_tag":
       return deleteTag(evolu, args as { id: string });
     case "td_list_task_tags":
@@ -119,31 +153,47 @@ export async function handleTagTool(
   }
 }
 
-async function listTags(evolu: EvoluInstance) {
+async function listTags(
+  evolu: EvoluInstance,
+  args: { projectId?: string; unassignedOnly?: boolean } = {}
+) {
   const query = evolu.createQuery((db: any) =>
     db
       .selectFrom("tag")
-      .select(["id", "name", "color"])
+      .select(["id", "name", "color", "projectId"])
       .where("isDeleted", "is not", SQLITE_TRUE)
       .orderBy("name", "asc")
   );
 
   const result = await evolu.loadQuery(query);
+  // Filtered here rather than in SQL: every selected column comes back nullable,
+  // so "has no project" has to be checked on the row anyway.
+  const filtered = result.filter((t: any) => {
+    if (args.unassignedOnly) return !t.projectId;
+    if (args.projectId) return t.projectId === args.projectId;
+    return true;
+  });
+
   return {
-    count: result.length,
-    tags: result.map((t: any) => ({
+    count: filtered.length,
+    tags: filtered.map((t: any) => ({
       id: t.id,
       name: t.name,
       color: t.color,
+      projectId: t.projectId ?? null,
     })),
   };
 }
 
-async function createTag(evolu: EvoluInstance, args: { name: string; color?: string }) {
+async function createTag(
+  evolu: EvoluInstance,
+  args: { name: string; color?: string; projectId?: string }
+) {
   const waiter = createMutationWaiter();
   const result = evolu.insert("tag", {
     name: NonEmptyString100.orThrow(args.name),
     color: EvoluString.orThrow(args.color || "#6b7280"),
+    projectId: (args.projectId ?? null) as ProjectId,
   }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
@@ -152,10 +202,37 @@ async function createTag(evolu: EvoluInstance, args: { name: string; color?: str
 
   await waiter.waitForSync();
 
+  // Say it out loud when the tag will not appear anywhere: an unassigned tag is
+  // silently invisible in the app, which is a confusing way to learn about it.
+  const unassignedNote = args.projectId
+    ? ""
+    : " — WITHOUT a project, so the app will not offer it until you assign one (Project settings -> Štítky -> Nezařazené, or td_update_tag with projectId)";
+
   return {
     success: true,
     tagId: result.value.id,
-    message: `Tag "${args.name}" created successfully${getSyncWarning()}`,
+    message: `Tag "${args.name}" created successfully${unassignedNote}${getSyncWarning()}`,
+  };
+}
+
+async function updateTag(
+  evolu: EvoluInstance,
+  args: { id: string; name?: string; color?: string; projectId?: string }
+) {
+  const waiter = createMutationWaiter();
+  const result = evolu.update("tag", {
+    id: args.id as TagId,
+    ...(args.name !== undefined ? { name: NonEmptyString100.orThrow(args.name) } : {}),
+    ...(args.color !== undefined ? { color: EvoluString.orThrow(args.color) } : {}),
+    ...(args.projectId !== undefined ? { projectId: args.projectId as ProjectId } : {}),
+  }, { onComplete: waiter.onComplete });
+
+  assertMutation("td_update_tag", result);
+  await waiter.waitForSync();
+
+  return {
+    success: true,
+    message: `Tag updated successfully${getSyncWarning()}`,
   };
 }
 
