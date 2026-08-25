@@ -25,6 +25,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Tests never ran in CI, so nothing caught helpers.test.ts failing to even
+      # import on Node 18/20 — it was only noticed by running them by hand during
+      # a release. (TODO-229)
+      - name: Test
+        run: npm test
+
       - name: Check dist exists
         run: |
           test -f dist/index.js || (echo "dist/index.js not found" && exit 1)

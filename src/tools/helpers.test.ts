@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP } from "./helpers.js";
+// Imports from ./pure.js, not ./helpers.js: the latter pulls in ../evolu.js,
+// whose module-level init crashes on Node 18/20 (TODO-229). None of what is
+// tested here ever needed Evolu.
+import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP } from "./pure.js";
 import { resolve } from "path";
 
 const BASE = "/tmp/todocko-dl-test";
