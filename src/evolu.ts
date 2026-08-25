@@ -169,6 +169,9 @@ export const Schema = {
     id: TagId,
     name: NonEmptyString100,
     color: String,
+    // Mirrors the app (TODO-227). Nullable: rows created before it — including
+    // ones this server created — have none, and the app never offers those.
+    projectId: nullOr(ProjectId),
   },
   taskTag: {
     id: TaskTagId,
@@ -362,6 +365,9 @@ export const ProjectSchema = {
     id: TagId,
     name: NonEmptyString100,
     color: String,
+    // Mirrors the app (TODO-227). Nullable: rows created before it — including
+    // ones this server created — have none, and the app never offers those.
+    projectId: nullOr(ProjectId),
   },
   taskTag: {
     id: TaskTagId,

@@ -14,6 +14,8 @@ import {
   type ChecklistItemId,
   type TaskCommentId,
   type AttachmentId,
+  type TagId,
+  type TaskTagId,
   type EvoluInstance,
   getProjectEvolu,
   getSharedOwner,
@@ -82,6 +84,93 @@ export const sharedTools: Tool[] = [
         },
       },
       required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  // --- Project tags in shared projects (TODO-235) ---
+  //
+  // The app has had these since TODO-227; this server only knew about tags in
+  // the app instance, so a shared project's tags were invisible to it.
+  {
+    name: "td_list_shared_tags",
+    description: "List project tags in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_create_shared_tag",
+    description: "Create a project tag in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        projectId: { type: "string", description: "Project ID inside the shared owner (required)" },
+        name: { type: "string", description: "Tag name (required)" },
+        color: { type: "string", description: "Hex color (default: '#6b7280')" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "projectId", "name"],
+    },
+  },
+  {
+    name: "td_update_shared_tag",
+    description: "Rename a project tag or change its color in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Tag ID (required)" },
+        name: { type: "string", description: "New name" },
+        color: { type: "string", description: "New hex color" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_delete_shared_tag",
+    description: "Delete a project tag in a shared project (soft delete)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Tag ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_add_shared_tag_to_task",
+    description: "Assign a project tag to a task in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+        tagId: { type: "string", description: "Tag ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId", "tagId"],
+    },
+  },
+  {
+    name: "td_remove_shared_tag_from_task",
+    description: "Remove a project tag from a task in a shared project",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+        tagId: { type: "string", description: "Tag ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId", "tagId"],
     },
   },
   {
@@ -810,6 +899,18 @@ export async function handleSharedTool(
       return deleteSharedRepositoryLink(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_update_shared_deployment_stage":
       return updateSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string; position?: number });
+    case "td_list_shared_tags":
+      return listSharedTags(args as { sharedOwnerId: string; ownerSecret: string });
+    case "td_create_shared_tag":
+      return createSharedTag(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string });
+    case "td_update_shared_tag":
+      return updateSharedTag(args as { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string });
+    case "td_delete_shared_tag":
+      return deleteSharedTag(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+    case "td_add_shared_tag_to_task":
+      return addSharedTagToTask(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; tagId: string });
+    case "td_remove_shared_tag_from_task":
+      return removeSharedTagFromTask(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; tagId: string });
     case "td_delete_shared_deployment_stage":
       return deleteSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_update_shared_project":
@@ -1966,6 +2067,179 @@ async function updateSharedDeploymentStage(
     if (!result.ok) throw new Error(`Failed to update shared deployment stage: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+// --- Project tags in shared projects (TODO-235) ---
+
+async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string }) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("tag")
+        .select(["id", "ownerId", "name", "color", "projectId"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("name", "asc")
+    );
+    const result = await projectEvolu.loadQuery(query);
+    // One Evolu instance holds every shared owner's rows, so filter by ownerId
+    // or a caller sees other projects' tags.
+    const actualOwnerId = sharedOwner.id as string;
+    const filtered = result.filter((t: any) => (t.ownerId as string | undefined) === actualOwnerId);
+    return {
+      count: filtered.length,
+      tags: filtered.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        projectId: t.projectId ?? null,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedTag(
+  args: { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert("tag", {
+      projectId: args.projectId as ProjectId,
+      name: NonEmptyString100.orThrow(args.name),
+      color: args.color || "#6b7280",
+    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to create shared tag: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, tagId: result.value.id, message: `Tag "${args.name}" created successfully` };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function updateSharedTag(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const updates: Record<string, unknown> = { id: args.id as TagId };
+    if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+    if (args.color !== undefined) updates.color = args.color;
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("tag", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to update shared tag: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared tag updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedTag(args: { sharedOwnerId: string; ownerSecret: string; id: string }) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.update("tag", { id: args.id as TagId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to delete shared tag: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, message: "Shared tag deleted successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function addSharedTagToTask(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string; tagId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    // Idempotent, like the app-instance tool: a second assignment must not add a
+    // second taskTag row, or the tag shows twice and one removal leaves it there.
+    const existingQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskTag")
+        .select(["id", "ownerId"])
+        .where("taskId", "=", args.taskId as TaskId)
+        .where("tagId", "=", args.tagId as TagId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const existing = await projectEvolu.loadQuery(existingQuery);
+    const actualOwnerId = sharedOwner.id as string;
+    if (existing.some((r: any) => (r.ownerId as string | undefined) === actualOwnerId)) {
+      return { success: true, message: "Tag is already assigned to this task" };
+    }
+
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert("taskTag", {
+      taskId: args.taskId as TaskId,
+      tagId: args.tagId as TagId,
+    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    if (!result.ok) throw new Error(`Failed to assign shared tag: ${JSON.stringify(result.error)}`);
+    await waiter.waitForSync();
+    return { success: true, taskTagId: result.value.id, message: "Tag assigned successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function removeSharedTagFromTask(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string; tagId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskTag")
+        .select(["id", "ownerId"])
+        .where("taskId", "=", args.taskId as TaskId)
+        .where("tagId", "=", args.tagId as TagId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const rows = await projectEvolu.loadQuery(query);
+    const actualOwnerId = sharedOwner.id as string;
+    const mine = rows.filter((r: any) => (r.ownerId as string | undefined) === actualOwnerId);
+    if (mine.length === 0) {
+      return { success: true, message: "Tag was not assigned to this task" };
+    }
+
+    // Every matching row, not just the first: a duplicate assignment would
+    // otherwise survive an apparent removal.
+    const waiter = createMutationWaiter();
+    for (const row of mine) {
+      const result = projectEvolu.update("taskTag", { id: row.id as TaskTagId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+      if (!result.ok) throw new Error(`Failed to remove shared tag: ${JSON.stringify(result.error)}`);
+    }
+    await waiter.waitForSync();
+    return { success: true, removed: mine.length, message: "Tag removed successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
