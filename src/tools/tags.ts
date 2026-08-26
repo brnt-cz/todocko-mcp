@@ -7,7 +7,7 @@ export const tagTools: Tool[] = [
   {
     name: "td_list_tags",
     description:
-      "List tags. Returns projectId — tags created before TODO-227 (or via td_create_tag without one) have none and the app never offers them until they are assigned to a project.",
+      "List tags. Returns projectId — tags created before TODO-227 (or via td_create_tag without one) have none and the app never offers them until they are assigned to a project. Also returns isDefault: those tags are applied to every task newly created in the project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,13 +41,17 @@ export const tagTools: Tool[] = [
           type: "string",
           description: "Project the tag belongs to. Strongly recommended; see the tool description.",
         },
+        isDefault: {
+          type: "boolean",
+          description: "Apply this tag to every task newly created in the project (TODO-239). Existing tasks are untouched.",
+        },
       },
       required: ["name"],
     },
   },
   {
     name: "td_update_tag",
-    description: "Rename a tag, change its color, or assign it to a project",
+    description: "Rename a tag, change its color, assign it to a project, or mark it default for new tasks",
     inputSchema: {
       type: "object",
       properties: {
@@ -57,6 +61,10 @@ export const tagTools: Tool[] = [
         projectId: {
           type: "string",
           description: "Assign to this project. Use to adopt a previously unassigned tag.",
+        },
+        isDefault: {
+          type: "boolean",
+          description: "Apply this tag to every task newly created in the project (TODO-239). Existing tasks are untouched.",
         },
       },
       required: ["id"],
@@ -137,9 +145,9 @@ export async function handleTagTool(
     case "td_list_tags":
       return listTags(evolu, args as { projectId?: string; unassignedOnly?: boolean });
     case "td_create_tag":
-      return createTag(evolu, args as { name: string; color?: string; projectId?: string });
+      return createTag(evolu, args as { name: string; color?: string; projectId?: string; isDefault?: boolean });
     case "td_update_tag":
-      return updateTag(evolu, args as { id: string; name?: string; color?: string; projectId?: string });
+      return updateTag(evolu, args as { id: string; name?: string; color?: string; projectId?: string; isDefault?: boolean });
     case "td_delete_tag":
       return deleteTag(evolu, args as { id: string });
     case "td_list_task_tags":
@@ -160,7 +168,7 @@ async function listTags(
   const query = evolu.createQuery((db: any) =>
     db
       .selectFrom("tag")
-      .select(["id", "name", "color", "projectId"])
+      .select(["id", "name", "color", "projectId", "isDefault"])
       .where("isDeleted", "is not", SQLITE_TRUE)
       .orderBy("name", "asc")
   );
@@ -181,19 +189,21 @@ async function listTags(
       name: t.name,
       color: t.color,
       projectId: t.projectId ?? null,
+      isDefault: !!t.isDefault,
     })),
   };
 }
 
 async function createTag(
   evolu: EvoluInstance,
-  args: { name: string; color?: string; projectId?: string }
+  args: { name: string; color?: string; projectId?: string; isDefault?: boolean }
 ) {
   const waiter = createMutationWaiter();
   const result = evolu.insert("tag", {
     name: NonEmptyString100.orThrow(args.name),
     color: EvoluString.orThrow(args.color || "#6b7280"),
     projectId: (args.projectId ?? null) as ProjectId,
+    isDefault: args.isDefault ? SQLITE_TRUE : null,
   }, { onComplete: waiter.onComplete });
 
   if (!result.ok) {
@@ -217,7 +227,7 @@ async function createTag(
 
 async function updateTag(
   evolu: EvoluInstance,
-  args: { id: string; name?: string; color?: string; projectId?: string }
+  args: { id: string; name?: string; color?: string; projectId?: string; isDefault?: boolean }
 ) {
   const waiter = createMutationWaiter();
   const result = evolu.update("tag", {
@@ -225,6 +235,7 @@ async function updateTag(
     ...(args.name !== undefined ? { name: NonEmptyString100.orThrow(args.name) } : {}),
     ...(args.color !== undefined ? { color: EvoluString.orThrow(args.color) } : {}),
     ...(args.projectId !== undefined ? { projectId: args.projectId as ProjectId } : {}),
+    ...(args.isDefault !== undefined ? { isDefault: args.isDefault ? SQLITE_TRUE : null } : {}),
   }, { onComplete: waiter.onComplete });
 
   assertMutation("td_update_tag", result);

@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
-import { SQLITE_TRUE, type TaskId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask } from "./helpers.js";
+import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
+import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
 export const taskTools: Tool[] = [
@@ -793,6 +793,8 @@ async function createTask(
 
   logTaskCreate(evolu, result.value.id);
 
+  const appliedTags = await applyDefaultTags(evolu, result.value.id as TaskId, args.projectId);
+
   // Wait for onComplete + network sync
   await waiter.waitForSync();
 
@@ -802,8 +804,50 @@ async function createTask(
     success: true,
     taskId: result.value.id,
     taskCode,
-    message: `Task ${taskCode} created successfully${syncWarning}`,
+    ...(appliedTags.length > 0 ? { appliedTags } : {}),
+    message: `Task ${taskCode} created successfully${
+      appliedTags.length > 0 ? ` with the project's default tags: ${appliedTags.join(", ")}` : ""
+    }${syncWarning}`,
   };
+}
+
+/**
+ * Attach the project's default tags to a freshly created task (TODO-239).
+ *
+ * The app does this by pre-ticking them in the new-task form; here there is no
+ * form, so the rows are written straight after the task. Without it, whether a
+ * task carries its project's default tags would depend on where it was created,
+ * and tasks are routinely created through this server.
+ *
+ * Deliberately non-fatal: the task itself is already saved, so a failure here is
+ * reported through the return value rather than by throwing away a created task.
+ */
+async function applyDefaultTags(
+  evolu: EvoluInstance,
+  taskId: TaskId,
+  projectId: string,
+): Promise<string[]> {
+  try {
+    const tagsQuery = evolu.createQuery((db: any) =>
+      db
+        .selectFrom("tag")
+        .select(["id", "name", "projectId", "isDefault"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const rows = await safeLoadQuery(evolu, tagsQuery);
+    const defaults = defaultTagIdsForProject(rows as { id: string; projectId?: string | null; isDefault?: unknown }[], projectId);
+    if (defaults.length === 0) return [];
+
+    const namesById = new Map((rows as { id: string; name?: string }[]).map((row) => [row.id, row.name ?? row.id]));
+    const applied: string[] = [];
+    for (const tagId of defaults) {
+      const inserted = evolu.insert("taskTag", { taskId, tagId: tagId as TagId });
+      if (inserted.ok) applied.push(namesById.get(tagId) ?? tagId);
+    }
+    return applied;
+  } catch {
+    return [];
+  }
 }
 
 async function updateTask(

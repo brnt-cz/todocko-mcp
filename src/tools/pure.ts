@@ -109,3 +109,22 @@ export function assertMutation(label: string, result: { readonly ok: boolean }):
     throw new Error(`${label} failed: ${JSON.stringify((result as { readonly error?: unknown }).error)}`);
   }
 }
+
+/**
+ * Ids of the tags a task newly created in `projectId` should start with.
+ *
+ * Mirrors `defaultTagIdsForProject` in the app (src/utils/defaultTags.ts): the
+ * flag has to behave the same wherever a task is created, or which tags a task
+ * ends up with depends on whether it was created in the app or through this
+ * server. (TODO-239)
+ *
+ * `isDefault` arrives as the raw SQLite value (1 or null), hence the truthiness
+ * test rather than a comparison with SQLITE_TRUE.
+ */
+export function defaultTagIdsForProject(
+  tags: readonly { id: string; projectId?: string | null; isDefault?: unknown }[],
+  projectId: string | null,
+): string[] {
+  if (!projectId) return [];
+  return tags.filter((tag) => tag.projectId === projectId && !!tag.isDefault).map((tag) => tag.id);
+}

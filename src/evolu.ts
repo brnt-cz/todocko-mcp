@@ -172,6 +172,9 @@ export const Schema = {
     // Mirrors the app (TODO-227). Nullable: rows created before it — including
     // ones this server created — have none, and the app never offers those.
     projectId: nullOr(ProjectId),
+    // Mirrors the app (TODO-239): tasks created in the project start with every
+    // default tag applied. Nullable — absent means not default.
+    isDefault: nullOr(SqliteBoolean),
   },
   taskTag: {
     id: TaskTagId,
@@ -368,6 +371,9 @@ export const ProjectSchema = {
     // Mirrors the app (TODO-227). Nullable: rows created before it — including
     // ones this server created — have none, and the app never offers those.
     projectId: nullOr(ProjectId),
+    // Mirrors the app (TODO-239): tasks created in the project start with every
+    // default tag applied. Nullable — absent means not default.
+    isDefault: nullOr(SqliteBoolean),
   },
   taskTag: {
     id: TaskTagId,

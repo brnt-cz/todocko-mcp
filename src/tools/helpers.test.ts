@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 // Imports from ./pure.js, not ./helpers.js: the latter pulls in ../evolu.js,
 // whose module-level init crashes on Node 18/20 (TODO-229). None of what is
 // tested here ever needed Evolu.
-import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP } from "./pure.js";
+import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP, defaultTagIdsForProject } from "./pure.js";
 import { resolve } from "path";
 
 const BASE = "/tmp/todocko-dl-test";
@@ -72,5 +72,34 @@ describe("topPositionForNewTask", () => {
     const second = topPositionForNewTask(first);
     const third = topPositionForNewTask(second);
     expect([first, second, third]).toEqual([-10, -20, -30]);
+  });
+});
+
+describe("defaultTagIdsForProject", () => {
+  // Mirrors src/utils/defaultTags.test.ts in the app; both sides have to agree or
+  // a task's tags depend on where it was created (TODO-239).
+  const tags = [
+    { id: "relay", projectId: "p1", isDefault: 1 },
+    { id: "web", projectId: "p1", isDefault: null },
+    { id: "mcp", projectId: "p1", isDefault: 1 },
+    { id: "other", projectId: "p2", isDefault: 1 },
+    { id: "legacy", projectId: null, isDefault: 1 },
+  ];
+
+  it("returns every default tag of the project", () => {
+    expect(defaultTagIdsForProject(tags, "p1")).toEqual(["relay", "mcp"]);
+  });
+
+  it("ignores other projects and project-less legacy tags", () => {
+    expect(defaultTagIdsForProject(tags, "p2")).toEqual(["other"]);
+    expect(defaultTagIdsForProject(tags, "p1")).not.toContain("legacy");
+  });
+
+  it("returns nothing without a project", () => {
+    expect(defaultTagIdsForProject(tags, null)).toEqual([]);
+  });
+
+  it("treats a missing isDefault as not default", () => {
+    expect(defaultTagIdsForProject([{ id: "a", projectId: "p3" }], "p3")).toEqual([]);
   });
 });
