@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 // Imports from ./pure.js, not ./helpers.js: the latter pulls in ../evolu.js,
 // whose module-level init crashes on Node 18/20 (TODO-229). None of what is
 // tested here ever needed Evolu.
-import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP, defaultTagIdsForProject } from "./pure.js";
+import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP, defaultTagIdsForProject, queryRows } from "./pure.js";
 import { resolve } from "path";
 
 const BASE = "/tmp/todocko-dl-test";
@@ -101,5 +101,26 @@ describe("defaultTagIdsForProject", () => {
 
   it("treats a missing isDefault as not default", () => {
     expect(defaultTagIdsForProject([{ id: "a", projectId: "p3" }], "p3")).toEqual([]);
+  });
+});
+
+describe("queryRows", () => {
+  // loadQuery resolves to the rows array itself; three analytics tools read
+  // `result.rows` and so returned nothing at all (TODO-242).
+  it("returns the array loadQuery actually resolves to", () => {
+    const rows = [{ id: "a" }, { id: "b" }];
+    expect(queryRows(rows)).toBe(rows);
+  });
+
+  it("still accepts a wrapped { rows } shape", () => {
+    const rows = [{ id: "a" }];
+    expect(queryRows({ rows })).toBe(rows);
+  });
+
+  it("returns an empty array for anything else", () => {
+    expect(queryRows(undefined)).toEqual([]);
+    expect(queryRows(null)).toEqual([]);
+    expect(queryRows({})).toEqual([]);
+    expect(queryRows({ rows: "nope" })).toEqual([]);
   });
 });
