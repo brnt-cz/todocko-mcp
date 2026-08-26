@@ -128,3 +128,21 @@ export function defaultTagIdsForProject(
   if (!projectId) return [];
   return tags.filter((tag) => tag.projectId === projectId && !!tag.isDefault).map((tag) => tag.id);
 }
+
+/**
+ * Rows out of an `evolu.loadQuery` result.
+ *
+ * `loadQuery` resolves to the rows array itself. Three analytics tools read
+ * `result.rows` instead, which is always undefined — so td_list_recurring_tasks,
+ * td_list_overdue_tasks and td_list_tasks_by_date_range reported an empty list
+ * for every input since they were written, with no error to notice. Going through
+ * one helper keeps the mistake from being made a fourth time. (TODO-242)
+ *
+ * The `.rows` shape is still accepted, so a future Evolu that wraps its result
+ * does not silently empty these tools out again.
+ */
+export function queryRows<T = unknown>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  const wrapped = (result as { rows?: unknown } | null | undefined)?.rows;
+  return Array.isArray(wrapped) ? (wrapped as T[]) : [];
+}

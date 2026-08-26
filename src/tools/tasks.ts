@@ -42,7 +42,7 @@ export const taskTools: Tool[] = [
   },
   {
     name: "td_get_task",
-    description: "Get a specific task by ID or code (e.g., 'PROJ-123')",
+    description: "Get a specific task by ID or code (e.g., 'PROJ-123'). Includes the recurrence settings (type, interval, day, end date) when the task recurs.",
     inputSchema: {
       type: "object",
       properties: {
@@ -595,6 +595,13 @@ async function getTask(
         "parentTaskId",
         "projectId",
         "assigneeId",
+        // Recurrence used to be readable only through td_list_recurring_tasks,
+        // which returned nothing at all — so a task's schedule could be written
+        // but never checked. (TODO-242)
+        "recurrenceType",
+        "recurrenceInterval",
+        "recurrenceDay",
+        "recurrenceEndDate",
       ])
       .where("isDeleted", "is not", SQLITE_TRUE);
 
@@ -650,6 +657,18 @@ async function getTask(
     isOnProduction: t.isOnProduction === SQLITE_TRUE,
     sprintNumber: t.sprintNumber ?? null,
     parentTaskId: t.parentTaskId ?? null,
+    recurrence: t.recurrenceType
+      ? {
+          type: t.recurrenceType,
+          // Only editable in the app for `custom`, where it means days, but it is
+          // applied to every type — as months for monthly, weeks for weekly. A
+          // leftover value is how a task ends up recurring every 15 months
+          // (TODO-241), which is exactly why it needs to be readable.
+          interval: t.recurrenceInterval ?? 1,
+          day: t.recurrenceDay ?? null,
+          endDate: t.recurrenceEndDate ?? null,
+        }
+      : null,
     deploymentStage: stage
       ? { id: t.deploymentStageId, name: stage.name, color: stage.color }
       : null,

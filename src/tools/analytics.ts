@@ -1,5 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { SQLITE_TRUE, type EvoluInstance } from "../evolu.js";
+import { queryRows } from "./pure.js";
 
 export const analyticsTools: Tool[] = [
   {
@@ -503,7 +504,7 @@ async function listRecurringTasks(
   });
 
   const result = await evolu.loadQuery(query);
-  const tasks = (result.rows ?? []).filter((r: any) => r.id && r.title);
+  const tasks = queryRows<any>(result).filter((r: any) => r.id && r.title);
 
   return {
     count: tasks.length,
@@ -563,7 +564,7 @@ async function listOverdueTasks(
   });
 
   const result = await evolu.loadQuery(query);
-  const tasks = (result.rows ?? []).filter((r: any) => r.id && r.title);
+  const tasks = queryRows<any>(result).filter((r: any) => r.id && r.title);
 
   return {
     count: tasks.length,
@@ -632,7 +633,7 @@ async function listTasksByDateRange(
   });
 
   const result = await evolu.loadQuery(query);
-  const tasks = (result.rows ?? []).filter((r: any) => r.id && r.title);
+  const tasks = queryRows<any>(result).filter((r: any) => r.id && r.title);
 
   return {
     count: tasks.length,

@@ -17,6 +17,7 @@ export {
   assertMaxLength,
   assertMutation,
   defaultTagIdsForProject,
+  queryRows,
 } from "./pure.js";
 
 /**

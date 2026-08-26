@@ -107,7 +107,7 @@ Instalátor:
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_tasks` | Seznam úkolů s filtry (projekt, status, priorita, assignee) |
-| `td_get_task` | Detail úkolu podle ID nebo kódu (např. `PROJ-123`) |
+| `td_get_task` | Detail úkolu podle ID nebo kódu (např. `PROJ-123`), včetně nastavení opakování |
 | `td_create_task` | Vytvoření nového úkolu (včetně recurrence, sprintNumber, parentTaskId) |
 | `td_update_task` | Aktualizace existujícího úkolu (včetně recurrence, sprintNumber, parentTaskId) |
 | `td_search_tasks` | Vyhledávání úkolů podle textu |
@@ -334,6 +334,13 @@ Sdílené projekty (TODO-235):
 | `td_get_team_workload` | Vytížení týmu: odpracováno vs odhad vs kapacita per uživatel za období |
 | `td_list_recurring_tasks` | Seznam opakujících se úkolů s konfigurací opakování |
 | `td_list_overdue_tasks` | Úkoly po termínu (seřazené od nejstaršího) |
+
+> **Do v1.6.0 tyhle tři nástroje vracely vždy prázdno.** `td_list_recurring_tasks`,
+> `td_list_overdue_tasks` a `td_list_tasks_by_date_range` čtly `result.rows`,
+> zatímco `evolu.loadQuery` vrací pole samo — takže `count: 0` na jakýkoli vstup,
+> bez chyby, které by šlo si všimnout. Opraveno v TODO-242 přes společný
+> `queryRows`. Recurrence pole navíc vrací i `td_get_task`, takže nastavení
+> opakování jde přečíst tou nejpřímější cestou.
 | `td_list_tasks_by_date_range` | Úkoly filtrované podle scheduledDate nebo deadline v daném rozmezí |
 | `td_analyze_dependencies` | Analýza závislostí: blokované úkoly, blokující řetězce, kritická cesta |
 
@@ -655,7 +662,7 @@ The installer will:
 | Tool | Description |
 |------|-------------|
 | `td_list_tasks` | List tasks with filters (project, status, priority, assignee) |
-| `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`) |
+| `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`), recurrence settings included |
 | `td_create_task` | Create a new task (with recurrence, sprint, parentTaskId support) |
 | `td_update_task` | Update an existing task (with recurrence, sprint, parentTaskId support) |
 | `td_search_tasks` | Search tasks by text |
@@ -854,6 +861,13 @@ Shared projects (TODO-235):
 | `td_get_team_workload` | Team workload: logged vs estimate vs capacity per user for a period |
 | `td_list_recurring_tasks` | List recurring tasks with recurrence configuration |
 | `td_list_overdue_tasks` | Overdue tasks (sorted oldest first) |
+
+> **Before v1.6.0 these three tools always returned nothing.**
+> `td_list_recurring_tasks`, `td_list_overdue_tasks` and
+> `td_list_tasks_by_date_range` read `result.rows`, while `evolu.loadQuery`
+> resolves to the array itself — so `count: 0` for every input, with no error to
+> notice. Fixed in TODO-242 behind a shared `queryRows`. `td_get_task` now returns
+> the recurrence settings too, so a schedule can be read the obvious way.
 | `td_list_tasks_by_date_range` | Tasks filtered by scheduledDate or deadline within a date range |
 | `td_analyze_dependencies` | Dependency analysis: blocked tasks, blocking chains, critical path |
 
