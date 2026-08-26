@@ -25,7 +25,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, assertAttachmentSize, topPositionForNewTask } from "./helpers.js";
+import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -92,7 +92,7 @@ export const sharedTools: Tool[] = [
   // the app instance, so a shared project's tags were invisible to it.
   {
     name: "td_list_shared_tags",
-    description: "List project tags in a shared project",
+    description: "List project tags in a shared project. Returns isDefault: those tags are applied to every task newly created in the project.",
     inputSchema: {
       type: "object",
       properties: {
@@ -113,13 +113,17 @@ export const sharedTools: Tool[] = [
         projectId: { type: "string", description: "Project ID inside the shared owner (required)" },
         name: { type: "string", description: "Tag name (required)" },
         color: { type: "string", description: "Hex color (default: '#6b7280')" },
+        isDefault: {
+          type: "boolean",
+          description: "Apply this tag to every task newly created in the project (TODO-239). Existing tasks are untouched.",
+        },
       },
       required: ["sharedOwnerId", "ownerSecret", "projectId", "name"],
     },
   },
   {
     name: "td_update_shared_tag",
-    description: "Rename a project tag or change its color in a shared project",
+    description: "Rename a project tag, change its color, or mark it default for new tasks in a shared project",
     inputSchema: {
       type: "object",
       properties: {
@@ -128,6 +132,10 @@ export const sharedTools: Tool[] = [
         id: { type: "string", description: "Tag ID (required)" },
         name: { type: "string", description: "New name" },
         color: { type: "string", description: "New hex color" },
+        isDefault: {
+          type: "boolean",
+          description: "Apply this tag to every task newly created in the project (TODO-239). Existing tasks are untouched.",
+        },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -902,9 +910,9 @@ export async function handleSharedTool(
     case "td_list_shared_tags":
       return listSharedTags(args as { sharedOwnerId: string; ownerSecret: string });
     case "td_create_shared_tag":
-      return createSharedTag(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string });
+      return createSharedTag(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string; isDefault?: boolean });
     case "td_update_shared_tag":
-      return updateSharedTag(args as { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string });
+      return updateSharedTag(args as { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string; isDefault?: boolean });
     case "td_delete_shared_tag":
       return deleteSharedTag(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_add_shared_tag_to_task":
@@ -1441,13 +1449,43 @@ async function createSharedTask(
     // Touch with an update so Evolu sets updatedAt (only set on update, not insert).
     projectEvolu.update("task", { id: result.value.id, status: args.status || "todo" } as any, { ownerId: sharedOwner.id });
 
+    // The project's default tags, same as the app pre-ticks them in its form and
+    // as td_create_task applies them for own projects (TODO-239). Non-fatal: the
+    // task is already saved, so a failure here is reported, not thrown.
+    const appliedTags: string[] = [];
+    try {
+      const tagsQuery = projectEvolu.createQuery((db: any) =>
+        db
+          .selectFrom("tag")
+          .select(["id", "ownerId", "name", "projectId", "isDefault"])
+          .where("isDeleted", "is not", SQLITE_TRUE)
+      );
+      const tagRows = (await projectEvolu.loadQuery(tagsQuery)) as any[];
+      const ownTags = tagRows.filter((t) => (t.ownerId as string | undefined) === (sharedOwner.id as string));
+      for (const tagId of defaultTagIdsForProject(ownTags, args.projectId)) {
+        const inserted = projectEvolu.insert(
+          "taskTag",
+          { taskId: result.value.id as TaskId, tagId: tagId as TagId } as any,
+          { ownerId: sharedOwner.id }
+        );
+        if (inserted.ok) {
+          appliedTags.push((ownTags.find((t) => t.id === tagId)?.name as string) ?? tagId);
+        }
+      }
+    } catch {
+      // Leave appliedTags empty; the task itself is fine.
+    }
+
     await waiter.waitForSync();
 
     return {
       success: true,
       taskId: result.value.id,
       taskCode,
-      message: `Shared task ${taskCode} created successfully`,
+      ...(appliedTags.length > 0 ? { appliedTags } : {}),
+      message: `Shared task ${taskCode} created successfully${
+        appliedTags.length > 0 ? ` with the project's default tags: ${appliedTags.join(", ")}` : ""
+      }`,
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
@@ -2084,7 +2122,7 @@ async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string
     const query = projectEvolu.createQuery((db: any) =>
       db
         .selectFrom("tag")
-        .select(["id", "ownerId", "name", "color", "projectId"])
+        .select(["id", "ownerId", "name", "color", "projectId", "isDefault"])
         .where("isDeleted", "is not", SQLITE_TRUE)
         .orderBy("name", "asc")
     );
@@ -2100,6 +2138,7 @@ async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string
         name: t.name,
         color: t.color,
         projectId: t.projectId ?? null,
+        isDefault: !!t.isDefault,
       })),
     };
   } finally {
@@ -2108,7 +2147,7 @@ async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string
 }
 
 async function createSharedTag(
-  args: { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string }
+  args: { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string; isDefault?: boolean }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
@@ -2121,7 +2160,8 @@ async function createSharedTag(
       projectId: args.projectId as ProjectId,
       name: NonEmptyString100.orThrow(args.name),
       color: args.color || "#6b7280",
-    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+      isDefault: args.isDefault ? SQLITE_TRUE : null,
+    } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
     if (!result.ok) throw new Error(`Failed to create shared tag: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, tagId: result.value.id, message: `Tag "${args.name}" created successfully` };
@@ -2131,7 +2171,7 @@ async function createSharedTag(
 }
 
 async function updateSharedTag(
-  args: { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string }
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string; isDefault?: boolean }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
@@ -2142,6 +2182,7 @@ async function updateSharedTag(
     const updates: Record<string, unknown> = { id: args.id as TagId };
     if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
     if (args.color !== undefined) updates.color = args.color;
+    if (args.isDefault !== undefined) updates.isDefault = args.isDefault ? SQLITE_TRUE : null;
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("tag", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
     if (!result.ok) throw new Error(`Failed to update shared tag: ${JSON.stringify(result.error)}`);

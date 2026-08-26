@@ -190,7 +190,7 @@ Instalátor:
 |---------|-------|
 | `td_list_tags` | Seznam štítků; vrací `projectId`, umí filtrovat podle projektu i na nezařazené |
 | `td_create_tag` | Vytvoření štítku — **předej `projectId`**, viz poznámku níž |
-| `td_update_tag` | Přejmenování, změna barvy, nebo přiřazení projektu |
+| `td_update_tag` | Přejmenování, změna barvy, přiřazení projektu, nebo příznak výchozího štítku |
 | `td_delete_tag` | Smazání štítku (soft delete) |
 | `td_list_task_tags` | Seznam štítků přiřazených k úkolu |
 | `td_add_tag_to_task` | Přiřazení štítku k úkolu |
@@ -202,7 +202,7 @@ Sdílené projekty (TODO-235):
 |---------|-------|
 | `td_list_shared_tags` | Štítky ve sdíleném projektu |
 | `td_create_shared_tag` | Vytvoření štítku ve sdíleném projektu |
-| `td_update_shared_tag` | Přejmenování / změna barvy |
+| `td_update_shared_tag` | Přejmenování / změna barvy / příznak výchozího štítku |
 | `td_delete_shared_tag` | Smazání (soft delete) |
 | `td_add_shared_tag_to_task` | Přiřazení k úkolu ve sdíleném projektu |
 | `td_remove_shared_tag_from_task` | Odebrání z úkolu |
@@ -212,6 +212,12 @@ Sdílené projekty (TODO-235):
 > se v appce objeví jen v nastavení projektu v sekci „Nezařazené" s tlačítkem na
 > přiřazení. Odpověď nástroje na to upozorní. Dodatečně to spraví
 > `td_update_tag` s `projectId`.
+>
+> **Výchozí štítky (TODO-239).** `isDefault` u `td_create_tag` / `td_update_tag`
+> (a sdílených variant) znamená, že štítek dostane **každý nově zakládaný úkol**
+> projektu. `td_create_task` i `td_create_shared_task` je přidávají samy a vrátí
+> je v `appliedTags` — appka je předzaškrtává v modalu, takže bez toho by výsledek
+> závisel na tom, odkud úkol vznikne. Existujících úkolů se to nedotkne.
 >
 > Ve sdílených projektech se zapisuje do **jiné Evolu instance**, proto samostatná
 > sada nástrojů — `td_add_tag_to_task` na sdílený úkol nefunguje.
@@ -730,7 +736,7 @@ The installer will:
 |------|-------------|
 | `td_list_tags` | List tags; returns `projectId`, filters by project or unassigned |
 | `td_create_tag` | Create a tag — **pass `projectId`**, see the note below |
-| `td_update_tag` | Rename, recolour, or assign to a project |
+| `td_update_tag` | Rename, recolour, assign to a project, or mark default |
 | `td_delete_tag` | Delete a tag (soft delete) |
 | `td_list_task_tags` | List tags assigned to a task |
 | `td_add_tag_to_task` | Assign a tag to a task |
@@ -752,6 +758,12 @@ Shared projects (TODO-235):
 > tag, which shows up only under "Nezařazené" in project settings with a button to
 > adopt it. The tool response says so. Fix it afterwards with `td_update_tag` and
 > a `projectId`.
+>
+> **Default tags (TODO-239).** `isDefault` on `td_create_tag` / `td_update_tag`
+> (and the shared variants) means every task newly created in the project gets the
+> tag. Both `td_create_task` and `td_create_shared_task` apply them and report them
+> back in `appliedTags` — the app pre-ticks them in its form, so without this the
+> result would depend on where the task was created. Existing tasks are untouched.
 >
 > Shared projects write to a **different Evolu instance**, hence the separate set
 > — `td_add_tag_to_task` does not work on a shared task.

@@ -16,6 +16,7 @@ export {
   waitForSync,
   assertMaxLength,
   assertMutation,
+  defaultTagIdsForProject,
 } from "./pure.js";
 
 /**
