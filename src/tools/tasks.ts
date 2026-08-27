@@ -2,6 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
 import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
+import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
 export const taskTools: Tool[] = [
@@ -813,6 +814,9 @@ async function createTask(
   logTaskCreate(evolu, result.value.id);
 
   const appliedTags = await applyDefaultTags(evolu, result.value.id as TaskId, args.projectId);
+  // Tier caps live in the browser only; without this a free owner would meet the
+  // limit for the first time in the app, after the fact. (TODO-243)
+  const tierNote = await freeTierNote(evolu, "task");
 
   // Wait for onComplete + network sync
   await waiter.waitForSync();
@@ -826,7 +830,7 @@ async function createTask(
     ...(appliedTags.length > 0 ? { appliedTags } : {}),
     message: `Task ${taskCode} created successfully${
       appliedTags.length > 0 ? ` with the project's default tags: ${appliedTags.join(", ")}` : ""
-    }${syncWarning}`,
+    }${syncWarning}${tierNote}`,
   };
 }
 

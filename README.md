@@ -213,6 +213,14 @@ Sdílené projekty (TODO-235):
 > přiřazení. Odpověď nástroje na to upozorní. Dodatečně to spraví
 > `td_update_tag` s `projectId`.
 >
+> **Limity free tarifu (TODO-243).** Tarifní limity patří do appky, ne sem.
+> `td_create_task` a `td_create_project` proto do odpovědi přilepí varování
+> s reálným počtem, když je owner na free tarifu a je nad limitem (1 projekt,
+> 50 **aktivních** úkolů). Jde o to, aby se to člověk dozvěděl při zakládání, ne až
+> zpětně v appce, a aby z textu bylo jasné, že o nic nepřišel. **Nic to neblokuje**
+> a při neznámém tarifu (nedostupný relay) radši mlčí — falešný poplach je horší
+> než žádný.
+
 > **Výchozí štítky (TODO-239).** `isDefault` u `td_create_tag` / `td_update_tag`
 > (a sdílených variant) znamená, že štítek dostane **každý nově zakládaný úkol**
 > projektu. `td_create_task` i `td_create_shared_task` je přidávají samy a vrátí
@@ -766,6 +774,14 @@ Shared projects (TODO-235):
 > adopt it. The tool response says so. Fix it afterwards with `td_update_tag` and
 > a `projectId`.
 >
+> **Free-tier limits (TODO-243).** Tier caps belong to the app, not here.
+> `td_create_task` and `td_create_project` append a warning with the real count
+> when the owner is on the free tier and above its cap (1 project, 50 **active**
+> tasks), so that it is learned at creation time rather than later in the app, and
+> so that the text makes clear nothing was lost. **Nothing is blocked**, and with
+> an unknown tier (unreachable relay) it stays silent — a false alarm is worse
+> than none.
+
 > **Default tags (TODO-239).** `isDefault` on `td_create_tag` / `td_update_tag`
 > (and the shared variants) means every task newly created in the project gets the
 > tag. Both `td_create_task` and `td_create_shared_task` apply them and report them

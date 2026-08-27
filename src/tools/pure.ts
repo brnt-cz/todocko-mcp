@@ -146,3 +146,30 @@ export function queryRows<T = unknown>(result: unknown): T[] {
   const wrapped = (result as { rows?: unknown } | null | undefined)?.rows;
   return Array.isArray(wrapped) ? (wrapped as T[]) : [];
 }
+
+/** Free-tier caps, mirroring FREE in the app's src/composables/useOwnerTier.ts. */
+export const FREE_TIER_LIMITS = { maxProjects: 1, maxActiveTasks: 50 };
+
+/**
+ * Warning appended to a create response when the owner is on the free plan and
+ * now sits above its cap.
+ *
+ * Tier limits are enforced in the browser only, and nothing checks them here, so
+ * a free owner can create freely through this server and then discover the cap
+ * later in the app. The point of this text is that they learn it at the moment it
+ * happens, and that they learn nothing is lost. (TODO-243)
+ *
+ * Returns "" when there is nothing to say, so callers can append unconditionally.
+ */
+export function freeTierWarning(
+  kind: "project" | "task",
+  count: number,
+  limit: number,
+): string {
+  if (count <= limit) return "";
+  return kind === "project"
+    ? ` NOTE: this owner is on the free plan, which allows ${limit} active project — there are now ${count}.` +
+      ` The app will refuse to create further projects and show a limit message. Existing projects keep working and nothing is lost.`
+    : ` NOTE: this owner is on the free plan, which allows ${limit} active tasks (completed ones do not count) — there are now ${count}.` +
+      ` The app will refuse to create further tasks and show a limit message. Existing tasks keep working and nothing is lost.`;
+}

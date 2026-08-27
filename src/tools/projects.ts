@@ -2,6 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { freeTierNote } from "./tierWarning.js";
 
 export const projectTools: Tool[] = [
   {
@@ -232,7 +233,7 @@ async function createProject(
   return {
     success: true,
     projectId: result.value.id,
-    message: `Project "${args.name}" created successfully${getSyncWarning()}`,
+    message: `Project "${args.name}" created successfully${getSyncWarning()}${await freeTierNote(evolu, "project")}`,
   };
 }
 
