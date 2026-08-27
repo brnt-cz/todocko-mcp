@@ -18,6 +18,8 @@ export {
   assertMutation,
   defaultTagIdsForProject,
   queryRows,
+  FREE_TIER_LIMITS,
+  freeTierWarning,
 } from "./pure.js";
 
 /**

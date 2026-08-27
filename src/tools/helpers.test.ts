@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 // Imports from ./pure.js, not ./helpers.js: the latter pulls in ../evolu.js,
 // whose module-level init crashes on Node 18/20 (TODO-229). None of what is
 // tested here ever needed Evolu.
-import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP, defaultTagIdsForProject, queryRows } from "./pure.js";
+import { resolveDownloadPath, assertAttachmentSize, MAX_ATTACHMENT_BYTES, topPositionForNewTask, POSITION_STEP, defaultTagIdsForProject, queryRows, freeTierWarning, FREE_TIER_LIMITS } from "./pure.js";
 import { resolve } from "path";
 
 const BASE = "/tmp/todocko-dl-test";
@@ -122,5 +122,33 @@ describe("queryRows", () => {
     expect(queryRows(null)).toEqual([]);
     expect(queryRows({})).toEqual([]);
     expect(queryRows({ rows: "nope" })).toEqual([]);
+  });
+});
+
+describe("freeTierWarning", () => {
+  it("says nothing while the owner is inside the cap", () => {
+    expect(freeTierWarning("project", 1, 1)).toBe("");
+    expect(freeTierWarning("task", 50, 50)).toBe("");
+    expect(freeTierWarning("task", 0, 50)).toBe("");
+  });
+
+  it("reports the real count once above the cap", () => {
+    const w = freeTierWarning("project", 3, 1);
+    expect(w).toContain("3");
+    expect(w).toContain("1 active project");
+  });
+
+  it("promises nothing is lost — the whole point of warning at all", () => {
+    expect(freeTierWarning("project", 3, 1)).toContain("nothing is lost");
+    expect(freeTierWarning("task", 62, 50)).toContain("nothing is lost");
+  });
+
+  it("tells task callers that completed tasks do not count", () => {
+    expect(freeTierWarning("task", 62, 50)).toContain("completed ones do not count");
+  });
+
+  it("mirrors the app's free limits", () => {
+    // Source of truth is src/composables/useOwnerTier.ts in the app.
+    expect(FREE_TIER_LIMITS).toEqual({ maxProjects: 1, maxActiveTasks: 50 });
   });
 });
