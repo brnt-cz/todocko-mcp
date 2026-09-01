@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type TaskTagId, type ProjectId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
@@ -200,7 +200,7 @@ async function createTag(
 ) {
   const waiter = createMutationWaiter();
   const result = evolu.insert("tag", {
-    name: NonEmptyString100.orThrow(args.name),
+    name: NonEmptyTrimmedString100.orThrow(args.name),
     color: EvoluString.orThrow(args.color || "#6b7280"),
     projectId: (args.projectId ?? null) as ProjectId,
     isDefault: args.isDefault ? SQLITE_TRUE : null,
@@ -232,7 +232,7 @@ async function updateTag(
   const waiter = createMutationWaiter();
   const result = evolu.update("tag", {
     id: args.id as TagId,
-    ...(args.name !== undefined ? { name: NonEmptyString100.orThrow(args.name) } : {}),
+    ...(args.name !== undefined ? { name: NonEmptyTrimmedString100.orThrow(args.name) } : {}),
     ...(args.color !== undefined ? { color: EvoluString.orThrow(args.color) } : {}),
     ...(args.projectId !== undefined ? { projectId: args.projectId as ProjectId } : {}),
     ...(args.isDefault !== undefined ? { isDefault: args.isDefault ? SQLITE_TRUE : null } : {}),

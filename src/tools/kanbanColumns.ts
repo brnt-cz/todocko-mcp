@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type KanbanColumnId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
@@ -103,8 +103,8 @@ async function createKanbanColumn(
 
   const waiter = createMutationWaiter();
   const result = evolu.insert("kanbanColumn", {
-    slug: NonEmptyString100.orThrow(args.slug),
-    name: NonEmptyString100.orThrow(args.name),
+    slug: NonEmptyTrimmedString100.orThrow(args.slug),
+    name: NonEmptyTrimmedString100.orThrow(args.name),
     color: EvoluString.orThrow(args.color || "#6b7280"),
     icon: EvoluString.orThrow(args.icon || "circle"),
     position: Int.orThrow(maxPos + 1),
@@ -123,7 +123,7 @@ async function updateKanbanColumn(
   args: { id: string; name?: string; color?: string; icon?: string; position?: number; isDefault?: boolean; showInKanban?: boolean }
 ) {
   const updates: Record<string, unknown> = { id: args.id as KanbanColumnId };
-  if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+  if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   if (args.color !== undefined) updates.color = EvoluString.orThrow(args.color);
   if (args.icon !== undefined) updates.icon = EvoluString.orThrow(args.icon);
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);

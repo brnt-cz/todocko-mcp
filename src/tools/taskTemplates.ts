@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type TaskTemplateId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
@@ -148,8 +148,8 @@ async function createTaskTemplate(
 
   const waiter = createMutationWaiter();
   const result = evolu.insert("taskTemplate", {
-    name: NonEmptyString100.orThrow(args.name),
-    taskName: args.taskName ? NonEmptyString100.orThrow(args.taskName) : null,
+    name: NonEmptyTrimmedString100.orThrow(args.name),
+    taskName: args.taskName ? NonEmptyTrimmedString100.orThrow(args.taskName) : null,
     description: args.description ? EvoluString.orThrow(args.description) : null,
     priority: EvoluString.orThrow(args.priority || "medium"),
     estimate: args.estimate ? Int.orThrow(args.estimate) : null,
@@ -168,8 +168,8 @@ async function updateTaskTemplate(
   args: { id: string; name?: string; taskName?: string; description?: string; priority?: string; estimate?: number; projectId?: string }
 ) {
   const updates: Record<string, unknown> = { id: args.id as TaskTemplateId };
-  if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
-  if (args.taskName !== undefined) updates.taskName = args.taskName ? NonEmptyString100.orThrow(args.taskName) : null;
+  if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
+  if (args.taskName !== undefined) updates.taskName = args.taskName ? NonEmptyTrimmedString100.orThrow(args.taskName) : null;
   if (args.description !== undefined) updates.description = args.description ? EvoluString.orThrow(args.description) : null;
   if (args.priority !== undefined) updates.priority = EvoluString.orThrow(args.priority);
   if (args.estimate !== undefined) updates.estimate = args.estimate ? Int.orThrow(args.estimate) : null;

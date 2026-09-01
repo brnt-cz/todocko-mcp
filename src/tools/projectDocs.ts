@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import {
   SQLITE_TRUE,
   type ProjectId,
@@ -196,7 +196,7 @@ async function createProjectDoc(
   const waiter = createMutationWaiter();
   const result = evolu.insert("localProjectNote", {
     projectId: args.projectId as ProjectId,
-    title: NonEmptyString100.orThrow(args.title),
+    title: NonEmptyTrimmedString100.orThrow(args.title),
     content: args.content ? EvoluString.orThrow(args.content) : null,
     position: Int.orThrow(maxPos + 1),
     isDoc: SQLITE_TRUE,
@@ -214,7 +214,7 @@ async function updateProjectDoc(
   args: { id: string; title?: string; content?: string; position?: number; parentDocId?: string }
 ) {
   const updates: Record<string, unknown> = { id: args.id as LocalProjectNoteId };
-  if (args.title !== undefined) updates.title = NonEmptyString100.orThrow(args.title);
+  if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
   if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
@@ -287,7 +287,7 @@ async function createSharedProjectDoc(
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert("projectNote", {
       projectId: args.projectId as ProjectId,
-      title: NonEmptyString100.orThrow(args.title),
+      title: NonEmptyTrimmedString100.orThrow(args.title),
       content: args.content ? EvoluString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
@@ -312,7 +312,7 @@ async function updateSharedProjectDoc(
   useSharedOwner(owner);
   try {
     const updates: Record<string, unknown> = { id: args.id as ProjectNoteId };
-    if (args.title !== undefined) updates.title = NonEmptyString100.orThrow(args.title);
+    if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
     if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;

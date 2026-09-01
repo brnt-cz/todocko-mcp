@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type UserId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
@@ -178,7 +178,7 @@ async function createUser(
 ) {
   const waiter = createMutationWaiter();
   const result = evolu.insert("user", {
-    name: NonEmptyString100.orThrow(args.name),
+    name: NonEmptyTrimmedString100.orThrow(args.name),
     email: args.email ? EvoluString.orThrow(args.email) : null,
     color: EvoluString.orThrow(args.color || "#6b7280"),
     role: args.role ? EvoluString.orThrow(args.role) : null,
@@ -209,7 +209,7 @@ async function updateUser(
   };
 
   if (args.name !== undefined) {
-    updates.name = NonEmptyString100.orThrow(args.name);
+    updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   }
   if (args.email !== undefined) {
     updates.email = args.email ? EvoluString.orThrow(args.email) : null;

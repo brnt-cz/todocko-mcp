@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
@@ -181,7 +181,7 @@ async function getProject(
     if (args.id) {
       q = q.where("id", "=", args.id as ProjectId);
     } else if (args.code) {
-      q = q.where("code", "=", args.code as unknown as typeof NonEmptyString100.Type);
+      q = q.where("code", "=", args.code as unknown as typeof NonEmptyTrimmedString100.Output);
     }
 
     return q.limit(1);
@@ -216,8 +216,8 @@ async function createProject(
 
   const waiter = createMutationWaiter();
   const result = evolu.insert("project", {
-    name: NonEmptyString100.orThrow(args.name),
-    code: args.code ? NonEmptyString100.orThrow(args.code) : null,
+    name: NonEmptyTrimmedString100.orThrow(args.name),
+    code: args.code ? NonEmptyTrimmedString100.orThrow(args.code) : null,
     color: EvoluString.orThrow(args.color || "#6b7280"),
     isArchived: null,
     isHiddenFromFilters: null,
@@ -246,10 +246,10 @@ async function updateProject(
   };
 
   if (args.name !== undefined) {
-    updates.name = NonEmptyString100.orThrow(args.name);
+    updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   }
   if (args.code !== undefined) {
-    updates.code = args.code ? NonEmptyString100.orThrow(args.code) : null;
+    updates.code = args.code ? NonEmptyTrimmedString100.orThrow(args.code) : null;
   }
   if (args.color !== undefined) {
     updates.color = EvoluString.orThrow(args.color);

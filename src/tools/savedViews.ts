@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, String as EvoluString, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type SavedViewId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 
@@ -98,7 +98,7 @@ async function createSavedView(
 
   const waiter = createMutationWaiter();
   const result = evolu.insert("savedView", {
-    name: NonEmptyString100.orThrow(args.name),
+    name: NonEmptyTrimmedString100.orThrow(args.name),
     icon: args.icon ? EvoluString.orThrow(args.icon) : null,
     filters: EvoluString.orThrow(args.filters),
     isBuiltIn: null,
@@ -116,7 +116,7 @@ async function updateSavedView(
   args: { id: string; name?: string; icon?: string; filters?: string; position?: number }
 ) {
   const updates: Record<string, unknown> = { id: args.id as SavedViewId };
-  if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+  if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   if (args.icon !== undefined) updates.icon = args.icon ? EvoluString.orThrow(args.icon) : null;
   if (args.filters !== undefined) updates.filters = EvoluString.orThrow(args.filters);
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);

@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString1000, Int } from "@evolu/common";
+import { NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ChecklistItemId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
@@ -149,7 +149,7 @@ async function createChecklistItem(
   const waiter = createMutationWaiter();
   const result = evolu.insert("checklistItem", {
     taskId: args.taskId as TaskId,
-    title: NonEmptyString1000.orThrow(args.title),
+    title: NonEmptyTrimmedString1000.orThrow(args.title),
     isChecked: args.isChecked ? SQLITE_TRUE : null,
     position: Int.orThrow(maxPosition + 1),
   }, { onComplete: waiter.onComplete });
@@ -183,7 +183,7 @@ async function updateChecklistItem(
   };
 
   if (args.title !== undefined) {
-    updates.title = NonEmptyString1000.orThrow(args.title);
+    updates.title = NonEmptyTrimmedString1000.orThrow(args.title);
   }
   if (args.isChecked !== undefined) {
     updates.isChecked = args.isChecked ? SQLITE_TRUE : null;

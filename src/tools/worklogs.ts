@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString1000, Int, String as EvoluString } from "@evolu/common";
+import { NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type WorklogId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter, getSyncWarning } from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
@@ -186,7 +186,7 @@ async function addWorklog(
   const result = evolu.insert("worklog", {
     taskId: args.taskId as TaskId,
     durationMinutes: Int.orThrow(args.durationMinutes),
-    description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+    description: args.description ? NonEmptyTrimmedString1000.orThrow(args.description) : null,
     loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
     userId: args.userId ? (args.userId as UserId) : null,
   }, { onComplete: waiter.onComplete });
@@ -223,7 +223,7 @@ async function updateWorklog(
     updates.durationMinutes = Int.orThrow(args.durationMinutes);
   }
   if (args.description !== undefined) {
-    updates.description = args.description ? NonEmptyString1000.orThrow(args.description) : null;
+    updates.description = args.description ? NonEmptyTrimmedString1000.orThrow(args.description) : null;
   }
   if (args.loggedAt !== undefined) {
     updates.loggedAt = EvoluString.orThrow(args.loggedAt);

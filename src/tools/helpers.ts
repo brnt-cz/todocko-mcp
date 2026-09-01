@@ -1,5 +1,5 @@
 import { getSyncHealth, trackOnComplete, type EvoluInstance } from "../evolu.js";
-import { maxLength, NonEmptyString } from "@evolu/common";
+import { maxLength, NonEmptyTrimmedString } from "@evolu/common";
 import { NETWORK_DELAY_MS } from "./pure.js";
 
 // Evolu-free helpers live in pure.ts so they can be tested without starting
@@ -24,11 +24,11 @@ export {
 
 /**
  * Description fields (task/shared task) are stored in an unbounded `String`
- * column, so the app UI imposes no limit. Evolu's built-in `NonEmptyString1000`
+ * column, so the app UI imposes no limit. Evolu's built-in `NonEmptyTrimmedString1000`
  * was far too tight for real descriptions; this raises the MCP guardrail to a
  * generous 10000 while still rejecting accidental megabyte payloads. (TODO-181)
  */
-export const NonEmptyString10000 = maxLength(10000)(NonEmptyString);
+export const NonEmptyString10000 = maxLength(10000)(NonEmptyTrimmedString);
 
 /**
  * Wait for a mutation to complete locally (via onComplete), then wait for network sync.
