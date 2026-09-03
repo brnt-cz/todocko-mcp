@@ -1177,6 +1177,12 @@ async function listSharedDeploymentStages(
           "project.code as projectCode",
         ])
         .where("deploymentStage.isDeleted", "is not", SQLITE_TRUE)
+        // Scope to this owner in SQL. One instance holds every shared
+        // owner's rows, so a JS-side filter is correct only for as long as
+        // nothing limits or aggregates first — which is exactly how
+        // td_list_shared_tasks came to report zero for a project with 26
+        // tasks. (TODO-264)
+        .where("deploymentStage.ownerId", "=", sharedOwner.id as string)
         .orderBy("deploymentStage.position", "asc")
     );
 
@@ -1943,6 +1949,7 @@ async function listSharedRepositoryLinks(
           "project.code as projectCode",
         ])
         .where("repositoryLink.isDeleted", "is not", SQLITE_TRUE)
+        .where("repositoryLink.ownerId", "=", sharedOwner.id as string)
         .orderBy("repositoryLink.position", "asc")
     );
 
@@ -2001,6 +2008,7 @@ async function createSharedRepositoryLink(
         .selectFrom("repositoryLink")
         .select(["position", "ownerId"])
         .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id as string)
         .orderBy("position", "desc")
     );
     const posResults = await projectEvolu.loadQuery(posQuery);
@@ -2105,6 +2113,7 @@ async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string
         .selectFrom("tag")
         .select(["id", "ownerId", "name", "color", "projectId", "isDefault"])
         .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id as string)
         .orderBy("name", "asc")
     );
     const result = await projectEvolu.loadQuery(query);
@@ -2206,6 +2215,7 @@ async function addSharedTagToTask(
         .where("taskId", "=", args.taskId as TaskId)
         .where("tagId", "=", args.tagId as TagId)
         .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id as string)
     );
     const existing = await projectEvolu.loadQuery(existingQuery);
     const actualOwnerId = sharedOwner.id as string;
@@ -2241,6 +2251,7 @@ async function removeSharedTagFromTask(
         .where("taskId", "=", args.taskId as TaskId)
         .where("tagId", "=", args.tagId as TagId)
         .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id as string)
     );
     const rows = await projectEvolu.loadQuery(query);
     const actualOwnerId = sharedOwner.id as string;
@@ -2344,7 +2355,8 @@ async function listSharedMembers(
           "isKicked",
           "isBlocked",
         ])
-        .where("isDeleted", "is not", SQLITE_TRUE);
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id as string);
 
       if (args.projectId) {
         q = q.where("projectId", "=", args.projectId as ProjectId);
@@ -2528,6 +2540,7 @@ async function listSharedNoteAttachments(
         .select(["id", "ownerId", "noteId", "filename", "mimeType", "size"])
         .where("noteId", "=", args.noteId as ProjectNoteId)
         .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id as string)
         .where("data", "is not", null)
     );
 

@@ -247,6 +247,12 @@ async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret:
         .selectFrom("projectNote")
         .select(["id", "ownerId", "projectId", "title", "content", "createdBy", "position", "parentDocId"])
         .where("isDeleted", "is not", SQLITE_TRUE)
+        // Scope to this owner in SQL. One instance holds every shared
+        // owner's rows, so a JS-side filter is correct only for as long as
+        // nothing limits or aggregates first — which is exactly how
+        // td_list_shared_tasks came to report zero for a project with 26
+        // tasks. (TODO-264)
+        .where("ownerId", "=", owner.id as string)
         .where("isDoc", "=", SQLITE_TRUE)
         .orderBy("position", "asc");
       if (args.projectId) {
