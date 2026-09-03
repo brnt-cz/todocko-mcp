@@ -59,7 +59,6 @@ async function syncStatus(args: { retest?: boolean }) {
 
   const anyRelayReachable = Object.values(health.wsConnectivity).some((s) => s === 'ok');
   const quarantine = await getQuarantineCounts();
-  const quarantined = (quarantine.app ?? 0) + (quarantine.project ?? 0);
 
   return {
     // Judged on what can be observed. Sync errors are observable again since
@@ -67,17 +66,16 @@ async function syncStatus(args: { retest?: boolean }) {
     // removed, so `lastError` counts towards this once more — but a missing
     // relay is reported as such rather than folded into "degraded", because
     // the two call for different answers. (TODO-265, TODO-266)
-    // Judged on what can be observed. Sync errors are not: v8 removed the
-    // instance hook and its console never reports one on the client
-    // (TODO-265, TODO-266). Quarantined rows are the exception — data that
-    // arrived and could not be applied — so they decide this.
-    status: !health.evoluReady
-      ? 'not-ready'
-      : !anyRelayReachable
-        ? 'no-relay'
-        : quarantined > 0
-          ? 'quarantined-data'
-          : 'ok',
+    // Judged on readiness and reachability only. Sync errors cannot be judged:
+    // v8 removed the instance hook and its console never reports one on the
+    // client (TODO-265, TODO-266). Quarantined rows are reported as a number
+    // rather than folded in here, because a quarantine is Evolu's forward
+    // compatibility working as designed — a client whose schema is behind
+    // keeps what it cannot apply — and this installation holds one row that
+    // can never resolve, a `user.enableDependencyGraph` from an app version
+    // that no longer declares it. A status permanently stuck on "degraded"
+    // over that is a status nobody reads. (TODO-267)
+    status: !health.evoluReady ? 'not-ready' : anyRelayReachable ? 'ok' : 'no-relay',
     evoluReady: health.evoluReady,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
@@ -93,7 +91,7 @@ async function syncStatus(args: { retest?: boolean }) {
     tips: [
       "If all relays show 'untested', run with retest: true",
       "If relays show 'failed'/'timeout', check network/firewall",
-      "quarantinedRows > 0 means data arrived that this schema cannot apply",
+      "quarantinedRows counts data this schema cannot apply — growth means the schema is behind the app",
       "onCompleteCount tracks successfully applied local mutations",
     ],
   };
