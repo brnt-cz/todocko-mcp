@@ -279,6 +279,10 @@ async function createSharedProjectDoc(
         .where("projectId", "=", args.projectId as ProjectId)
         .where("isDeleted", "is not", SQLITE_TRUE)
         .where("isDoc", "=", SQLITE_TRUE)
+        // Same trap as the shared task listing: `limit(1)` runs in SQLite, so
+        // without this the next position is derived from some other owner's
+        // highest one and shared positions collide or jump.
+        .where("ownerId", "=", owner.id as string)
         .orderBy("position", "desc").limit(1)
     );
     const posResult = await projectEvolu.loadQuery(posQuery);

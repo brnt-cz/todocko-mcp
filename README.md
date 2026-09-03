@@ -30,7 +30,7 @@ Vyšel krátce, protože Node 24 má potřebná web API nativně. Oba workery b�
 fallbacky Evolu „pro platformy bez podpory workerů"; `worker_threads` by přinesly
 izolaci, kterou jednoprocesový CLI nepotřebuje.
 
-Dvě věci, na kterých se to dá snadno rozbít:
+Čtyři věci, na kterých se to dá snadno rozbít:
 
 - **`installPolyfills()` je povinné** a musí proběhnout dřív než cokoli
   z `@evolu/common`. v8 volá `Map.prototype.getOrInsert(Computed)`, které nemá
@@ -40,6 +40,18 @@ Dvě věci, na kterých se to dá snadno rozbít:
   data starého ownera zašifrovaná klíčem, který nový nemá. Server proto neshodu
   **ohlásí a odmítne nastartovat** — smaž `~/.todocko/todocko.db` a nech ho
   stáhnout data znovu.
+- **`createNodeEvoluDeps()` musí být singleton na proces.** Shared worker drží
+  jediný `tabLeaderPortStore` a `initDbWorker` každého tenanta předpokládá, že
+  je už naplněný. Druhá sada deps znamená druhý shared worker, kterému nikdo
+  leadera neohlásil, a vytvoření sdílené instance spadne na
+  `initDbWorker: Expected value to be non-nullable`. Jeden worker obslouží obě
+  instance jako dva tenanty podle `appName`, stejně jako `@evolu/web` na jedné
+  stránce.
+- **Ownera filtrovat v SQL, ne až v JS.** Sdílená instance drží data všech
+  ownerů v jedné tabulce. `limit` provede SQLite dřív, než se v JS cokoli
+  filtruje, takže nezúžený dotaz vrátí prvních N řádků přes všechny ownery a
+  filtr je pak zahodí. Nástroj hlásil nula úkolů u projektu, který jich má 26.
+  Stejná past číhá u `orderBy position desc limit 1` při výpočtu další pozice.
 
 ## Instalace
 

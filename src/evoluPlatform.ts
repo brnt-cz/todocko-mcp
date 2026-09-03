@@ -17,6 +17,17 @@
  * support". A `worker_threads` version would buy isolation the MCP server does
  * not need — it is a single-process CLI serving one user.
  */
+/**
+ * Evolu v8 uses `Map.prototype.getOrInsertComputed`, which no released Node has
+ * (checked on 24.20). Without this, the first task that reaches for a semaphore
+ * dies with `getOrInsertComputed is not a function`, surfacing as an uncaught
+ * `PanicAbortReason` while `td_sync_status` still cheerfully reports
+ * `evoluReady: true`. Installing it here, in the platform layer, guarantees it
+ * lands before any deps are constructed.
+ */
+import { installPolyfills } from "@evolu/common/polyfills";
+installPolyfills();
+
 import {
   createConsole,
   createConsoleStoreOutput,
@@ -56,8 +67,25 @@ function createWorkerDeps() {
   };
 }
 
-/** Evolu dependencies for a headless Node client. */
+/**
+ * Evolu dependencies for a headless Node client.
+ *
+ * Built once per process and reused. The name is the reason: a *shared* worker
+ * is meant to be shared, and it keeps a single `tabLeaderPortStore` that every
+ * tenant's `initDbWorker` asserts is already populated. Handing each instance
+ * its own deps gave us a second shared worker whose store no client had
+ * announced a leader to, so creating the shared-project instance died with
+ * `initDbWorker: Expected value to be non-nullable`. `@evolu/web` builds its
+ * deps once per page for the same reason; one worker then serves both
+ * instances as two tenants keyed by `appName`.
+ */
+let cachedDeps: EvoluDeps | null = null;
+
 export function createNodeEvoluDeps(): EvoluDeps {
+  return (cachedDeps ??= buildNodeEvoluDeps());
+}
+
+function buildNodeEvoluDeps(): EvoluDeps {
   const createDbWorker = () =>
     createWorker<DbWorkerInit>((self) => {
       const run = createRun({
