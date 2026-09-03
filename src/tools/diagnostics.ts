@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
+import { getQuarantineCounts, getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
 
 export const diagnosticTools: Tool[] = [
   {
@@ -58,28 +58,42 @@ async function syncStatus(args: { retest?: boolean }) {
   }
 
   const anyRelayReachable = Object.values(health.wsConnectivity).some((s) => s === 'ok');
+  const quarantine = await getQuarantineCounts();
+  const quarantined = (quarantine.app ?? 0) + (quarantine.project ?? 0);
 
   return {
-    // Judged only on what can actually be observed. `lastError` used to decide
-    // this, but Evolu v8 has no error hook on the instance, so it can never be
-    // set and "ok" would mean nothing more than "we cannot tell". (TODO-265)
-    status: !health.evoluReady ? 'not-ready' : anyRelayReachable ? 'ok' : 'no-relay',
+    // Judged on what can be observed. Sync errors are observable again since
+    // TODO-266, through Evolu's console rather than the instance hook v8
+    // removed, so `lastError` counts towards this once more — but a missing
+    // relay is reported as such rather than folded into "degraded", because
+    // the two call for different answers. (TODO-265, TODO-266)
+    // Judged on what can be observed. Sync errors are not: v8 removed the
+    // instance hook and its console never reports one on the client
+    // (TODO-265, TODO-266). Quarantined rows are the exception — data that
+    // arrived and could not be applied — so they decide this.
+    status: !health.evoluReady
+      ? 'not-ready'
+      : !anyRelayReachable
+        ? 'no-relay'
+        : quarantined > 0
+          ? 'quarantined-data'
+          : 'ok',
     evoluReady: health.evoluReady,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
     lastError: health.lastError,
     lastErrorAt: health.lastErrorAt,
     errorCount: health.errorCount,
-    // v8 dropped `subscribeError`/`getError` and ships no replacement, so the
-    // two fields above stay empty however badly sync is going. Say so rather
-    // than let a zero read as good news. Capturing errors out of Evolu's
-    // console store is TODO-266.
-    errorTracking: 'unavailable on Evolu v8 — lastError and errorCount cannot be populated',
+    // Messages Evolu received and could not apply, per instance. Nothing logs
+    // these and no Evolu API reports them; the table has to be counted.
+    quarantinedRows: quarantine,
+    errorTracking:
+      'lastError/errorCount cannot be populated on Evolu v8 — no instance hook and no console error on the client. Watch quarantinedRows instead (TODO-266)',
     onCompleteCount: health.onCompleteCount,
     tips: [
       "If all relays show 'untested', run with retest: true",
       "If relays show 'failed'/'timeout', check network/firewall",
-      "errorCount is always 0 on v8; see errorTracking",
+      "quarantinedRows > 0 means data arrived that this schema cannot apply",
       "onCompleteCount tracks successfully applied local mutations",
     ],
   };
