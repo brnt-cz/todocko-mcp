@@ -227,6 +227,9 @@ async function deleteProjectNote(evolu: EvoluInstance, args: { id: string }) {
 
 async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret: string; projectId?: string }) {
   const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
   try {
@@ -261,6 +264,9 @@ async function createSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string }
 ) {
   const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
   try {
@@ -298,6 +304,9 @@ async function updateSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number }
 ) {
   const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
   try {
@@ -320,6 +329,9 @@ async function deleteSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret: string; id: string }
 ) {
   const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
   try {
