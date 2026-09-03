@@ -224,15 +224,11 @@ async function createProject(
     position: Int.orThrow(maxPosition + 1),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create project: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    projectId: result.value.id,
+    projectId: result.id,
     message: `Project "${args.name}" created successfully${getSyncWarning()}${await freeTierNote(evolu, "project")}`,
   };
 }

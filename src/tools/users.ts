@@ -187,15 +187,11 @@ async function createUser(
     theme: null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create user: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    userId: result.value.id,
+    userId: result.id,
     message: `User "${args.name}" created successfully${getSyncWarning()}`,
   };
 }

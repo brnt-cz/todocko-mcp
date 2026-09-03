@@ -176,15 +176,11 @@ async function createRepositoryLink(
     position: Int.orThrow(maxPosition + 1),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create repository link: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    linkId: result.value.id,
+    linkId: result.id,
     message: "Repository link created successfully",
   };
 }
@@ -201,9 +197,6 @@ async function updateRepositoryLink(
 
   const waiter = createMutationWaiter();
   const result = evolu.update("repositoryLink", updates as any, { onComplete: waiter.onComplete });
-  if (!result.ok) {
-    throw new Error(`Failed to update repository link: ${JSON.stringify(result.error)}`);
-  }
   await waiter.waitForSync();
   return { success: true, message: "Repository link updated successfully" };
 }

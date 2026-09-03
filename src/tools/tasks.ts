@@ -804,16 +804,12 @@ async function createTask(
     ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
   } as any, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create task: ${JSON.stringify(result.error)}`);
-  }
-
   // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
-  evolu.update("task", { id: result.value.id, status: args.status || "todo" } as any);
+  evolu.update("task", { id: result.id, status: args.status || "todo" } as any);
 
-  logTaskCreate(evolu, result.value.id);
+  logTaskCreate(evolu, result.id);
 
-  const appliedTags = await applyDefaultTags(evolu, result.value.id as TaskId, args.projectId);
+  const appliedTags = await applyDefaultTags(evolu, result.id as TaskId, args.projectId);
   // Tier caps live in the browser only; without this a free owner would meet the
   // limit for the first time in the app, after the fact. (TODO-243)
   const tierNote = await freeTierNote(evolu, "task");
@@ -825,7 +821,7 @@ async function createTask(
 
   return {
     success: true,
-    taskId: result.value.id,
+    taskId: result.id,
     taskCode,
     ...(appliedTags.length > 0 ? { appliedTags } : {}),
     message: `Task ${taskCode} created successfully${
@@ -865,7 +861,10 @@ async function applyDefaultTags(
     const applied: string[] = [];
     for (const tagId of defaults) {
       const inserted = evolu.insert("taskTag", { taskId, tagId: tagId as TagId });
-      if (inserted.ok) applied.push(namesById.get(tagId) ?? tagId);
+      // v8 raises on an invalid change instead of returning a Result, so an id
+      // here means the tag was queued. Gating on `.ok` meant a new task never
+      // reported the project's default tags as applied.
+      if (inserted.id) applied.push(namesById.get(tagId) ?? tagId);
     }
     return applied;
   } catch {
@@ -991,9 +990,6 @@ async function updateTask(
 
   const waiter = createMutationWaiter();
   const updateResult = evolu.update("task", updates as any, { onComplete: waiter.onComplete });
-  if (!updateResult.ok) {
-    throw new Error(`Failed to update task: ${JSON.stringify(updateResult.error)}`);
-  }
 
   logTaskUpdate(evolu, args.id, oldTask, updates);
 
@@ -1133,7 +1129,6 @@ async function bulkUpdateTasks(
       // TODO-90 M11: check the Result — update() doesn't throw, so without this
       // a failed mutation would still be counted as a success.
       const r = evolu.update("task", updates as any);
-      if (!r.ok) throw new Error(`update failed: ${JSON.stringify(r.error)}`);
       logTaskUpdate(evolu, taskId, oldTask, updates);
       successCount++;
     } catch {
@@ -1171,7 +1166,6 @@ async function bulkDeleteTasks(
       // Delete the task itself. TODO-90 M11: check the Result so a failed
       // delete is reported as skipped, not silently counted as success.
       const r = evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any);
-      if (!r.ok) throw new Error(`delete failed: ${JSON.stringify(r.error)}`);
       logTaskDelete(evolu, taskId);
       successCount++;
     } catch {
@@ -1266,9 +1260,6 @@ async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
 
   const waiter = createMutationWaiter();
   const result = evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onComplete: waiter.onComplete });
-  if (!result.ok) {
-    throw new Error(`Failed to delete task: ${JSON.stringify(result.error)}`);
-  }
   logTaskDelete(evolu, args.id);
 
   await waiter.waitForSync();

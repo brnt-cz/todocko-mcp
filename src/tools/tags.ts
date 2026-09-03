@@ -206,10 +206,6 @@ async function createTag(
     isDefault: args.isDefault ? SQLITE_TRUE : null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create tag: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   // Say it out loud when the tag will not appear anywhere: an unassigned tag is
@@ -220,7 +216,7 @@ async function createTag(
 
   return {
     success: true,
-    tagId: result.value.id,
+    tagId: result.id,
     message: `Tag "${args.name}" created successfully${unassignedNote}${getSyncWarning()}`,
   };
 }
@@ -335,15 +331,11 @@ async function addTagToTask(evolu: EvoluInstance, args: { taskId: string; tagId:
     tagId: args.tagId as TagId,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to add tag to task: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    taskTagId: result.value.id,
+    taskTagId: result.id,
     message: `Tag added to task successfully${getSyncWarning()}`,
   };
 }

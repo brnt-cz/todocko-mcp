@@ -112,10 +112,9 @@ async function createKanbanColumn(
     showInKanban: args.showInKanban !== false ? SQLITE_TRUE : null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) throw new Error(`Failed to create column: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
 
-  return { success: true, columnId: result.value.id, message: `Column "${args.name}" created${getSyncWarning()}` };
+  return { success: true, columnId: result.id, message: `Column "${args.name}" created${getSyncWarning()}` };
 }
 
 async function updateKanbanColumn(

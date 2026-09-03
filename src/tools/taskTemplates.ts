@@ -157,10 +157,9 @@ async function createTaskTemplate(
     position: Int.orThrow(maxPos + 1),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) throw new Error(`Failed to create template: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
 
-  return { success: true, templateId: result.value.id, message: `Template "${args.name}" created${getSyncWarning()}` };
+  return { success: true, templateId: result.id, message: `Template "${args.name}" created${getSyncWarning()}` };
 }
 
 async function updateTaskTemplate(

@@ -203,15 +203,11 @@ async function createMention(
     isRead: null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create mention: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    mentionId: result.value.id,
+    mentionId: result.id,
     message: `Mention created successfully${getSyncWarning()}`,
   };
 }
