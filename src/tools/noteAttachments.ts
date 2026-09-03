@@ -149,15 +149,11 @@ async function uploadNoteAttachment(
     size: Int.orThrow(size),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to upload note attachment: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    attachmentId: result.value.id,
+    attachmentId: result.id,
     filename,
     mimeType,
     size,

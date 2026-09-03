@@ -181,15 +181,11 @@ async function uploadAttachment(
     size: Int.orThrow(size),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to upload attachment: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    attachmentId: result.value.id,
+    attachmentId: result.id,
     filename,
     mimeType,
     size,
@@ -232,9 +228,6 @@ async function deleteAttachment(
     data: null,
     isDeleted: SQLITE_TRUE,
   } as any, { onComplete: waiter.onComplete });
-  if (!result.ok) {
-    throw new Error(`Failed to delete attachment: ${JSON.stringify(result.error)}`);
-  }
 
   await waiter.waitForSync();
 

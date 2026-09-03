@@ -98,15 +98,20 @@ export function assertMaxLength(
 }
 
 /**
- * Throw when an Evolu mutation was rejected.
+ * Throw when an Evolu mutation did not come back with a row id.
  *
- * Tools answer the caller with `success: true`, so discarding the Result means
- * reporting a write that Evolu refused — the update/delete tools did exactly
- * that. The create paths already checked theirs. (TODO-206)
+ * Tools answer the caller with `success: true`, so a write nobody checked
+ * would be reported as a success either way (TODO-206).
+ *
+ * What is checked changed with v8. v7 returned a `Result` and the original
+ * version of this asserted `result.ok`. v8 returns the row as `{ id }` and
+ * raises on an invalid change instead, so `ok` is simply absent — which made
+ * this helper throw on every successful mutation, and the v8 port kept it.
+ * A missing id is what is left to catch.
  */
-export function assertMutation(label: string, result: { readonly ok: boolean }): void {
-  if (!result.ok) {
-    throw new Error(`${label} failed: ${JSON.stringify((result as { readonly error?: unknown }).error)}`);
+export function assertMutation(label: string, result: { readonly id?: unknown }): void {
+  if (!result || typeof result.id !== "string" || result.id.length === 0) {
+    throw new Error(`${label} failed: mutation returned no row id (${JSON.stringify(result)})`);
   }
 }
 

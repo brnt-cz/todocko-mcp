@@ -138,15 +138,11 @@ async function createTaskLink(
     linkType: EvoluString.orThrow(args.linkType || "blocks"),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create task link: ${JSON.stringify(result.error)}`);
-  }
-
   await waiter.waitForSync();
 
   return {
     success: true,
-    linkId: result.value.id,
+    linkId: result.id,
     message: `Task link created successfully${getSyncWarning()}`,
   };
 }

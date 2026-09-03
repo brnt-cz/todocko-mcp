@@ -139,9 +139,6 @@ async function createTaskComment(
     userId: args.userId ? (args.userId as UserId) : null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create comment: ${JSON.stringify(result.error)}`);
-  }
 
   logActivity(evolu, {
     taskId: args.taskId,
@@ -153,7 +150,7 @@ async function createTaskComment(
 
   return {
     success: true,
-    commentId: result.value.id,
+    commentId: result.id,
     message: `Comment created successfully${getSyncWarning()}`,
   };
 }

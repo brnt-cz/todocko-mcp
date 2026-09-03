@@ -191,9 +191,6 @@ async function addWorklog(
     userId: args.userId ? (args.userId as UserId) : null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to add worklog: ${JSON.stringify(result.error)}`);
-  }
 
   logActivity(evolu, {
     taskId: args.taskId,
@@ -206,7 +203,7 @@ async function addWorklog(
 
   return {
     success: true,
-    worklogId: result.value.id,
+    worklogId: result.id,
     message: "Worklog added successfully",
   };
 }
@@ -231,9 +228,6 @@ async function updateWorklog(
 
   const waiter = createMutationWaiter();
   const result = evolu.update("worklog", updates as any, { onComplete: waiter.onComplete });
-  if (!result.ok) {
-    throw new Error(`Failed to update worklog: ${JSON.stringify(result.error)}`);
-  }
 
   await waiter.waitForSync();
 
@@ -249,9 +243,6 @@ async function deleteWorklog(evolu: EvoluInstance, args: { id: string }) {
     id: args.id as WorklogId,
     isDeleted: SQLITE_TRUE,
   } as any, { onComplete: waiter.onComplete });
-  if (!result.ok) {
-    throw new Error(`Failed to delete worklog: ${JSON.stringify(result.error)}`);
-  }
 
   await waiter.waitForSync();
 

@@ -96,9 +96,8 @@ async function createDeploymentStage(
     color: args.color || "#22c55e",
     position: Int.orThrow(position),
   } as any, { onComplete: waiter.onComplete });
-  if (!result.ok) throw new Error(`Failed to create deployment stage: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
-  return { success: true, stageId: result.value.id, message: `Deployment stage "${args.name}" created successfully` };
+  return { success: true, stageId: result.id, message: `Deployment stage "${args.name}" created successfully` };
 }
 
 async function updateDeploymentStage(
@@ -111,7 +110,6 @@ async function updateDeploymentStage(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   const waiter = createMutationWaiter();
   const result = evolu.update("deploymentStage", updates as any, { onComplete: waiter.onComplete });
-  if (!result.ok) throw new Error(`Failed to update deployment stage: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
   return { success: true, message: "Deployment stage updated successfully" };
 }
@@ -119,7 +117,6 @@ async function updateDeploymentStage(
 async function deleteDeploymentStage(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
   const result = evolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
-  if (!result.ok) throw new Error(`Failed to delete deployment stage: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
   return { success: true, message: "Deployment stage deleted successfully" };
 }

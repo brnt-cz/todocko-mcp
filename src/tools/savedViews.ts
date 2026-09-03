@@ -105,10 +105,9 @@ async function createSavedView(
     position: Int.orThrow(maxPos + 1),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) throw new Error(`Failed to create view: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
 
-  return { success: true, viewId: result.value.id, message: `View "${args.name}" created${getSyncWarning()}` };
+  return { success: true, viewId: result.id, message: `View "${args.name}" created${getSyncWarning()}` };
 }
 
 async function updateSavedView(

@@ -1309,9 +1309,6 @@ async function updateSharedTask(
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) {
-      throw new Error(`Failed to update shared task: ${JSON.stringify(result.error)}`);
-    }
     await waiter.waitForSync();
 
     return {
@@ -1449,12 +1446,8 @@ async function createSharedTask(
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
 
-    if (!result.ok) {
-      throw new Error(`Failed to create shared task: ${JSON.stringify(result.error)}`);
-    }
-
     // Touch with an update so Evolu sets updatedAt (only set on update, not insert).
-    projectEvolu.update("task", { id: result.value.id, status: args.status || "todo" } as any, { ownerId: sharedOwner.id });
+    projectEvolu.update("task", { id: result.id, status: args.status || "todo" } as any, { ownerId: sharedOwner.id });
 
     // The project's default tags, same as the app pre-ticks them in its form and
     // as td_create_task applies them for own projects (TODO-239). Non-fatal: the
@@ -1472,10 +1465,13 @@ async function createSharedTask(
       for (const tagId of defaultTagIdsForProject(ownTags, args.projectId)) {
         const inserted = projectEvolu.insert(
           "taskTag",
-          { taskId: result.value.id as TaskId, tagId: tagId as TagId } as any,
+          { taskId: result.id as TaskId, tagId: tagId as TagId } as any,
           { ownerId: sharedOwner.id }
         );
-        if (inserted.ok) {
+        // v8 raises on an invalid change rather than returning a Result, so
+        // reaching this line means the tag was queued. Gating on `inserted.ok`
+        // meant no default tag was ever reported as applied.
+        if (inserted.id) {
           appliedTags.push((ownTags.find((t) => t.id === tagId)?.name as string) ?? tagId);
         }
       }
@@ -1487,7 +1483,7 @@ async function createSharedTask(
 
     return {
       success: true,
-      taskId: result.value.id,
+      taskId: result.id,
       taskCode,
       ...(appliedTags.length > 0 ? { appliedTags } : {}),
       message: `Shared task ${taskCode} created successfully${
@@ -1552,9 +1548,6 @@ async function deleteSharedTask(
       { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any,
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
-    if (!result.ok) {
-      throw new Error(`Failed to delete shared task: ${JSON.stringify(result.error)}`);
-    }
 
     await waiter.waitForSync();
 
@@ -1638,9 +1631,8 @@ async function addSharedWorklog(
       },
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
-    if (!result.ok) throw new Error(`Failed to add shared worklog: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
-    return { success: true, worklogId: result.value.id, message: "Shared worklog added successfully" };
+    return { success: true, worklogId: result.id, message: "Shared worklog added successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
@@ -1657,7 +1649,6 @@ async function deleteSharedWorklog(
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("worklog", { id: args.id as WorklogId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared worklog: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared worklog deleted successfully" };
   } finally {
@@ -1730,9 +1721,8 @@ async function createSharedChecklistItem(
       },
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
-    if (!result.ok) throw new Error(`Failed to create shared checklist item: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
-    return { success: true, checklistItemId: result.value.id, message: "Shared checklist item created successfully" };
+    return { success: true, checklistItemId: result.id, message: "Shared checklist item created successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
@@ -1754,7 +1744,6 @@ async function updateSharedChecklistItem(
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("checklistItem", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to update shared checklist item: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared checklist item updated successfully" };
   } finally {
@@ -1773,7 +1762,6 @@ async function deleteSharedChecklistItem(
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("checklistItem", { id: args.id as ChecklistItemId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared checklist item: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared checklist item deleted successfully" };
   } finally {
@@ -1836,9 +1824,8 @@ async function createSharedTaskComment(
       },
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
-    if (!result.ok) throw new Error(`Failed to create shared comment: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
-    return { success: true, commentId: result.value.id, message: "Shared comment created successfully" };
+    return { success: true, commentId: result.id, message: "Shared comment created successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
@@ -1859,7 +1846,6 @@ async function updateSharedTaskComment(
       { id: args.id as TaskCommentId, content: EvoluString.orThrow(args.content) } as any,
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
     );
-    if (!result.ok) throw new Error(`Failed to update shared comment: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared comment updated successfully" };
   } finally {
@@ -1878,7 +1864,6 @@ async function deleteSharedTaskComment(
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("taskComment", { id: args.id as TaskCommentId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared comment: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared comment deleted successfully" };
   } finally {
@@ -1914,15 +1899,11 @@ async function createSharedDeploymentStage(
       position: Int.orThrow(args.position ?? 0),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
-    if (!result.ok) {
-      throw new Error(`Failed to create deployment stage: ${JSON.stringify(result.error)}`);
-    }
-
     await waiter.waitForSync();
 
     return {
       success: true,
-      stageId: result.value.id,
+      stageId: result.id,
       message: `Deployment stage "${args.name}" created successfully`,
     };
   } finally {
@@ -2035,15 +2016,11 @@ async function createSharedRepositoryLink(
       position: Int.orThrow(maxPosition + 1),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
-    if (!result.ok) {
-      throw new Error(`Failed to create repository link: ${JSON.stringify(result.error)}`);
-    }
-
     await waiter.waitForSync();
 
     return {
       success: true,
-      linkId: result.value.id,
+      linkId: result.id,
       message: "Repository link created successfully",
     };
   } finally {
@@ -2067,7 +2044,6 @@ async function updateSharedRepositoryLink(
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("repositoryLink", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to update shared repository link: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared repository link updated successfully" };
   } finally {
@@ -2086,7 +2062,6 @@ async function deleteSharedRepositoryLink(
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("repositoryLink", { id: args.id as RepositoryLinkId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared repository link: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared repository link deleted successfully" };
   } finally {
@@ -2109,7 +2084,6 @@ async function updateSharedDeploymentStage(
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("deploymentStage", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to update shared deployment stage: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage updated successfully" };
   } finally {
@@ -2169,9 +2143,8 @@ async function createSharedTag(
       color: args.color || "#6b7280",
       isDefault: args.isDefault ? SQLITE_TRUE : null,
     } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to create shared tag: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
-    return { success: true, tagId: result.value.id, message: `Tag "${args.name}" created successfully` };
+    return { success: true, tagId: result.id, message: `Tag "${args.name}" created successfully` };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
@@ -2192,7 +2165,6 @@ async function updateSharedTag(
     if (args.isDefault !== undefined) updates.isDefault = args.isDefault ? SQLITE_TRUE : null;
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("tag", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to update shared tag: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared tag updated successfully" };
   } finally {
@@ -2209,7 +2181,6 @@ async function deleteSharedTag(args: { sharedOwnerId: string; ownerSecret: strin
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("tag", { id: args.id as TagId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared tag: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared tag deleted successfully" };
   } finally {
@@ -2247,9 +2218,8 @@ async function addSharedTagToTask(
       taskId: args.taskId as TaskId,
       tagId: args.tagId as TagId,
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to assign shared tag: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
-    return { success: true, taskTagId: result.value.id, message: "Tag assigned successfully" };
+    return { success: true, taskTagId: result.id, message: "Tag assigned successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
@@ -2284,7 +2254,6 @@ async function removeSharedTagFromTask(
     const waiter = createMutationWaiter();
     for (const row of mine) {
       const result = projectEvolu.update("taskTag", { id: row.id as TaskTagId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-      if (!result.ok) throw new Error(`Failed to remove shared tag: ${JSON.stringify(result.error)}`);
     }
     await waiter.waitForSync();
     return { success: true, removed: mine.length, message: "Tag removed successfully" };
@@ -2304,7 +2273,6 @@ async function deleteSharedDeploymentStage(
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared deployment stage: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage deleted successfully" };
   } finally {
@@ -2335,7 +2303,6 @@ async function updateSharedProject(
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("project", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to update shared project: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared project updated successfully" };
   } finally {
@@ -2451,9 +2418,6 @@ async function updateSharedMember(
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("projectMember", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) {
-      throw new Error(`Failed to update shared member: ${JSON.stringify(result.error)}`);
-    }
     await waiter.waitForSync();
 
     return {
@@ -2530,15 +2494,11 @@ async function uploadSharedNoteAttachment(
       size: Int.orThrow(size),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
-    if (!result.ok) {
-      throw new Error(`Failed to upload shared note attachment: ${JSON.stringify(result.error)}`);
-    }
-
     await waiter.waitForSync();
 
     return {
       success: true,
-      attachmentId: result.value.id,
+      attachmentId: result.id,
       filename,
       mimeType,
       size,
@@ -2740,10 +2700,9 @@ async function uploadSharedAttachment(
       size: Int.orThrow(size),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
-    if (!result.ok) throw new Error(`Failed to upload shared attachment: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
 
-    return { success: true, attachmentId: result.value.id, filename, mimeType, size, message: `Attachment "${filename}" uploaded to shared task successfully` };
+    return { success: true, attachmentId: result.id, filename, mimeType, size, message: `Attachment "${filename}" uploaded to shared task successfully` };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
@@ -2822,7 +2781,6 @@ async function deleteSharedAttachment(
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
-    if (!result.ok) throw new Error(`Failed to delete shared attachment: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
     return { success: true, message: "Shared attachment deleted successfully" };
   } finally {

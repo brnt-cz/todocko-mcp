@@ -154,9 +154,6 @@ async function createChecklistItem(
     position: Int.orThrow(maxPosition + 1),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) {
-    throw new Error(`Failed to create checklist item: ${JSON.stringify(result.error)}`);
-  }
 
   logActivity(evolu, {
     taskId: args.taskId,
@@ -169,7 +166,7 @@ async function createChecklistItem(
 
   return {
     success: true,
-    itemId: result.value.id,
+    itemId: result.id,
     message: `Checklist item created successfully${getSyncWarning()}`,
   };
 }

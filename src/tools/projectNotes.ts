@@ -195,10 +195,9 @@ async function createProjectNote(
     position: Int.orThrow(maxPos + 1),
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) throw new Error(`Failed to create note: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
 
-  return { success: true, noteId: result.value.id, message: `Note created${getSyncWarning()}` };
+  return { success: true, noteId: result.id, message: `Note created${getSyncWarning()}` };
 }
 
 async function updateProjectNote(
@@ -287,10 +286,9 @@ async function createSharedProjectNote(
       position: Int.orThrow(maxPos + 1),
     }, { onComplete: waiter.onComplete });
 
-    if (!result.ok) throw new Error(`Failed to create shared note: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
 
-    return { success: true, noteId: result.value.id, message: "Shared note created" };
+    return { success: true, noteId: result.id, message: "Shared note created" };
   } finally {
     stopUsingSharedOwner(owner);
   }

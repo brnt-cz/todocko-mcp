@@ -203,10 +203,9 @@ async function createProjectDoc(
     parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
   }, { onComplete: waiter.onComplete });
 
-  if (!result.ok) throw new Error(`Failed to create document page: ${JSON.stringify(result.error)}`);
   await waiter.waitForSync();
 
-  return { success: true, docId: result.value.id, message: `Document page created${getSyncWarning()}` };
+  return { success: true, docId: result.id, message: `Document page created${getSyncWarning()}` };
 }
 
 async function updateProjectDoc(
@@ -299,10 +298,9 @@ async function createSharedProjectDoc(
       parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
     }, { onComplete: waiter.onComplete });
 
-    if (!result.ok) throw new Error(`Failed to create shared document page: ${JSON.stringify(result.error)}`);
     await waiter.waitForSync();
 
-    return { success: true, docId: result.value.id, message: "Shared document page created" };
+    return { success: true, docId: result.id, message: "Shared document page created" };
   } finally {
     stopUsingSharedOwner(owner);
   }
