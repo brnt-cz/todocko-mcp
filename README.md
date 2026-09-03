@@ -11,8 +11,35 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Požadavky
 
-- **Node.js 22+** (Evolu používá `Set.prototype.difference`, který je dostupný od Node 22)
+- **Node.js 24.20+** — Evolu v8 to má v `engines`, a není to formalita: v8 stojí
+  na `navigator.locks`, `MessageChannel`, `BroadcastChannel` a `WebSocket`, které
+  má Node nativně teprve od 24
 - Todocko účet s daty synchronizovanými přes Evolu
+
+## Evolu v8 (TODO-88)
+
+MCP běží na `@evolu/common` 8.9.0 a `@evolu/nodejs` 3.2.0.
+
+v7 dodával `createDbWorkerForPlatform`, což bylo vše, co headless klient v Node
+potřeboval. v8 to zrušil: `@evolu/nodejs` v3 nabízí relay a pár primitiv, a
+jedinou kompletní klientskou platformu má upstream pro web. `src/evoluPlatform.ts`
+je protějšek pro Node, poskládaný ze stejných dílů.
+
+Vyšel krátce, protože Node 24 má potřebná web API nativně. Oba workery běží
+**in-process** přes `createWorker` / `createSharedWorker` — to jsou vlastní
+fallbacky Evolu „pro platformy bez podpory workerů"; `worker_threads` by přinesly
+izolaci, kterou jednoprocesový CLI nepotřebuje.
+
+Dvě věci, na kterých se to dá snadno rozbít:
+
+- **`installPolyfills()` je povinné** a musí proběhnout dřív než cokoli
+  z `@evolu/common`. v8 volá `Map.prototype.getOrInsert(Computed)`, které nemá
+  žádný vydaný Node (ověřeno do 25.9.0). Bez toho to spadne na první zprávě.
+- **Databáze patří jednomu mnemonicu.** v7 při neshodě volal `restoreAppOwner`,
+  který lokální databázi resetoval. v8 obnovu nemá, takže by v souboru zůstala
+  data starého ownera zašifrovaná klíčem, který nový nemá. Server proto neshodu
+  **ohlásí a odmítne nastartovat** — smaž `~/.todocko/todocko.db` a nech ho
+  stáhnout data znovu.
 
 ## Instalace
 
@@ -514,7 +541,7 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 ## Troubleshooting
 
 ### Server se nespustí
-- Zkontrolujte, že máte Node.js 22+
+- Zkontrolujte, že máte Node.js 24.20+
 - Zkontrolujte, že jste spustili `npm run build`
 - Zkontrolujte logy v Claude Desktop
 
@@ -574,7 +601,9 @@ MCP (Model Context Protocol) server for working with [Todocko](https://app.todoc
 
 ## Requirements
 
-- **Node.js 22+** (Evolu uses `Set.prototype.difference`, available from Node 22)
+- **Node.js 24.20+** — required by Evolu v8's `engines`, and not merely formally:
+  v8 relies on `navigator.locks`, `MessageChannel`, `BroadcastChannel` and
+  `WebSocket`, which Node only has natively from 24 on
 - Todocko account with data synchronized via Evolu
 
 ## Installation

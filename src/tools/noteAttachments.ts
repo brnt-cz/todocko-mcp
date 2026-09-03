@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, Int } from "@evolu/common";
 import {
   SQLITE_TRUE,
   type LocalProjectNoteId,
@@ -143,7 +143,7 @@ async function uploadNoteAttachment(
   const waiter = createMutationWaiter();
   const result = evolu.insert("localNoteAttachment", {
     noteId: args.noteId as LocalProjectNoteId,
-    filename: NonEmptyString100.orThrow(filename),
+    filename: NonEmptyTrimmedString100.orThrow(filename),
     mimeType,
     data: fileContent,
     size: Int.orThrow(size),

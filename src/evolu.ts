@@ -26,102 +26,95 @@ class TodockoMcpWebSocket extends WebSocket {
 globalThis.WebSocket = TodockoMcpWebSocket as unknown as typeof globalThis.WebSocket;
 
 import { createEvolu } from "@evolu/common/local-first";
-import {
-  createDbWorkerForPlatform,
-  type DbWorkerPlatformDeps,
-} from "@evolu/common/local-first";
-import { createBetterSqliteDriver } from "@evolu/nodejs";
+import { createNodeEvoluDeps } from "./evoluPlatform.js";
 import {
   id,
   nullOr,
-  NonEmptyString100,
-  NonEmptyString1000,
+  NonEmptyTrimmedString100,
+  NonEmptyTrimmedString1000,
   SqliteBoolean,
   Int,
   String,
-  createConsole,
-  createRandomBytes,
-  createRandom,
-  createTime,
-  createWebSocket,
-  SimpleName,
+  createRun,
+  AppName,
   Mnemonic,
 } from "@evolu/common";
+import { createAppOwner, mnemonicToOwnerSecret } from "@evolu/common/local-first";
 
 // Re-create schema for MCP server (mirrors main app)
 export const ProjectId = id("Project");
-export type ProjectId = typeof ProjectId.Type;
+export type ProjectId = typeof ProjectId.Output;
 
 export const TaskId = id("Task");
-export type TaskId = typeof TaskId.Type;
+export type TaskId = typeof TaskId.Output;
 
 export const UserId = id("User");
-export type UserId = typeof UserId.Type;
+export type UserId = typeof UserId.Output;
 
 export const AttachmentId = id("Attachment");
-export type AttachmentId = typeof AttachmentId.Type;
+export type AttachmentId = typeof AttachmentId.Output;
 
 export const WorklogId = id("Worklog");
-export type WorklogId = typeof WorklogId.Type;
+export type WorklogId = typeof WorklogId.Output;
 
 export const TaskLinkId = id("TaskLink");
-export type TaskLinkId = typeof TaskLinkId.Type;
+export type TaskLinkId = typeof TaskLinkId.Output;
 
 export const DeploymentStageId = id("DeploymentStage");
-export type DeploymentStageId = typeof DeploymentStageId.Type;
+export type DeploymentStageId = typeof DeploymentStageId.Output;
 
 export const ProjectRefId = id("ProjectRef");
-export type ProjectRefId = typeof ProjectRefId.Type;
+export type ProjectRefId = typeof ProjectRefId.Output;
 
 export const ProjectMemberId = id("ProjectMember");
-export type ProjectMemberId = typeof ProjectMemberId.Type;
+export type ProjectMemberId = typeof ProjectMemberId.Output;
 
 export const RepositoryLinkId = id("RepositoryLink");
-export type RepositoryLinkId = typeof RepositoryLinkId.Type;
+export type RepositoryLinkId = typeof RepositoryLinkId.Output;
 
 export const TaskCommentId = id("TaskComment");
-export type TaskCommentId = typeof TaskCommentId.Type;
+export type TaskCommentId = typeof TaskCommentId.Output;
 
 export const MentionId = id("Mention");
-export type MentionId = typeof MentionId.Type;
+export type MentionId = typeof MentionId.Output;
 
 export const ChecklistItemId = id("ChecklistItem");
-export type ChecklistItemId = typeof ChecklistItemId.Type;
+export type ChecklistItemId = typeof ChecklistItemId.Output;
 
 export const TaskTemplateId = id("TaskTemplate");
-export type TaskTemplateId = typeof TaskTemplateId.Type;
+export type TaskTemplateId = typeof TaskTemplateId.Output;
 
 export const KanbanColumnId = id("KanbanColumn");
-export type KanbanColumnId = typeof KanbanColumnId.Type;
+export type KanbanColumnId = typeof KanbanColumnId.Output;
 
 export const SavedViewId = id("SavedView");
-export type SavedViewId = typeof SavedViewId.Type;
+export type SavedViewId = typeof SavedViewId.Output;
 
 export const ActivityLogId = id("ActivityLog");
-export type ActivityLogId = typeof ActivityLogId.Type;
+export type ActivityLogId = typeof ActivityLogId.Output;
 
 export const TagId = id("Tag");
-export type TagId = typeof TagId.Type;
+export type TagId = typeof TagId.Output;
 
 export const TaskTagId = id("TaskTag");
-export type TaskTagId = typeof TaskTagId.Type;
+export type TaskTagId = typeof TaskTagId.Output;
 
 export const LocalProjectNoteId = id("LocalProjectNote");
-export type LocalProjectNoteId = typeof LocalProjectNoteId.Type;
+export type LocalProjectNoteId = typeof LocalProjectNoteId.Output;
 
 export const ProjectNoteId = id("ProjectNote");
-export type ProjectNoteId = typeof ProjectNoteId.Type;
+export type ProjectNoteId = typeof ProjectNoteId.Output;
 
 export const NoteAttachmentId = id("NoteAttachment");
-export type NoteAttachmentId = typeof NoteAttachmentId.Type;
+export type NoteAttachmentId = typeof NoteAttachmentId.Output;
 
 export const LocalNoteAttachmentId = id("LocalNoteAttachment");
-export type LocalNoteAttachmentId = typeof LocalNoteAttachmentId.Type;
+export type LocalNoteAttachmentId = typeof LocalNoteAttachmentId.Output;
 
 export const Schema = {
   user: {
     id: UserId,
-    name: NonEmptyString100,
+    name: NonEmptyTrimmedString100,
     email: nullOr(String),
     avatarUrl: nullOr(String),
     color: String,
@@ -131,8 +124,8 @@ export const Schema = {
   },
   project: {
     id: ProjectId,
-    name: NonEmptyString100,
-    code: nullOr(NonEmptyString100),
+    name: NonEmptyTrimmedString100,
+    code: nullOr(NonEmptyTrimmedString100),
     color: String,
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
@@ -143,8 +136,8 @@ export const Schema = {
     id: TaskId,
     projectId: nullOr(ProjectId),
     assigneeId: nullOr(UserId),
-    title: NonEmptyString100,
-    name: nullOr(NonEmptyString100),
+    title: NonEmptyTrimmedString100,
+    name: nullOr(NonEmptyTrimmedString100),
     description: nullOr(String),
     status: String,
     priority: String,
@@ -153,7 +146,7 @@ export const Schema = {
     position: Int,
     completedAt: nullOr(String),
     isBlocked: nullOr(SqliteBoolean),
-    blockedReason: nullOr(NonEmptyString1000),
+    blockedReason: nullOr(NonEmptyTrimmedString1000),
     estimate: nullOr(Int),
     isOnProduction: nullOr(SqliteBoolean),
     deploymentStageId: nullOr(DeploymentStageId),
@@ -167,7 +160,7 @@ export const Schema = {
   },
   tag: {
     id: TagId,
-    name: NonEmptyString100,
+    name: NonEmptyTrimmedString100,
     color: String,
     // Mirrors the app (TODO-227). Nullable: rows created before it — including
     // ones this server created — have none, and the app never offers those.
@@ -184,7 +177,7 @@ export const Schema = {
   attachment: {
     id: AttachmentId,
     taskId: TaskId,
-    filename: NonEmptyString100,
+    filename: NonEmptyTrimmedString100,
     mimeType: String,
     data: nullOr(String),
     size: Int,
@@ -194,7 +187,7 @@ export const Schema = {
     taskId: TaskId,
     userId: nullOr(UserId),
     durationMinutes: Int,
-    description: nullOr(NonEmptyString1000),
+    description: nullOr(NonEmptyTrimmedString1000),
     loggedAt: String,
   },
   taskLink: {
@@ -206,7 +199,7 @@ export const Schema = {
   deploymentStage: {
     id: DeploymentStageId,
     projectId: ProjectId,
-    name: NonEmptyString100,
+    name: NonEmptyTrimmedString100,
     color: String,
     position: Int,
   },
@@ -216,8 +209,8 @@ export const Schema = {
     projectId: String,
     ownerSecret: String,
     sharedOwnerId: String,
-    name: NonEmptyString100,
-    code: nullOr(NonEmptyString100),
+    name: NonEmptyTrimmedString100,
+    code: nullOr(NonEmptyTrimmedString100),
     color: String,
     isOwner: nullOr(SqliteBoolean),
     permission: String,
@@ -247,15 +240,15 @@ export const Schema = {
   checklistItem: {
     id: ChecklistItemId,
     taskId: TaskId,
-    title: NonEmptyString1000,
+    title: NonEmptyTrimmedString1000,
     isChecked: nullOr(SqliteBoolean),
     position: Int,
   },
   // Task templates
   taskTemplate: {
     id: TaskTemplateId,
-    name: NonEmptyString100,
-    taskName: nullOr(NonEmptyString100),
+    name: NonEmptyTrimmedString100,
+    taskName: nullOr(NonEmptyTrimmedString100),
     description: nullOr(String),
     priority: String,
     estimate: nullOr(Int),
@@ -265,8 +258,8 @@ export const Schema = {
   // Kanban columns
   kanbanColumn: {
     id: KanbanColumnId,
-    slug: NonEmptyString100,
-    name: NonEmptyString100,
+    slug: NonEmptyTrimmedString100,
+    name: NonEmptyTrimmedString100,
     color: String,
     icon: String,
     position: Int,
@@ -276,7 +269,7 @@ export const Schema = {
   // Saved views
   savedView: {
     id: SavedViewId,
-    name: NonEmptyString100,
+    name: NonEmptyTrimmedString100,
     icon: nullOr(String),
     filters: String,
     isBuiltIn: nullOr(SqliteBoolean),
@@ -298,7 +291,7 @@ export const Schema = {
   localProjectNote: {
     id: LocalProjectNoteId,
     projectId: ProjectId,
-    title: NonEmptyString100,
+    title: NonEmptyTrimmedString100,
     content: nullOr(String),
     position: Int,
     isDoc: nullOr(SqliteBoolean),
@@ -307,7 +300,7 @@ export const Schema = {
   localNoteAttachment: {
     id: LocalNoteAttachmentId,
     noteId: LocalProjectNoteId,
-    filename: NonEmptyString100,
+    filename: NonEmptyTrimmedString100,
     mimeType: String,
     data: nullOr(String), // Base64 encoded content
     size: Int,
@@ -318,8 +311,8 @@ export const Schema = {
 export const ProjectSchema = {
   project: {
     id: ProjectId,
-    name: NonEmptyString100,
-    code: nullOr(NonEmptyString100),
+    name: NonEmptyTrimmedString100,
+    code: nullOr(NonEmptyTrimmedString100),
     color: String,
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
@@ -330,7 +323,7 @@ export const ProjectSchema = {
     id: ProjectMemberId,
     projectId: ProjectId,
     userAppOwnerId: String,
-    userName: NonEmptyString100,
+    userName: NonEmptyTrimmedString100,
     userColor: String,
     userAvatarUrl: nullOr(String),
     permission: String,
@@ -342,8 +335,8 @@ export const ProjectSchema = {
     id: TaskId,
     projectId: nullOr(ProjectId),
     assigneeId: nullOr(String), // AppOwner OwnerId of assignee
-    title: NonEmptyString100,
-    name: nullOr(NonEmptyString100),
+    title: NonEmptyTrimmedString100,
+    name: nullOr(NonEmptyTrimmedString100),
     description: nullOr(String),
     status: String,
     priority: String,
@@ -352,7 +345,7 @@ export const ProjectSchema = {
     position: Int,
     completedAt: nullOr(String),
     isBlocked: nullOr(SqliteBoolean),
-    blockedReason: nullOr(NonEmptyString1000),
+    blockedReason: nullOr(NonEmptyTrimmedString1000),
     estimate: nullOr(Int),
     isOnProduction: nullOr(SqliteBoolean),
     deploymentStageId: nullOr(DeploymentStageId),
@@ -366,7 +359,7 @@ export const ProjectSchema = {
   },
   tag: {
     id: TagId,
-    name: NonEmptyString100,
+    name: NonEmptyTrimmedString100,
     color: String,
     // Mirrors the app (TODO-227). Nullable: rows created before it — including
     // ones this server created — have none, and the app never offers those.
@@ -383,7 +376,7 @@ export const ProjectSchema = {
   attachment: {
     id: AttachmentId,
     taskId: TaskId,
-    filename: NonEmptyString100,
+    filename: NonEmptyTrimmedString100,
     mimeType: String,
     data: nullOr(String),
     size: Int,
@@ -393,7 +386,7 @@ export const ProjectSchema = {
     taskId: TaskId,
     userId: nullOr(String),
     durationMinutes: Int,
-    description: nullOr(NonEmptyString1000),
+    description: nullOr(NonEmptyTrimmedString1000),
     loggedAt: String,
   },
   taskLink: {
@@ -405,7 +398,7 @@ export const ProjectSchema = {
   deploymentStage: {
     id: DeploymentStageId,
     projectId: ProjectId,
-    name: NonEmptyString100,
+    name: NonEmptyTrimmedString100,
     color: String,
     position: Int,
   },
@@ -414,15 +407,15 @@ export const ProjectSchema = {
     id: RepositoryLinkId,
     projectId: ProjectId,
     type: String, // 'github' | 'gitlab' | 'bitbucket' | 'azure' | 'custom'
-    url: NonEmptyString1000,
-    label: nullOr(NonEmptyString100),
+    url: NonEmptyTrimmedString1000,
+    label: nullOr(NonEmptyTrimmedString100),
     position: Int,
   },
   // Project notes (shared, synced)
   projectNote: {
     id: ProjectNoteId,
     projectId: ProjectId,
-    title: NonEmptyString100,
+    title: NonEmptyTrimmedString100,
     content: nullOr(String),
     createdBy: nullOr(String),
     position: Int,
@@ -432,7 +425,7 @@ export const ProjectSchema = {
   noteAttachment: {
     id: NoteAttachmentId,
     noteId: ProjectNoteId,
-    filename: NonEmptyString100,
+    filename: NonEmptyTrimmedString100,
     mimeType: String,
     data: nullOr(String), // Base64 encoded content
     size: Int,
@@ -453,6 +446,21 @@ export type Schema = typeof Schema;
 export type EvoluInstance = any;
 
 let evoluInstance: EvoluInstance | null = null;
+
+/**
+ * The AppOwner derived from TODOCKO_MNEMONIC.
+ *
+ * v8 needs it as configuration for every instance, so it is kept here once
+ * initEvolu has derived it and reused for the shared-project instance.
+ * Never log this — it carries the mnemonic.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let appOwnerForProcess: any = null;
+
+/** The AppOwner for this process, or null before initEvolu has run. */
+function getAppOwnerForProjectInstance() {
+  return appOwnerForProcess;
+}
 
 // Database name - must match main app (src/db/appEvolu.ts)
 const DB_NAME = "todocko";
@@ -643,20 +651,6 @@ export async function testWebSocketConnectivity(): Promise<Record<string, string
 }
 
 /**
- * Create platform dependencies for Node.js
- */
-function createNodejsPlatformDeps(): DbWorkerPlatformDeps {
-  return {
-    console: createConsole({ enableLogging: false }),
-    createSqliteDriver: createBetterSqliteDriver,
-    createWebSocket: createWebSocket,
-    randomBytes: createRandomBytes(),
-    random: createRandom(),
-    time: createTime(),
-  };
-}
-
-/**
  * Get the Todocko data directory (~/.todocko)
  */
 function getTodockoDir(): string {
@@ -674,70 +668,44 @@ function getDbPath(): string {
 }
 
 /**
- * Check if the database already has the correct owner from the mnemonic
- * Returns true if owner matches, false otherwise
+ * Does the local database belong to a different mnemonic?
+ *
+ * v7 answered this to decide whether to call `restoreAppOwner`, which wiped the
+ * local database and re-synced under the new owner. v8 has no restore: the
+ * owner is configuration. Without this check a switched mnemonic would leave
+ * the old owner's rows in place, encrypted under a key the new owner does not
+ * have — invisible, but still there and still counted.
+ *
+ * Returns false for a fresh database and for one v7 never wrote, so only a
+ * genuine mismatch is reported.
  */
-function checkExistingOwner(mnemonic: string): boolean {
+function belongsToDifferentMnemonic(mnemonic: string): boolean {
   const dbPath = getDbPath();
-
-  if (!existsSync(dbPath)) {
-    console.error("Database does not exist yet");
-    return false;
-  }
+  if (!existsSync(dbPath)) return false;
 
   try {
     const db = new Database(dbPath, { readonly: true });
+    try {
+      const tableExists = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='evolu_config'")
+        .get();
+      if (!tableExists) return false;
 
-    // Check if evolu_config table exists
-    const tableExists = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='evolu_config'"
-    ).get();
+      const config = db
+        .prepare("SELECT appOwnerMnemonic FROM evolu_config LIMIT 1")
+        .get() as { appOwnerMnemonic: string | null } | undefined;
+      const stored = config?.appOwnerMnemonic?.trim();
+      if (!stored) return false;
 
-    if (!tableExists) {
-      console.error("evolu_config table does not exist");
+      // Never log either value — both are private keys.
+      return stored !== mnemonic.trim();
+    } finally {
       db.close();
-      return false;
     }
-
-    // Check if mnemonic matches
-    const config = db.prepare(
-      "SELECT appOwnerMnemonic FROM evolu_config LIMIT 1"
-    ).get() as { appOwnerMnemonic: string | null } | undefined;
-
-    db.close();
-
-    if (!config || !config.appOwnerMnemonic) {
-      console.error("No mnemonic stored in database");
-      return false;
-    }
-
-    const matches = config.appOwnerMnemonic.trim() === mnemonic.trim();
-    console.error(`Database mnemonic ${matches ? "matches" : "does not match"}`);
-    return matches;
-  } catch (error) {
-    console.error("Error checking database:", error);
+  } catch {
+    // A database we cannot read is not evidence of a mismatch.
     return false;
   }
-}
-
-/**
- * Create Evolu dependencies for Node.js
- */
-function createEvoluDeps(platformDeps: DbWorkerPlatformDeps, onReloadApp?: () => void) {
-  const createDbWorker = (_name: SimpleName) => {
-    return createDbWorkerForPlatform(platformDeps);
-  };
-
-  return {
-    console: platformDeps.console,
-    createDbWorker,
-    randomBytes: platformDeps.randomBytes,
-    reloadApp: () => {
-      console.error("reloadApp called");
-      if (onReloadApp) onReloadApp();
-    },
-    time: platformDeps.time,
-  };
 }
 
 /**
@@ -796,7 +764,7 @@ function ensureMissingColumns(): void {
  */
 export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null> {
   // Parse and validate the mnemonic FIRST
-  const mnemonicResult = Mnemonic.from(mnemonic.trim());
+  const mnemonicResult = Mnemonic.fromUnknown(mnemonic.trim());
   if (!mnemonicResult.ok) {
     // TODO-90 M7: never log mnemonicResult.error — the Evolu error object carries
     // the rejected value (often a typo of the real phrase). Log only that it failed.
@@ -804,77 +772,42 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     throw new Error("Invalid BIP39 mnemonic phrase");
   }
 
-  const platformDeps = createNodejsPlatformDeps();
   const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
 
   // Ensure missing columns exist in DB before Evolu starts
   // Evolu's ensureSchema doesn't always add new columns to existing tables
   ensureMissingColumns();
 
-  // Check if database already has the correct owner
-  const ownerAlreadySet = checkExistingOwner(mnemonic);
+  if (belongsToDifferentMnemonic(mnemonic)) {
+    console.error(
+      "The local database at ~/.todocko belongs to a different mnemonic. " +
+        "v8 cannot re-own it the way v7's restoreAppOwner did. " +
+        "Delete ~/.todocko/todocko.db to start fresh — the relay still has the data.",
+    );
+    return null;
+  }
 
   try {
-    if (ownerAlreadySet) {
-      // Owner already matches - just create Evolu with transports and let it sync
-      console.error("Owner already set in database - creating Evolu with transports...");
+    // v8 takes the AppOwner as configuration, so the mnemonic is turned into an
+    // owner up front. That removes the whole v7 dance below this line:
+    // restoreAppOwner triggered a reloadApp, which meant creating the instance
+    // without transports, racing the restore against a reload callback and a
+    // 3s timeout, and then rebuilding it. None of that is needed now.
+    const appOwner = createAppOwner(mnemonicToOwnerSecret(mnemonicResult.value));
+    appOwnerForProcess = appOwner;
 
-      const evoluDeps = createEvoluDeps(platformDeps);
-      evoluInstance = createEvolu(evoluDeps)(Schema, {
-        name: SimpleName.orThrow(DB_NAME),
-        transports: transports,
-        enableLogging: false,
-      });
-    } else {
-      // Need to restore owner first
-      console.error("Owner not set - restoring from mnemonic...");
+    const run = createRun(createNodeEvoluDeps());
+    const created = await run(createEvolu(Schema, {
+      appName: AppName.orThrow(DB_NAME),
+      appOwner,
+      transports,
+    }));
 
-      // Flag to track if restoreAppOwner triggered a reload
-      let reloadTriggered = false;
-      let reloadResolve: (() => void) | null = null;
-      const reloadPromise = new Promise<void>((resolve) => {
-        reloadResolve = resolve;
-      });
-
-      // Create initial Evolu instance WITHOUT transports
-      const evoluDeps = createEvoluDeps(platformDeps, () => {
-        reloadTriggered = true;
-        if (reloadResolve) reloadResolve();
-      });
-
-      evoluInstance = createEvolu(evoluDeps)(Schema, {
-        name: SimpleName.orThrow(DB_NAME),
-        transports: [], // No sync yet - will add after restore
-        enableLogging: false,
-      });
-
-      // Restore owner from mnemonic
-      console.error("Calling restoreAppOwner...");
-      const restorePromise = evoluInstance.restoreAppOwner(mnemonicResult.value);
-
-      // Wait for either restore to complete or reload to be triggered
-      await Promise.race([
-        restorePromise,
-        reloadPromise,
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-      ]);
-
-      // If reload was triggered, recreate with transports
-      if (reloadTriggered) {
-        console.error("Reload triggered - recreating Evolu instance with transports...");
-
-        const newEvoluDeps = createEvoluDeps(platformDeps);
-        evoluInstance = createEvolu(newEvoluDeps)(Schema, {
-          name: SimpleName.orThrow(DB_NAME),
-          transports: transports,
-          enableLogging: false,
-        });
-      } else {
-        // Just add transports
-        console.error("Adding transports for sync...");
-        evoluInstance.useOwner({ transports });
-      }
+    if (!created.ok) {
+      console.error("Failed to create Evolu instance");
+      return null;
     }
+    evoluInstance = created.value;
 
     // Subscribe to sync errors for health tracking
     if (evoluInstance.subscribeError) {
@@ -971,7 +904,7 @@ export const SQLITE_FALSE = null;
 
 // --- Shared Projects Support ---
 
-import { createSharedOwner, createOwnerSecret, type SharedOwner, type OwnerSecret, type OwnerId } from "@evolu/common";
+import { createSharedOwner, type SharedOwner, type OwnerSecret, type OwnerId } from "@evolu/common";
 
 let projectEvoluInstance: EvoluInstance | null = null;
 const PROJECT_DB_NAME = "todocko-shared";
@@ -985,17 +918,30 @@ const sharedOwnersCache = new Map<string, SharedOwner>();
 export async function initProjectEvolu(): Promise<EvoluInstance | null> {
   if (projectEvoluInstance) return projectEvoluInstance;
 
-  const platformDeps = createNodejsPlatformDeps();
   const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
 
   console.error("Initializing project Evolu for shared projects...");
 
-  const evoluDeps = createEvoluDeps(platformDeps);
-  projectEvoluInstance = createEvolu(evoluDeps)(ProjectSchema, {
-    name: SimpleName.orThrow(PROJECT_DB_NAME),
-    transports: transports,
-    enableLogging: true,
-  });
+  // Shared-project data is partitioned by ownerId and arrives through
+  // useOwner(); this instance just needs the device identity, which is the
+  // same AppOwner the main instance uses.
+  const appOwner = getAppOwnerForProjectInstance();
+  if (!appOwner) {
+    console.error("Cannot init project Evolu before the app owner is known");
+    return null;
+  }
+
+  const run = createRun(createNodeEvoluDeps());
+  const created = await run(createEvolu(ProjectSchema, {
+    appName: AppName.orThrow(PROJECT_DB_NAME),
+    appOwner,
+    transports,
+  }));
+  if (!created.ok) {
+    console.error("Failed to create the shared-project Evolu instance");
+    return null;
+  }
+  projectEvoluInstance = created.value;
 
   console.error("Project Evolu created, syncing in background...");
   return projectEvoluInstance;

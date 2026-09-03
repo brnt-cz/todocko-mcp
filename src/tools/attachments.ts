@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type AttachmentId, type EvoluInstance } from "../evolu.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
@@ -175,7 +175,7 @@ async function uploadAttachment(
   const waiter = createMutationWaiter();
   const result = evolu.insert("attachment", {
     taskId: args.taskId as TaskId,
-    filename: NonEmptyString100.orThrow(filename),
+    filename: NonEmptyTrimmedString100.orThrow(filename),
     mimeType: mimeType,
     data: fileContent,
     size: Int.orThrow(size),

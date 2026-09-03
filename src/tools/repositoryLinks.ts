@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type RepositoryLinkId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter , assertMutation} from "./helpers.js";
 
@@ -171,8 +171,8 @@ async function createRepositoryLink(
   const result = evolu.insert("repositoryLink", {
     projectId: args.projectId as ProjectId,
     type: args.type || "github",
-    url: NonEmptyString1000.orThrow(args.url),
-    label: args.label ? NonEmptyString100.orThrow(args.label) : null,
+    url: NonEmptyTrimmedString1000.orThrow(args.url),
+    label: args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null,
     position: Int.orThrow(maxPosition + 1),
   }, { onComplete: waiter.onComplete });
 
@@ -195,8 +195,8 @@ async function updateRepositoryLink(
 ) {
   const updates: Record<string, unknown> = { id: args.id as RepositoryLinkId };
   if (args.type !== undefined) updates.type = args.type;
-  if (args.url !== undefined) updates.url = NonEmptyString1000.orThrow(args.url);
-  if (args.label !== undefined) updates.label = args.label ? NonEmptyString100.orThrow(args.label) : null;
+  if (args.url !== undefined) updates.url = NonEmptyTrimmedString1000.orThrow(args.url);
+  if (args.label !== undefined) updates.label = args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();

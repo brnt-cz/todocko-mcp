@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, NonEmptyString1000, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
 import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
@@ -460,7 +460,7 @@ async function listTasks(
       db
         .selectFrom("project")
         .select(["id"])
-        .where("code", "=", args.projectCode as unknown as typeof NonEmptyString100.Type)
+        .where("code", "=", args.projectCode as unknown as typeof NonEmptyTrimmedString100.Output)
         .where("isDeleted", "is not", SQLITE_TRUE)
         .limit(1)
     );
@@ -609,7 +609,7 @@ async function getTask(
     if (args.id) {
       q = q.where("id", "=", args.id as TaskId);
     } else if (args.code) {
-      q = q.where("title", "=", args.code as unknown as typeof NonEmptyString100.Type);
+      q = q.where("title", "=", args.code as unknown as typeof NonEmptyTrimmedString100.Output);
     }
 
     return q.limit(1);
@@ -782,8 +782,8 @@ async function createTask(
   const waiter = createMutationWaiter();
   const result = evolu.insert("task", {
     projectId: args.projectId as ProjectId,
-    title: NonEmptyString100.orThrow(taskCode),
-    name: args.name ? NonEmptyString100.orThrow(args.name) : null,
+    title: NonEmptyTrimmedString100.orThrow(taskCode),
+    name: args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null,
     description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
     status: args.status || "todo",
     priority: args.priority || "medium",
@@ -915,7 +915,7 @@ async function updateTask(
   }
 
   if (args.name !== undefined) {
-    updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
+    updates.name = args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null;
   }
   if (args.description !== undefined) {
     updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
@@ -944,7 +944,7 @@ async function updateTask(
     updates.isBlocked = args.isBlocked ? SQLITE_TRUE : null;
   }
   if (args.blockedReason !== undefined) {
-    updates.blockedReason = args.blockedReason ? NonEmptyString1000.orThrow(args.blockedReason) : null;
+    updates.blockedReason = args.blockedReason ? NonEmptyTrimmedString1000.orThrow(args.blockedReason) : null;
   }
   if (args.estimate !== undefined) {
     updates.estimate = args.estimate ? Int.orThrow(args.estimate) : null;

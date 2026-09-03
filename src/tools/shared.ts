@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, NonEmptyString1000, Int, String as EvoluString } from "@evolu/common";
+import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import {
   SQLITE_TRUE,
   type TaskId,
@@ -1244,7 +1244,7 @@ async function updateSharedTask(
     };
 
     if (args.name !== undefined) {
-      updates.name = args.name ? NonEmptyString100.orThrow(args.name) : null;
+      updates.name = args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null;
     }
     if (args.description !== undefined) {
       updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
@@ -1276,7 +1276,7 @@ async function updateSharedTask(
       updates.isBlocked = args.isBlocked ? SQLITE_TRUE : null;
     }
     if (args.blockedReason !== undefined) {
-      updates.blockedReason = args.blockedReason ? NonEmptyString1000.orThrow(args.blockedReason) : null;
+      updates.blockedReason = args.blockedReason ? NonEmptyTrimmedString1000.orThrow(args.blockedReason) : null;
     }
     if (args.isOnProduction !== undefined) {
       updates.isOnProduction = args.isOnProduction ? SQLITE_TRUE : null;
@@ -1418,8 +1418,8 @@ async function createSharedTask(
       "task",
       {
         projectId: args.projectId as ProjectId,
-        title: NonEmptyString100.orThrow(taskCode),
-        name: args.name ? NonEmptyString100.orThrow(args.name) : null,
+        title: NonEmptyTrimmedString100.orThrow(taskCode),
+        name: args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null,
         description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
         status: args.status || "todo",
         priority: args.priority || "medium",
@@ -1626,7 +1626,7 @@ async function addSharedWorklog(
         taskId: args.taskId as TaskId,
         userId: args.userId ? (args.userId as UserId) : null,
         durationMinutes: Int.orThrow(args.durationMinutes),
-        description: args.description ? NonEmptyString1000.orThrow(args.description) : null,
+        description: args.description ? NonEmptyTrimmedString1000.orThrow(args.description) : null,
         loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
       },
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
@@ -1717,7 +1717,7 @@ async function createSharedChecklistItem(
       "checklistItem",
       {
         taskId: args.taskId as TaskId,
-        title: NonEmptyString1000.orThrow(args.title),
+        title: NonEmptyTrimmedString1000.orThrow(args.title),
         isChecked: null,
         position: Int.orThrow(position),
       },
@@ -1741,7 +1741,7 @@ async function updateSharedChecklistItem(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as ChecklistItemId };
-    if (args.title !== undefined) updates.title = NonEmptyString1000.orThrow(args.title);
+    if (args.title !== undefined) updates.title = NonEmptyTrimmedString1000.orThrow(args.title);
     if (args.isChecked !== undefined) updates.isChecked = args.isChecked ? SQLITE_TRUE : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
@@ -1902,7 +1902,7 @@ async function createSharedDeploymentStage(
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert("deploymentStage", {
       projectId: args.projectId as ProjectId,
-      name: NonEmptyString100.orThrow(args.name),
+      name: NonEmptyTrimmedString100.orThrow(args.name),
       color: args.color || "#22c55e",
       position: Int.orThrow(args.position ?? 0),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
@@ -2023,8 +2023,8 @@ async function createSharedRepositoryLink(
     const result = projectEvolu.insert("repositoryLink", {
       projectId: args.projectId as ProjectId,
       type: args.type || "github",
-      url: NonEmptyString1000.orThrow(args.url),
-      label: args.label ? NonEmptyString100.orThrow(args.label) : null,
+      url: NonEmptyTrimmedString1000.orThrow(args.url),
+      label: args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null,
       position: Int.orThrow(maxPosition + 1),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
 
@@ -2055,8 +2055,8 @@ async function updateSharedRepositoryLink(
   try {
     const updates: Record<string, unknown> = { id: args.id as RepositoryLinkId };
     if (args.type !== undefined) updates.type = args.type;
-    if (args.url !== undefined) updates.url = NonEmptyString1000.orThrow(args.url);
-    if (args.label !== undefined) updates.label = args.label ? NonEmptyString100.orThrow(args.label) : null;
+    if (args.url !== undefined) updates.url = NonEmptyTrimmedString1000.orThrow(args.url);
+    if (args.label !== undefined) updates.label = args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("repositoryLink", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
@@ -2097,7 +2097,7 @@ async function updateSharedDeploymentStage(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as DeploymentStageId };
-    if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+    if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
     if (args.color !== undefined) updates.color = args.color;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
@@ -2158,7 +2158,7 @@ async function createSharedTag(
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert("tag", {
       projectId: args.projectId as ProjectId,
-      name: NonEmptyString100.orThrow(args.name),
+      name: NonEmptyTrimmedString100.orThrow(args.name),
       color: args.color || "#6b7280",
       isDefault: args.isDefault ? SQLITE_TRUE : null,
     } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
@@ -2180,7 +2180,7 @@ async function updateSharedTag(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as TagId };
-    if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+    if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
     if (args.color !== undefined) updates.color = args.color;
     if (args.isDefault !== undefined) updates.isDefault = args.isDefault ? SQLITE_TRUE : null;
     const waiter = createMutationWaiter();
@@ -2517,7 +2517,7 @@ async function uploadSharedNoteAttachment(
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert("noteAttachment", {
       noteId: args.noteId as ProjectNoteId,
-      filename: NonEmptyString100.orThrow(filename),
+      filename: NonEmptyTrimmedString100.orThrow(filename),
       mimeType,
       data: fileContent,
       size: Int.orThrow(size),
@@ -2727,7 +2727,7 @@ async function uploadSharedAttachment(
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert("attachment", {
       taskId: args.taskId as TaskId,
-      filename: NonEmptyString100.orThrow(filename),
+      filename: NonEmptyTrimmedString100.orThrow(filename),
       mimeType,
       data: fileContent,
       size: Int.orThrow(size),

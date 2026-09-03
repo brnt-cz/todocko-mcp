@@ -1,5 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { NonEmptyString100, Int } from "@evolu/common";
+import { NonEmptyTrimmedString100, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type DeploymentStageId, type EvoluInstance } from "../evolu.js";
 import { createMutationWaiter } from "./helpers.js";
 
@@ -92,7 +92,7 @@ async function createDeploymentStage(
   const waiter = createMutationWaiter();
   const result = evolu.insert("deploymentStage", {
     projectId: args.projectId as ProjectId,
-    name: NonEmptyString100.orThrow(args.name),
+    name: NonEmptyTrimmedString100.orThrow(args.name),
     color: args.color || "#22c55e",
     position: Int.orThrow(position),
   } as any, { onComplete: waiter.onComplete });
@@ -106,7 +106,7 @@ async function updateDeploymentStage(
   args: { id: string; name?: string; color?: string; position?: number }
 ) {
   const updates: Record<string, unknown> = { id: args.id as DeploymentStageId };
-  if (args.name !== undefined) updates.name = NonEmptyString100.orThrow(args.name);
+  if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   if (args.color !== undefined) updates.color = args.color;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   const waiter = createMutationWaiter();
