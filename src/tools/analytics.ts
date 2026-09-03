@@ -2,6 +2,17 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { SQLITE_TRUE, type EvoluInstance } from "../evolu.js";
 import { queryRows } from "./pure.js";
 
+/**
+ * Rows from `loadQuery`, loosened at the boundary.
+ *
+ * v8 types every cell as a union, and this file reads columns dynamically. The
+ * casts stay here in one place rather than spreading through the callers;
+ * pinning the schema per query is the next step (TODO-265).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rowsOf = (result: unknown): Record<string, any>[] =>
+  (result ?? []) as Record<string, any>[];
+
 export const analyticsTools: Tool[] = [
   {
     name: "td_get_dashboard_summary",
@@ -279,16 +290,20 @@ async function getDashboardSummary(evolu: EvoluInstance) {
       evolu.loadQuery(deadlineQuery),
     ]);
 
-  const todayTasks = (todayResult.rows ?? []).filter(
+  // v8 `loadQuery` resolves to the rows themselves; v7 wrapped them in
+  // `{ rows }`. Reading `.rows` therefore yielded undefined and the `?? []`
+  // turned every analytics answer into an empty one — the dashboard reported
+  // zero logged time for a week that had hours in it. (TODO-265)
+  const todayTasks = rowsOf(todayResult).filter(
     (r: any) => r.id && r.title
   );
-  const overdueTasks = (overdueResult.rows ?? []).filter(
+  const overdueTasks = rowsOf(overdueResult).filter(
     (r: any) => r.id && r.title
   );
-  const worklogs = (worklogResult.rows ?? []).filter(
+  const worklogs = rowsOf(worklogResult).filter(
     (r: any) => r.durationMinutes
   );
-  const upcomingDeadlines = (deadlineResult.rows ?? []).filter(
+  const upcomingDeadlines = rowsOf(deadlineResult).filter(
     (r: any) => r.id && r.title && r.deadline
   );
 
@@ -386,11 +401,11 @@ async function getTeamWorkload(
     evolu.loadQuery(taskQuery),
   ]);
 
-  const users = (userResult.rows ?? []).filter((r: any) => r.id && r.name);
-  const worklogs = (worklogResult.rows ?? []).filter(
+  const users = rowsOf(userResult).filter((r: any) => r.id && r.name);
+  const worklogs = rowsOf(worklogResult).filter(
     (r: any) => r.durationMinutes
   );
-  const tasks = (taskResult.rows ?? []).filter(
+  const tasks = rowsOf(taskResult).filter(
     (r: any) => r.assigneeId && r.estimate
   );
 
@@ -701,8 +716,8 @@ async function analyzeDependencies(
     evolu.loadQuery(linkQuery),
   ]);
 
-  const tasks = (taskResult.rows ?? []).filter((r: any) => r.id && r.title);
-  const links = (linkResult.rows ?? []).filter(
+  const tasks = rowsOf(taskResult).filter((r: any) => r.id && r.title);
+  const links = rowsOf(linkResult).filter(
     (r: any) => r.sourceTaskId && r.targetTaskId
   );
 

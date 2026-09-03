@@ -25,7 +25,14 @@ class TodockoMcpWebSocket extends WebSocket {
 
 globalThis.WebSocket = TodockoMcpWebSocket as unknown as typeof globalThis.WebSocket;
 
-import { createEvolu, createQueryBuilder } from "@evolu/common/local-first";
+import {
+  createEvolu,
+  createOwnerWebSocketTransport,
+  createQueryBuilder,
+  type Evolu,
+  type EvoluSchema,
+  type OwnerWebSocketTransport,
+} from "@evolu/common/local-first";
 import { createNodeEvoluDeps } from "./evoluPlatform.js";
 import {
   id,
@@ -441,9 +448,33 @@ export const ProjectSchema = {
 
 export type Schema = typeof Schema;
 
-// Type for the Evolu instance - using any to avoid complex generic issues
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type EvoluInstance = any;
+/**
+ * An Evolu instance plus the `createQuery` this file puts back on it.
+ *
+ * Was `any` "to avoid complex generic issues", and that is exactly why the v8
+ * port compiled clean and could not serve a query: 102 calls to a
+ * `createQuery` v8 had removed, plus the wrong argument shape for `useOwner`,
+ * were all invisible to `tsc`. (TODO-265)
+ */
+export type EvoluWithQuery<S extends EvoluSchema> = Evolu<S> & {
+  readonly createQuery: ReturnType<typeof createQueryBuilder<S>>;
+};
+
+export type AppEvolu = EvoluWithQuery<typeof Schema>;
+export type ProjectEvoluInstance = EvoluWithQuery<typeof ProjectSchema>;
+
+/**
+ * What the tools accept: a real Evolu instance, without pinning which schema.
+ *
+ * A union of the two concrete instances would be more precise but is not
+ * callable — TypeScript will not call a method whose signature differs between
+ * union members, and that alone produced 100 errors. Leaving the schema
+ * unpinned keeps table and column names unchecked, which is the next step, but
+ * the instance API itself is now typed, and that is where every v8 defect
+ * sat: a `createQuery` that no longer existed, the wrong argument shape for
+ * `useOwner`, and mutations returning `{ id }` rather than a Result.
+ */
+export type EvoluInstance = EvoluWithQuery<EvoluSchema>;
 
 /**
  * Give an instance its `createQuery` method back, bound to its own schema.
@@ -825,27 +856,23 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       console.error("Failed to create Evolu instance");
       return null;
     }
-    evoluInstance = withQueryBuilder(created.value, Schema);
+    // Local, non-null reference for the rest of setup. The module-level slot
+    // is typed nullable, and every use below would otherwise need a `!`.
+    const instance = withQueryBuilder(created.value, Schema);
+    evoluInstance = instance;
 
-    // Subscribe to sync errors for health tracking
-    if (evoluInstance.subscribeError) {
-      evoluInstance.subscribeError(() => {
-        const error = evoluInstance!.getError();
-        if (error) {
-          try {
-            syncHealth.lastError = JSON.stringify(error);
-          } catch {
-            syncHealth.lastError = error instanceof Error ? error.message : globalThis.String(error);
-          }
-          syncHealth.lastErrorAt = new Date();
-          syncHealth.errorCount++;
-          console.error("[sync-health] Evolu error:", JSON.stringify(error, null, 2));
-        }
-      });
-    }
+    // No error subscription here: v8 removed `subscribeError` and `getError`,
+    // and offers no replacement on the instance — `subscribeQuery` is the only
+    // subscription left, and the config has hooks only for a deleted database
+    // or owner. The v8 port kept the v7 call behind `if (…subscribeError)`,
+    // which is simply falsy now, so nothing was ever subscribed and
+    // `errorCount` could not move off zero while `td_sync_status` kept
+    // answering "ok". Reporting says so rather than implying a clean bill of
+    // health; capturing errors through the console store is TODO-266.
+    // (TODO-265)
 
     // Attach change trackers so td_force_sync can report per-table activity.
-    attachChangeTrackers(evoluInstance, Object.keys(Schema));
+    attachChangeTrackers(instance, Object.keys(Schema));
 
     // Test WebSocket connectivity to relay servers
     console.error("Testing WebSocket connectivity to relay servers...");
@@ -862,10 +889,16 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     // Fail fast if the SQLite native binding can't be loaded.
     // Without this check the dbWorker init silently hangs forever and
     // every loadQuery times out — see README "Troubleshooting".
-    if (evoluInstance.appOwner?.then) {
+    //
+    // The probe used to await `appOwner`, which was a Promise in v7 and is a
+    // plain value in v8, so `appOwner?.then` was undefined and this warning
+    // could never fire. A trivial query is the v8 way to learn the same thing:
+    // it only resolves once the dbWorker is running. (TODO-265)
+    {
       const probeStarted = Date.now();
+      const probe = instance.createQuery((db) => db.selectFrom("user").select(["id"]).limit(1));
       Promise.race([
-        evoluInstance.appOwner.then(() => true, () => false),
+        instance.loadQuery(probe).then(() => true, () => false),
         new Promise<boolean>((res) => setTimeout(() => res(false), 8000)),
       ]).then((ok) => {
         if (!ok) {
@@ -1043,7 +1076,12 @@ export function useSharedOwner(sharedOwner: SharedOwner): void {
   const ownerId = sharedOwner.id as string;
   if (unuseByOwnerId.has(ownerId)) return;
 
-  const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
+  // `useOwner` wants owner-scoped transports, which is also what the relay
+  // authenticates on. The plain `{ type, url }` shape only type-checked while
+  // the instance was `any`. (TODO-265)
+  const transports = RELAY_SERVERS.map((url) =>
+    createOwnerWebSocketTransport({ url, ownerId: sharedOwner.id }),
+  ) as unknown as readonly [OwnerWebSocketTransport, ...OwnerWebSocketTransport[]];
   unuseByOwnerId.set(ownerId, evolu.useOwner(sharedOwner, transports));
 }
 

@@ -57,19 +57,29 @@ async function syncStatus(args: { retest?: boolean }) {
     health.wsConnectivity = wsResults;
   }
 
+  const anyRelayReachable = Object.values(health.wsConnectivity).some((s) => s === 'ok');
+
   return {
-    status: health.lastError ? 'degraded' : 'ok',
+    // Judged only on what can actually be observed. `lastError` used to decide
+    // this, but Evolu v8 has no error hook on the instance, so it can never be
+    // set and "ok" would mean nothing more than "we cannot tell". (TODO-265)
+    status: !health.evoluReady ? 'not-ready' : anyRelayReachable ? 'ok' : 'no-relay',
     evoluReady: health.evoluReady,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
     lastError: health.lastError,
     lastErrorAt: health.lastErrorAt,
     errorCount: health.errorCount,
+    // v8 dropped `subscribeError`/`getError` and ships no replacement, so the
+    // two fields above stay empty however badly sync is going. Say so rather
+    // than let a zero read as good news. Capturing errors out of Evolu's
+    // console store is TODO-266.
+    errorTracking: 'unavailable on Evolu v8 — lastError and errorCount cannot be populated',
     onCompleteCount: health.onCompleteCount,
     tips: [
       "If all relays show 'untested', run with retest: true",
       "If relays show 'failed'/'timeout', check network/firewall",
-      "errorCount > 0 indicates Evolu sync issues",
+      "errorCount is always 0 on v8; see errorTracking",
       "onCompleteCount tracks successfully applied local mutations",
     ],
   };
