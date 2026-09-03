@@ -8,6 +8,7 @@
 import WebSocket from "ws";
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
+import { createHash } from "crypto";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -46,7 +47,7 @@ import {
   AppName,
   Mnemonic,
 } from "@evolu/common";
-import { createAppOwner, mnemonicToOwnerSecret } from "@evolu/common/local-first";
+import { createAppOwner, mnemonicToOwnerSecret, OwnerSecret as OwnerSecretType } from "@evolu/common/local-first";
 
 // Re-create schema for MCP server (mirrors main app)
 export const ProjectId = id("Project");
@@ -75,6 +76,9 @@ export type ProjectRefId = typeof ProjectRefId.Output;
 
 export const ProjectMemberId = id("ProjectMember");
 export type ProjectMemberId = typeof ProjectMemberId.Output;
+
+export const NotificationReadId = id("NotificationRead");
+export type NotificationReadId = typeof NotificationReadId.Output;
 
 export const RepositoryLinkId = id("RepositoryLink");
 export type RepositoryLinkId = typeof RepositoryLinkId.Output;
@@ -312,6 +316,24 @@ export const Schema = {
     data: nullOr(String), // Base64 encoded content
     size: Int,
   },
+  // Two tables the app has had for a while and this schema did not, so every
+  // message about them was quarantined unread: 11 repository links and 26
+  // notification read-states, invisible because nothing reports a quarantine.
+  // Declaring them lets `tryApplyQuarantinedMessages` apply what was kept.
+  // (TODO-267)
+  repositoryLink: {
+    id: RepositoryLinkId,
+    projectId: ProjectId,
+    type: String,
+    url: NonEmptyTrimmedString1000,
+    label: nullOr(NonEmptyTrimmedString100),
+    position: Int,
+  },
+  notificationRead: {
+    id: NotificationReadId,
+    notificationId: String,
+    kind: String, // 'system' | 'message'
+  },
 };
 
 // Schema for shared projects (todocko-shared database)
@@ -444,6 +466,24 @@ export const ProjectSchema = {
     userId: nullOr(String), // AppOwner OwnerId of author
     content: String,
   },
+  // The app writes activity into shared projects and this schema did not
+  // declare the table, so every such message went into quarantine instead:
+  // 117 messages, 1053 column rows, and nothing said so. Evolu keeps them
+  // precisely for this — `tryApplyQuarantinedMessages` applies them once the
+  // schema catches up — so adding the table both empties the quarantine and
+  // recovers the history. Shape copied from the app's projectSchema.ts.
+  // (TODO-267)
+  activityLog: {
+    id: ActivityLogId,
+    taskId: nullOr(TaskId),
+    actorId: nullOr(String),
+    action: String,
+    entityType: String,
+    field: nullOr(String),
+    oldValue: nullOr(String),
+    newValue: nullOr(String),
+    metadata: nullOr(String),
+  },
 };
 
 export type Schema = typeof Schema;
@@ -506,9 +546,39 @@ let evoluInstance: EvoluInstance | null = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let appOwnerForProcess: any = null;
 
+/** The throwaway owner of the shared instance. See deriveProjectInstanceOwner. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let projectAppOwnerForProcess: any = null;
+
 /** The AppOwner for this process, or null before initEvolu has run. */
 function getAppOwnerForProjectInstance() {
   return appOwnerForProcess;
+}
+
+/**
+ * A throwaway identity for the shared-project instance — deliberately not the
+ * user's.
+ *
+ * v8 makes `appOwner` mandatory, and two instances declaring the same owner
+ * both subscribe to that owner's message stream. The one whose schema does not
+ * match quarantines every message it receives, and nothing says a word about
+ * it: measured here at 24 404 rows in the shared instance, all of them
+ * AppOwnerSchema tables (activityLog, kanbanColumn, localProjectNote…) that
+ * ProjectSchema has never heard of, and still growing by hundreds a day. The
+ * app hit the same thing during the v8 port and solved it the same way
+ * (`loadOrCreateAppOwner('shared')` in ownerManager.ts). (TODO-267, TODO-88)
+ *
+ * Derived rather than random, because the database is named after the owner id
+ * — a fresh identity each start would mean a fresh empty database each start.
+ * Derived from the mnemonic rather than stored in a file, because there is
+ * then nothing to keep in sync, back up, or lose. The label makes it a
+ * different owner from the user's while staying stable for this machine.
+ */
+function deriveProjectInstanceOwner(mnemonic: typeof Mnemonic.Output) {
+  const digest = createHash("sha256")
+    .update(`todocko-mcp/shared-instance/v1\n${mnemonic as unknown as string}`)
+    .digest();
+  return createAppOwner(OwnerSecretType.orThrow(new Uint8Array(digest)));
 }
 
 // Database name - must match main app (src/db/appEvolu.ts)
@@ -888,6 +958,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     // 3s timeout, and then rebuilding it. None of that is needed now.
     const appOwner = createAppOwner(mnemonicToOwnerSecret(mnemonicResult.value));
     appOwnerForProcess = appOwner;
+    projectAppOwnerForProcess = deriveProjectInstanceOwner(mnemonicResult.value);
 
     const run = createRun(createNodeEvoluDeps());
     const created = await run(createEvolu(Schema, {
@@ -1012,14 +1083,9 @@ const sharedOwnersCache = new Map<string, SharedOwner>();
 export async function initProjectEvolu(): Promise<EvoluInstance | null> {
   if (projectEvoluInstance) return projectEvoluInstance;
 
-  const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
-
   console.error("Initializing project Evolu for shared projects...");
 
-  // Shared-project data is partitioned by ownerId and arrives through
-  // useOwner(); this instance just needs the device identity, which is the
-  // same AppOwner the main instance uses.
-  const appOwner = getAppOwnerForProjectInstance();
+  const appOwner = projectAppOwnerForProcess;
   if (!appOwner) {
     console.error("Cannot init project Evolu before the app owner is known");
     return null;
@@ -1029,7 +1095,11 @@ export async function initProjectEvolu(): Promise<EvoluInstance | null> {
   const created = await run(createEvolu(ProjectSchema, {
     appName: AppName.orThrow(PROJECT_DB_NAME),
     appOwner,
-    transports,
+    // No transports at instance level: this owner has nothing of its own to
+    // sync. Every shared project brings its own through useSharedOwner(), and
+    // subscribing this owner to the relay is what pulled the user's
+    // AppOwnerSchema messages in to be quarantined. (TODO-267)
+    transports: [],
   }));
   if (!created.ok) {
     console.error("Failed to create the shared-project Evolu instance");
