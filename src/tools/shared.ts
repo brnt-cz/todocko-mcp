@@ -1084,7 +1084,14 @@ async function listSharedTasks(
           "deploymentStage.name as deploymentStageName",
           "deploymentStage.color as deploymentStageColor",
         ])
-        .where("task.isDeleted", "is not", SQLITE_TRUE);
+        .where("task.isDeleted", "is not", SQLITE_TRUE)
+        // Scope to this owner in SQL, not afterwards in JS. The limit below is
+        // applied by SQLite before any JS filter runs, so an unscoped query
+        // returns the first N rows across every owner in the instance and the
+        // filter then drops all of them: the tool reported zero tasks for a
+        // project that has 167. Owner ids are stored as text here, so this
+        // compares like with like.
+        .where("task.ownerId", "=", sharedOwner.id as string);
 
       if (args.status) {
         q = q.where("task.status", "=", args.status);

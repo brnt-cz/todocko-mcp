@@ -25,7 +25,7 @@ class TodockoMcpWebSocket extends WebSocket {
 
 globalThis.WebSocket = TodockoMcpWebSocket as unknown as typeof globalThis.WebSocket;
 
-import { createEvolu } from "@evolu/common/local-first";
+import { createEvolu, createQueryBuilder } from "@evolu/common/local-first";
 import { createNodeEvoluDeps } from "./evoluPlatform.js";
 import {
   id,
@@ -445,6 +445,24 @@ export type Schema = typeof Schema;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type EvoluInstance = any;
 
+/**
+ * Give an instance its `createQuery` method back, bound to its own schema.
+ *
+ * v8 moved query building out of the instance into a standalone
+ * `createQueryBuilder(schema)`. All 102 call sites in the tools read
+ * `evolu.createQuery(...)`, and since `EvoluInstance` is `any`, `tsc` had
+ * nothing to object to — the port compiled clean and then failed at runtime
+ * with "evolu.createQuery is not a function" on the first query.
+ *
+ * Restoring the method is a smaller change than rewriting every call site, and
+ * binding it per instance is stricter than exporting one builder per schema:
+ * an instance cannot be paired with the wrong schema's builder.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withQueryBuilder(instance: any, schema: any): any {
+  return Object.assign(instance, { createQuery: createQueryBuilder(schema) });
+}
+
 let evoluInstance: EvoluInstance | null = null;
 
 /**
@@ -807,7 +825,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       console.error("Failed to create Evolu instance");
       return null;
     }
-    evoluInstance = created.value;
+    evoluInstance = withQueryBuilder(created.value, Schema);
 
     // Subscribe to sync errors for health tracking
     if (evoluInstance.subscribeError) {
@@ -941,7 +959,7 @@ export async function initProjectEvolu(): Promise<EvoluInstance | null> {
     console.error("Failed to create the shared-project Evolu instance");
     return null;
   }
-  projectEvoluInstance = created.value;
+  projectEvoluInstance = withQueryBuilder(created.value, ProjectSchema);
 
   console.error("Project Evolu created, syncing in background...");
   return projectEvoluInstance;
@@ -955,6 +973,13 @@ export function getProjectEvolu(): EvoluInstance | null {
  * Decode OwnerSecret from base64 string
  */
 export function decodeOwnerSecret(encoded: string): OwnerSecret {
+  // Called with whatever the MCP client sent. A missing `ownerSecret` used to
+  // reach `Buffer.from` and surface as "The first argument must be of type
+  // string or an instance of Buffer...", which says nothing about the argument
+  // the caller actually forgot.
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    throw new Error("ownerSecret is required (base64 string from projectRef)");
+  }
   const binary = Buffer.from(encoded, "base64");
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -991,7 +1016,23 @@ export function getSharedOwner(ownerId: string, ownerSecretBase64: string): Shar
 }
 
 /**
- * Use a SharedOwner to access a project's data
+ * Handles returned by `useOwner`, one per shared owner currently in use.
+ *
+ * v8 changed both halves of this API. `useOwner` takes the transports array
+ * itself, not `{ transports }` — an object passed there is truthy but not an
+ * array, so it fails `assertNonEmptyReadonlyArray` with the confusing
+ * "requires explicit non-empty transports" — and unsubscribing is done by
+ * calling the returned `UnuseOwner`, not by re-registering with an empty
+ * array, which now trips the same assert.
+ */
+const unuseByOwnerId = new Map<string, () => void>();
+
+/**
+ * Use a SharedOwner to access a project's data.
+ *
+ * Idempotent per owner: the tools call this on every request, and v8 keeps a
+ * separate registration per call, so re-registering would leak handles and
+ * transport references for the life of the process.
  */
 export function useSharedOwner(sharedOwner: SharedOwner): void {
   const evolu = getProjectEvolu();
@@ -999,16 +1040,24 @@ export function useSharedOwner(sharedOwner: SharedOwner): void {
     throw new Error("Project Evolu not initialized");
   }
 
+  const ownerId = sharedOwner.id as string;
+  if (unuseByOwnerId.has(ownerId)) return;
+
   const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
-  evolu.useOwner(sharedOwner, { transports });
+  unuseByOwnerId.set(ownerId, evolu.useOwner(sharedOwner, transports));
 }
 
 /**
- * Stop using a SharedOwner
+ * Stop using a SharedOwner.
+ *
+ * The handle is dropped before it is called, because v8 asserts an
+ * `UnuseOwner` runs at most once and the tools call this from `finally`
+ * blocks that can run more than once for the same owner.
  */
 export function stopUsingSharedOwner(sharedOwner: SharedOwner): void {
-  const evolu = getProjectEvolu();
-  if (!evolu) return;
-
-  evolu.useOwner(sharedOwner, { transports: [] });
+  const ownerId = sharedOwner.id as string;
+  const unuse = unuseByOwnerId.get(ownerId);
+  if (!unuse) return;
+  unuseByOwnerId.delete(ownerId);
+  unuse();
 }
