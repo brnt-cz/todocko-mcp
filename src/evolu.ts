@@ -515,9 +515,21 @@ function getAppOwnerForProjectInstance() {
 const DB_NAME = "todocko";
 
 // Evolu relay servers (same as main app)
-const RELAY_SERVERS = [
-  "wss://relay.todocko.cz",
-];
+/**
+ * Where sync goes. `TODOCKO_RELAY_URL` used to reach only the HTTP tools
+ * (tier warnings, system notifications) while this list stayed hard-wired to
+ * production, so there was no way to run this server against a local relay —
+ * and no way to give the error tracking below a positive control, which needs
+ * a relay that cannot be reached. The scheme is swapped the way the app does
+ * it: https to wss, http to ws. A bare host falls back to production rather
+ * than guessing at TLS. (TODO-266)
+ */
+const RELAY_SERVERS = ((raw: string): string[] => {
+  if (raw.startsWith("wss://") || raw.startsWith("ws://")) return [raw.replace(/\/$/, "")];
+  if (raw.startsWith("https://")) return [raw.replace(/^https:\/\//, "wss://").replace(/\/$/, "")];
+  if (raw.startsWith("http://")) return [raw.replace(/^http:\/\//, "ws://").replace(/\/$/, "")];
+  return ["wss://relay.todocko.cz"];
+})(process.env.TODOCKO_RELAY_URL || "wss://relay.todocko.cz");
 
 // --- Sync Health Tracking ---
 
@@ -563,6 +575,38 @@ export function getSyncHealth(): {
     onCompleteCount: syncHealth.onCompleteCount,
     relayServers: RELAY_SERVERS,
   };
+}
+
+/**
+ * Rows sitting in each instance's quarantine.
+ *
+ * This is the sync failure Evolu actually surfaces. A message it receives but
+ * cannot apply — a table or column this schema does not know — goes into
+ * `evolu_message_quarantine` and nothing is logged, so the only way to see it
+ * is to count the table. Measured on this machine while writing it: 151 rows
+ * in the app instance and 24 368 in the shared one, still growing daily, which
+ * no diagnostic tool could have told you. (TODO-266)
+ *
+ * Counted in SQL rather than fetched: 24 000 rows is not something to
+ * materialise for a health check.
+ */
+export async function getQuarantineCounts(): Promise<{ app: number | null; project: number | null }> {
+  const count = async (evolu: EvoluInstance | null): Promise<number | null> => {
+    if (!evolu) return null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- table is not in the schema
+      const query = evolu.createQuery((db: any) =>
+        db.selectFrom("evolu_message_quarantine").select((eb: any) => eb.fn.countAll().as("n")),
+      );
+      const rows = (await evolu.loadQuery(query)) as { n?: number }[];
+      return Number(rows[0]?.n ?? 0);
+    } catch {
+      // The table only exists once Evolu has created it; absence is not a fault.
+      return null;
+    }
+  };
+  const [app, project] = await Promise.all([count(evoluInstance), count(projectEvoluInstance)]);
+  return { app, project };
 }
 
 /** Track onComplete calls from mutations */
@@ -861,16 +905,15 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     const instance = withQueryBuilder(created.value, Schema);
     evoluInstance = instance;
 
-    // No error subscription here: v8 removed `subscribeError` and `getError`,
-    // and offers no replacement on the instance — `subscribeQuery` is the only
-    // subscription left, and the config has hooks only for a deleted database
-    // or owner. The v8 port kept the v7 call behind `if (…subscribeError)`,
-    // which is simply falsy now, so nothing was ever subscribed and
-    // `errorCount` could not move off zero while `td_sync_status` kept
-    // answering "ok". Reporting says so rather than implying a clean bill of
-    // health; capturing errors through the console store is TODO-266.
-    // (TODO-265)
-
+    // No error subscription. v8 dropped `subscribeError`/`getError` from the
+    // instance (TODO-265) and the obvious replacement does not work: Evolu's
+    // console never emits an error-level entry on the client. Measured, not
+    // assumed — an unreachable relay produced 67 console entries and not one
+    // error, and a relay answering with malformed bytes produced none either.
+    // The `deps.console.error` calls in Protocol.js are on the relay side of
+    // the protocol, and a client message that cannot be applied goes quietly
+    // into `evolu_message_quarantine`. So the quarantine is what gets
+    // reported instead; see getQuarantineCounts. (TODO-266)
     // Attach change trackers so td_force_sync can report per-table activity.
     attachChangeTrackers(instance, Object.keys(Schema));
 
