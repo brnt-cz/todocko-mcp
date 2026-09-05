@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type SavedViewId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 
 export const savedViewTools: Tool[] = [
   {
@@ -107,7 +107,7 @@ async function createSavedView(
 
   await waiter.waitForSync();
 
-  return { success: true, viewId: result.id, message: `View "${args.name}" created${getSyncWarning()}` };
+  return { success: true, viewId: result.id, message: `View "${args.name}" created` };
 }
 
 async function updateSavedView(
@@ -124,7 +124,7 @@ async function updateSavedView(
   assertMutation("updateSavedView", evolu.update("savedView", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
-  return { success: true, message: `View updated${getSyncWarning()}` };
+  return { success: true, message: `View updated` };
 }
 
 async function deleteSavedView(evolu: EvoluInstance, args: { id: string }) {

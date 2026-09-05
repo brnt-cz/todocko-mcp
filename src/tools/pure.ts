@@ -78,6 +78,29 @@ export function resolveUploadPath(filePath: string): string {
   return target;
 }
 
+/**
+ * Base URL for the relay's HTTP API, whatever form TODOCKO_RELAY_URL takes.
+ *
+ * `RELAY_SERVERS` in evolu.ts accepts `wss://` and `ws://` (TODO-266), but the
+ * three HTTP tools built their URLs straight from the variable and would then
+ * call `fetch("wss://…")` - which throws. Depending on the tool that surfaced as
+ * "fetch failed" or, in the tier check, as a silently swallowed null that reads
+ * as "not on the free plan".
+ *
+ * Container ports are stripped for the same reason they always were: the relay
+ * sits behind a reverse proxy and 4000/4001 are not reachable from outside.
+ * (TODO-288)
+ */
+export function relayHttpBase(raw: string | undefined): string {
+  const value = (raw || "https://relay.todocko.cz").trim();
+  const asHttp = value.startsWith("wss://")
+    ? value.replace(/^wss:\/\//, "https://")
+    : value.startsWith("ws://")
+      ? value.replace(/^ws:\/\//, "http://")
+      : value;
+  return asHttp.replace(/:400[01]\/?$/, "").replace(/\/$/, "");
+}
+
 /** Max decoded attachment size accepted by upload tools (memory/DB DoS guard, TODO-190). */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 

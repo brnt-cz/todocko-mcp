@@ -79,14 +79,11 @@ async function syncStatus(args: { retest?: boolean }) {
     evoluReady: health.evoluReady,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
-    lastError: health.lastError,
-    lastErrorAt: health.lastErrorAt,
-    errorCount: health.errorCount,
     // Messages Evolu received and could not apply, per instance. Nothing logs
     // these and no Evolu API reports them; the table has to be counted.
     quarantinedRows: quarantine,
     errorTracking:
-      'lastError/errorCount cannot be populated on Evolu v8 — no instance hook and no console error on the client. Watch quarantinedRows instead (TODO-266)',
+      'Evolu v8 reports no sync errors to the client - there is no instance hook and nothing is logged. lastError/errorCount used to be reported here and were never populated by anything, so they are gone; quarantinedRows is the real signal (TODO-266, TODO-288)',
     onCompleteCount: health.onCompleteCount,
     tips: [
       "If all relays show 'untested', run with retest: true",

@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type TaskTagId, type ProjectId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 
 export const tagTools: Tool[] = [
   {
@@ -217,7 +217,7 @@ async function createTag(
   return {
     success: true,
     tagId: result.id,
-    message: `Tag "${args.name}" created successfully${unassignedNote}${getSyncWarning()}`,
+    message: `Tag "${args.name}" created successfully${unassignedNote}`,
   };
 }
 
@@ -239,7 +239,7 @@ async function updateTag(
 
   return {
     success: true,
-    message: `Tag updated successfully${getSyncWarning()}`,
+    message: `Tag updated successfully`,
   };
 }
 
@@ -336,7 +336,7 @@ async function addTagToTask(evolu: EvoluInstance, args: { taskId: string; tagId:
   return {
     success: true,
     taskTagId: result.id,
-    message: `Tag added to task successfully${getSyncWarning()}`,
+    message: `Tag added to task successfully`,
   };
 }
 

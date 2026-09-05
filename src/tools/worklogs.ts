@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type WorklogId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning } from "./helpers.js";
+import { createMutationWaiter } from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const worklogTools: Tool[] = [
@@ -233,7 +233,7 @@ async function updateWorklog(
 
   return {
     success: true,
-    message: `Worklog updated successfully${getSyncWarning()}`,
+    message: `Worklog updated successfully`,
   };
 }
 

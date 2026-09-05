@@ -1,7 +1,8 @@
+import { relayHttpBase } from "./pure.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { EvoluInstance } from "../evolu.js";
 
-const RELAY_URL = process.env.TODOCKO_RELAY_URL || "https://relay.todocko.cz";
+
 const ADMIN_API_KEY = process.env.TODOCKO_RELAY_ADMIN_KEY || "";
 
 // Both APIs are reached through the reverse proxy, not on their container ports.
@@ -12,7 +13,7 @@ const ADMIN_API_KEY = process.env.TODOCKO_RELAY_ADMIN_KEY || "";
 // only supported entrance now, exactly as the app uses it — public endpoints
 // under /api/, the admin API under /admin-api/.
 function baseUrl(): string {
-  return RELAY_URL.replace(/:400[01]\/?$/, "").replace(/\/$/, "");
+  return relayHttpBase(process.env.TODOCKO_RELAY_URL);
 }
 
 async function adminFetch(path: string, options?: RequestInit): Promise<unknown> {

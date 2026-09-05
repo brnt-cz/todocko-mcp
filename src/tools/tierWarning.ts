@@ -1,11 +1,12 @@
+import { relayHttpBase } from "./pure.js";
 import { SQLITE_TRUE, type EvoluInstance } from "../evolu.js";
 import { queryRows, FREE_TIER_LIMITS, freeTierWarning } from "./pure.js";
 
-const RELAY_URL = process.env.TODOCKO_RELAY_URL || "https://relay.todocko.cz";
+
 
 /** Same reverse-proxy rule as systemNotifications.ts: no container ports. */
 function baseUrl(): string {
-  return RELAY_URL.replace(/:400[01]\/?$/, "").replace(/\/$/, "");
+  return relayHttpBase(process.env.TODOCKO_RELAY_URL);
 }
 
 /**

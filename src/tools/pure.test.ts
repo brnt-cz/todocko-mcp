@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { assertMutation, resolveUploadPath } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -76,3 +76,35 @@ describe("resolveUploadPath (TODO-286)", () => {
     expect(resolveUploadPath("a.png")).toBe("/tmp/todocko-dl/a.png");
   });
 });
+
+describe("relayHttpBase (TODO-288)", () => {
+  it("keeps an https URL as it is", () => {
+    expect(relayHttpBase("https://relay.todocko.cz")).toBe("https://relay.todocko.cz");
+  });
+
+  it("converts the websocket schemes the sync layer accepts", () => {
+    // TODOCKO_RELAY_URL may hold wss:// (TODO-266). fetch() throws on it, which
+    // surfaced as "fetch failed" in two tools and as a swallowed null in the
+    // tier check - read as "not on the free plan".
+    expect(relayHttpBase("wss://relay.todocko.cz")).toBe("https://relay.todocko.cz");
+    expect(relayHttpBase("ws://localhost")).toBe("http://localhost");
+  });
+
+  it("strips the container ports, which are not reachable behind the proxy", () => {
+    expect(relayHttpBase("https://relay.todocko.cz:4000")).toBe("https://relay.todocko.cz");
+    expect(relayHttpBase("wss://relay.todocko.cz:4001/")).toBe("https://relay.todocko.cz");
+  });
+
+  it("strips a trailing slash so paths do not double up", () => {
+    expect(relayHttpBase("https://relay.todocko.cz/")).toBe("https://relay.todocko.cz");
+  });
+
+  it("falls back to production when the variable is unset or blank", () => {
+    expect(relayHttpBase(undefined)).toBe("https://relay.todocko.cz");
+    expect(relayHttpBase("")).toBe("https://relay.todocko.cz");
+  });
+
+  it("leaves a port that is not a container port alone", () => {
+    expect(relayHttpBase("http://localhost:5173")).toBe("http://localhost:5173");
+  });
+})

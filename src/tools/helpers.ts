@@ -58,13 +58,7 @@ export function createMutationWaiter(): { onComplete: () => void; waitForSync: (
   };
 }
 
-/**
- * Get sync warning string if there are errors
- */
-export function getSyncWarning(): string {
-  const health = getSyncHealth();
-  return health.lastError ? ` (sync warning: ${health.lastError})` : '';
-}
+
 
 /**
  * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
