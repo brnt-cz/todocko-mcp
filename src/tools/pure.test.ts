@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { assertMutation } from "./pure.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { assertMutation, resolveUploadPath } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -28,5 +28,51 @@ describe("assertMutation", () => {
 
   it("names the operation in the message, so the caller knows which write", () => {
     expect(() => assertMutation("deleteChecklistItem", {})).toThrow(/deleteChecklistItem/);
+  });
+});
+
+describe("resolveUploadPath (TODO-286)", () => {
+  const base = "/tmp/todocko-upload-test";
+
+  beforeEach(() => {
+    process.env.TODOCKO_UPLOAD_DIR = base;
+  });
+
+  afterEach(() => {
+    delete process.env.TODOCKO_UPLOAD_DIR;
+    delete process.env.TODOCKO_DOWNLOAD_DIR;
+  });
+
+  it("accepts a relative path inside the base", () => {
+    expect(resolveUploadPath("shot.png")).toBe(`${base}/shot.png`);
+    expect(resolveUploadPath("sub/shot.png")).toBe(`${base}/sub/shot.png`);
+  });
+
+  it("refuses an absolute path outside the base", () => {
+    expect(() => resolveUploadPath("/etc/passwd")).toThrow(/escapes/);
+    expect(() => resolveUploadPath("/home/someone/.ssh/id_ed25519")).toThrow(/escapes/);
+  });
+
+  it("refuses a traversal escape", () => {
+    expect(() => resolveUploadPath("../secrets.txt")).toThrow(/escapes/);
+    expect(() => resolveUploadPath("sub/../../secrets.txt")).toThrow(/escapes/);
+  });
+
+  it("refuses a sibling directory that merely shares the prefix", () => {
+    process.env.TODOCKO_UPLOAD_DIR = "/tmp/uploads";
+    expect(() => resolveUploadPath("../uploads-evil/x.png")).toThrow(/escapes/);
+  });
+
+  it("refuses a dotfile even inside the base", () => {
+    // The attacks worth caring about name a dotfile: .env, .npmrc, .git/config.
+    expect(() => resolveUploadPath(".env")).toThrow(/dotfile/);
+    expect(() => resolveUploadPath("sub/.npmrc")).toThrow(/dotfile/);
+    expect(() => resolveUploadPath(".git/config")).toThrow(/dotfile/);
+  });
+
+  it("falls back to the download directory when no upload directory is set", () => {
+    delete process.env.TODOCKO_UPLOAD_DIR;
+    process.env.TODOCKO_DOWNLOAD_DIR = "/tmp/todocko-dl";
+    expect(resolveUploadPath("a.png")).toBe("/tmp/todocko-dl/a.png");
   });
 });

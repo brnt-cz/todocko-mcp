@@ -31,6 +31,53 @@ export function resolveDownloadPath(savePath: string): string {
   return target;
 }
 
+/**
+ * Resolve a user-supplied `filePath` for an UPLOAD, confined the same way
+ * downloads are.
+ *
+ * Downloads have been confined since TODO-184 so an agent acting on untrusted
+ * content could not overwrite arbitrary files. Uploads were left open, which is
+ * the same problem pointing the other way: a prompt injection in a task
+ * description or an inbox email could ask for `~/.claude/settings.json` (which
+ * holds the mnemonic), `~/.ssh/id_ed25519` or a project `.env`, and the file
+ * would be attached - for shared projects, handed to every other member.
+ * (TODO-286)
+ *
+ * Base is `TODOCKO_UPLOAD_DIR`, falling back to `TODOCKO_DOWNLOAD_DIR` and then
+ * ~/Downloads: whoever configured a download directory almost certainly means
+ * the same place for uploads, and a second variable nobody sets would leave the
+ * default wide open.
+ *
+ * Dotfiles are refused even inside the base. The attacks worth caring about name
+ * a dotfile (`.env`, `.npmrc`, `.git/config`), and a legitimate attachment
+ * almost never does.
+ */
+export function resolveUploadPath(filePath: string): string {
+  const base = resolve(
+    process.env.TODOCKO_UPLOAD_DIR ||
+      process.env.TODOCKO_DOWNLOAD_DIR ||
+      join(homedir(), "Downloads"),
+  );
+  const target = resolve(base, filePath);
+
+  if (target !== base && !target.startsWith(base + sep)) {
+    throw new Error(
+      `filePath "${filePath}" escapes the allowed upload directory (${base}). ` +
+        `Use a relative path inside it, or set TODOCKO_UPLOAD_DIR.`,
+    );
+  }
+
+  const relative = target.slice(base.length + 1);
+  if (relative.split(sep).some((segment) => segment.startsWith("."))) {
+    throw new Error(
+      `filePath "${filePath}" points at a dotfile, which is refused: those are ` +
+        `where credentials live, and an upload is how they would leave this machine.`,
+    );
+  }
+
+  return target;
+}
+
 /** Max decoded attachment size accepted by upload tools (memory/DB DoS guard, TODO-190). */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 

@@ -25,7 +25,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
+import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -2469,13 +2469,15 @@ async function uploadSharedNoteAttachment(
   let size: number;
 
   if (args.filePath) {
-    if (!existsSync(args.filePath)) {
+    // Confined to the upload directory; see resolveUploadPath (TODO-286).
+    const uploadPath = resolveUploadPath(args.filePath);
+    if (!existsSync(uploadPath)) {
       throw new Error(`File not found: ${args.filePath}`);
     }
-    const fileBuffer = readFileSync(args.filePath);
+    const fileBuffer = readFileSync(uploadPath);
     fileContent = fileBuffer.toString("base64");
     size = fileBuffer.length;
-    filename = args.filename || basename(args.filePath);
+    filename = args.filename || basename(uploadPath);
     mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
   } else {
     if (!args.filename) {
@@ -2675,11 +2677,13 @@ async function uploadSharedAttachment(
   let size: number;
 
   if (args.filePath) {
-    if (!existsSync(args.filePath)) throw new Error(`File not found: ${args.filePath}`);
-    const fileBuffer = readFileSync(args.filePath);
+    // Confined to the upload directory; see resolveUploadPath (TODO-286).
+    const uploadPath = resolveUploadPath(args.filePath);
+    if (!existsSync(uploadPath)) throw new Error(`File not found: ${args.filePath}`);
+    const fileBuffer = readFileSync(uploadPath);
     fileContent = fileBuffer.toString("base64");
     size = fileBuffer.length;
-    filename = args.filename || basename(args.filePath);
+    filename = args.filename || basename(uploadPath);
     mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
   } else {
     if (!args.filename) throw new Error("filename is required when using content parameter");

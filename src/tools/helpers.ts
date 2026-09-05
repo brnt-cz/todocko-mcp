@@ -7,6 +7,7 @@ import { NETWORK_DELAY_MS } from "./pure.js";
 // import keeps working.
 export {
   resolveDownloadPath,
+  resolveUploadPath,
   MAX_ATTACHMENT_BYTES,
   assertAttachmentSize,
   MAX_DESCRIPTION_LENGTH,
