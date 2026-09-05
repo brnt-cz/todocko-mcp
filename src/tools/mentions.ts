@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type MentionId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter, waitForSync , assertMutation} from "./helpers.js";
 
 export const mentionTools: Tool[] = [
   {
@@ -208,7 +208,7 @@ async function createMention(
   return {
     success: true,
     mentionId: result.id,
-    message: `Mention created successfully${getSyncWarning()}`,
+    message: `Mention created successfully`,
   };
 }
 

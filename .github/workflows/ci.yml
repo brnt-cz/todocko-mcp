@@ -1,10 +1,14 @@
 name: CI
 
 on:
+  # No base-branch filter on pull_request. With `branches: [main, master]` a
+  # stacked pull request - one whose base is another feature branch - runs
+  # nothing at all and shows every job as skipped, which reads like a pass. That
+  # is how an unchecked change reached main in the app repository; the app and
+  # the relay both dropped the filter after it. (TODO-288, TODO-263)
   push:
     branches: [main, master]
   pull_request:
-    branches: [main, master]
 
 jobs:
   build:

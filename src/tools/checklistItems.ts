@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ChecklistItemId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const checklistItemTools: Tool[] = [
@@ -167,7 +167,7 @@ async function createChecklistItem(
   return {
     success: true,
     itemId: result.id,
-    message: `Checklist item created successfully${getSyncWarning()}`,
+    message: `Checklist item created successfully`,
   };
 }
 
@@ -224,7 +224,7 @@ async function updateChecklistItem(
 
   return {
     success: true,
-    message: `Checklist item updated successfully${getSyncWarning()}`,
+    message: `Checklist item updated successfully`,
   };
 }
 

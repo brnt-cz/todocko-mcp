@@ -135,7 +135,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (136)
+## Dostupné nástroje (143)
 
 ### Projekty
 
@@ -700,7 +700,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (109)
+## Available Tools (143)
 
 ### Projects
 
@@ -1062,7 +1062,7 @@ The database contains the owner ID from the previous mnemonic. After deletion, a
 ## Troubleshooting
 
 ### Server won't start
-- Check that you have Node.js 18+
+- Check that you have Node.js 24.20 or newer (Evolu v8 requires it)
 - Check that you ran `npm run build`
 - Check logs in Claude Desktop
 
@@ -1125,5 +1125,5 @@ odtud. `helpers.ts` je re-exportuje, takže volající se nemění. Když píše
 který Evolu nepotřebuje, patří do `pure.ts` — jinak ho nejde testovat bez
 nastartované databáze.
 
-Testy tak procházejí na Node 18, 20 i 22. Závazná verze pro MCP je **22** (na té
-jede `ci.yml` i `release.yml`).
+Závazná verze je **Node 24.20 nebo novější** — je v `engines` a Evolu v8 na
+starším neběží. Na té jede `ci.yml` i `release.yml`.

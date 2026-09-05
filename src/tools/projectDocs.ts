@@ -11,7 +11,7 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 
 export const projectDocTools: Tool[] = [
   // Local project docs (not synced)
@@ -205,7 +205,7 @@ async function createProjectDoc(
 
   await waiter.waitForSync();
 
-  return { success: true, docId: result.id, message: `Document page created${getSyncWarning()}` };
+  return { success: true, docId: result.id, message: `Document page created` };
 }
 
 async function updateProjectDoc(
@@ -222,7 +222,7 @@ async function updateProjectDoc(
   assertMutation("updateProjectDoc", evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
 
-  return { success: true, message: `Document page updated${getSyncWarning()}` };
+  return { success: true, message: `Document page updated` };
 }
 
 async function deleteProjectDoc(evolu: EvoluInstance, args: { id: string }) {

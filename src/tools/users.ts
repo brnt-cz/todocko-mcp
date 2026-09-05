@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type UserId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 
 export const userTools: Tool[] = [
   {
@@ -192,7 +192,7 @@ async function createUser(
   return {
     success: true,
     userId: result.id,
-    message: `User "${args.name}" created successfully${getSyncWarning()}`,
+    message: `User "${args.name}" created successfully`,
   };
 }
 
@@ -227,7 +227,7 @@ async function updateUser(
 
   return {
     success: true,
-    message: `User updated successfully${getSyncWarning()}`,
+    message: `User updated successfully`,
   };
 }
 

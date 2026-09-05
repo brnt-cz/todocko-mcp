@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, getSyncWarning, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
+import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 
@@ -817,7 +817,6 @@ async function createTask(
   // Wait for onComplete + network sync
   await waiter.waitForSync();
 
-  const syncWarning = getSyncWarning();
 
   return {
     success: true,
@@ -826,7 +825,7 @@ async function createTask(
     ...(appliedTags.length > 0 ? { appliedTags } : {}),
     message: `Task ${taskCode} created successfully${
       appliedTags.length > 0 ? ` with the project's default tags: ${appliedTags.join(", ")}` : ""
-    }${syncWarning}${tierNote}`,
+    }${tierNote}`,
   };
 }
 
@@ -995,11 +994,10 @@ async function updateTask(
 
   await waiter.waitForSync();
 
-  const syncWarning = getSyncWarning();
 
   return {
     success: true,
-    message: `Task updated successfully${syncWarning}`,
+    message: `Task updated successfully`,
   };
 }
 
@@ -1284,6 +1282,6 @@ async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
 
   return {
     success: true,
-    message: `Task ${code} deleted successfully${getSyncWarning()}`,
+    message: `Task ${code} deleted successfully`,
   };
 }

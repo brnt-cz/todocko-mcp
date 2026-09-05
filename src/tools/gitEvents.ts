@@ -1,6 +1,6 @@
+import { relayHttpBase } from "./pure.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
-const DEFAULT_RELAY_URL = "https://relay.todocko.cz";
 
 export const gitEventTools: Tool[] = [
   {
@@ -32,7 +32,9 @@ export async function handleGitEventTool(
 }
 
 async function listGitEvents(args: { taskCode: string }) {
-  const relayUrl = process.env.TODOCKO_RELAY_URL || DEFAULT_RELAY_URL;
+  // Was the only one of the three that used the variable raw, so it kept the
+  // container port as well as a wss:// scheme. (TODO-288)
+  const relayUrl = relayHttpBase(process.env.TODOCKO_RELAY_URL);
   const url = `${relayUrl}/api/git-events/${encodeURIComponent(args.taskCode)}`;
 
   const response = await fetch(url);

@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TaskLinkId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, getSyncWarning , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation} from "./helpers.js";
 
 export const taskLinkTools: Tool[] = [
   {
@@ -143,7 +143,7 @@ async function createTaskLink(
   return {
     success: true,
     linkId: result.id,
-    message: `Task link created successfully${getSyncWarning()}`,
+    message: `Task link created successfully`,
   };
 }
 

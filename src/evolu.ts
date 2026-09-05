@@ -605,9 +605,6 @@ const RELAY_SERVERS = ((raw: string): string[] => {
 // --- Sync Health Tracking ---
 
 interface SyncHealth {
-  lastError: string | null;
-  lastErrorAt: Date | null;
-  errorCount: number;
   wsConnectivity: Map<string, 'untested' | 'ok' | 'failed'>;
   evoluReady: boolean;
   onCompleteCount: number;
@@ -616,9 +613,6 @@ interface SyncHealth {
 }
 
 const syncHealth: SyncHealth = {
-  lastError: null,
-  lastErrorAt: null,
-  errorCount: 0,
   wsConnectivity: new Map(RELAY_SERVERS.map(url => [url, 'untested' as const])),
   evoluReady: false,
   onCompleteCount: 0,
@@ -629,18 +623,12 @@ const syncHealth: SyncHealth = {
  * Get current sync health status for diagnostics
  */
 export function getSyncHealth(): {
-  lastError: string | null;
-  lastErrorAt: string | null;
-  errorCount: number;
   wsConnectivity: Record<string, string>;
   evoluReady: boolean;
   onCompleteCount: number;
   relayServers: string[];
 } {
   return {
-    lastError: syncHealth.lastError,
-    lastErrorAt: syncHealth.lastErrorAt?.toISOString() ?? null,
-    errorCount: syncHealth.errorCount,
     wsConnectivity: Object.fromEntries(syncHealth.wsConnectivity),
     evoluReady: syncHealth.evoluReady,
     onCompleteCount: syncHealth.onCompleteCount,
@@ -742,7 +730,6 @@ export async function forceSync(args: { waitMs?: number; reconnect?: boolean }):
     Object.fromEntries(syncHealth.incomingChangesByTable);
 
   const before = snapshot();
-  const beforeErrors = syncHealth.errorCount;
   const startedAt = Date.now();
 
   if (reconnect) {
@@ -764,8 +751,6 @@ export async function forceSync(args: { waitMs?: number; reconnect?: boolean }):
     reconnected: reconnect,
     wsConnectivity: Object.fromEntries(syncHealth.wsConnectivity),
     changedTables,
-    newErrors: syncHealth.errorCount - beforeErrors,
-    lastError: syncHealth.lastError,
     hint:
       Object.keys(changedTables).length > 0
         ? "Incoming changes detected — query the affected tables to read the fresh data."
