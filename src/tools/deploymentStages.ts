@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type DeploymentStageId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter } from "./helpers.js";
+import { createMutationWaiter, assertRowExists } from "./helpers.js";
 
 export const deploymentStageTools: Tool[] = [
   {
@@ -104,6 +104,9 @@ async function updateDeploymentStage(
   evolu: EvoluInstance,
   args: { id: string; name?: string; color?: string; position?: number }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "deploymentStage", args.id, "Deployment stage");
+
   const updates: Record<string, unknown> = { id: args.id as DeploymentStageId };
   if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   if (args.color !== undefined) updates.color = args.color;

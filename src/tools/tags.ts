@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type TaskTagId, type ProjectId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 
 export const tagTools: Tool[] = [
   {
@@ -225,6 +225,9 @@ async function updateTag(
   evolu: EvoluInstance,
   args: { id: string; name?: string; color?: string; projectId?: string; isDefault?: boolean }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "tag", args.id, "Tag");
+
   const waiter = createMutationWaiter();
   const result = evolu.update("tag", {
     id: args.id as TagId,

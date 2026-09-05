@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type WorklogId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter } from "./helpers.js";
+import { createMutationWaiter, assertRowExists } from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const worklogTools: Tool[] = [
@@ -212,6 +212,9 @@ async function updateWorklog(
   evolu: EvoluInstance,
   args: { id: string; durationMinutes?: number; description?: string | null; loggedAt?: string }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "worklog", args.id, "Worklog");
+
   const updates: Record<string, unknown> = {
     id: args.id as WorklogId,
   };

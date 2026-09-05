@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type RepositoryLinkId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 
 export const repositoryLinkTools: Tool[] = [
   {
@@ -189,6 +189,9 @@ async function updateRepositoryLink(
   evolu: EvoluInstance,
   args: { id: string; type?: string; url?: string; label?: string; position?: number }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "repositoryLink", args.id, "Repository link");
+
   const updates: Record<string, unknown> = { id: args.id as RepositoryLinkId };
   if (args.type !== undefined) updates.type = args.type;
   if (args.url !== undefined) updates.url = NonEmptyTrimmedString1000.orThrow(args.url);

@@ -1,5 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { EvoluInstance } from "../evolu.js";
+import { assertRequiredArgs } from "./pure.js";
 
 // Feature modules
 import { projectTools, handleProjectTool } from "./projects.js";
@@ -89,6 +90,12 @@ export async function handleToolCall(
   args: Record<string, unknown>,
   evolu: EvoluInstance
 ): Promise<unknown> {
+  // One choke point for every tool: the schemas already declare what is
+  // required, and until now nothing checked it. See assertRequiredArgs for what
+  // a missing id actually did. (TODO-292)
+  const schema = tools.find((t) => t.name === name)?.inputSchema;
+  assertRequiredArgs(name, args, schema as { required?: string[]; properties?: Record<string, unknown> } | undefined);
+
   for (const handler of handlers) {
     const result = await handler(name, args, evolu);
     if (result !== undefined) return result;

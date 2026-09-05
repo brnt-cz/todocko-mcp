@@ -11,7 +11,7 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 
 export const projectDocTools: Tool[] = [
   // Local project docs (not synced)
@@ -212,6 +212,9 @@ async function updateProjectDoc(
   evolu: EvoluInstance,
   args: { id: string; title?: string; content?: string; position?: number; parentDocId?: string }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "localProjectNote", args.id, "Document");
+
   const updates: Record<string, unknown> = { id: args.id as LocalProjectNoteId };
   if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
   if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -108,3 +108,114 @@ describe("relayHttpBase (TODO-288)", () => {
     expect(relayHttpBase("http://localhost:5173")).toBe("http://localhost:5173");
   });
 })
+
+describe("assertRequiredArgs (TODO-292)", () => {
+  const schema = {
+    required: ["id"],
+    properties: { id: {}, name: {}, status: {} },
+  };
+
+  it("passes a call that supplies the required argument", () => {
+    expect(() => assertRequiredArgs("td_update_task", { id: "abc", status: "done" }, schema)).not.toThrow();
+  });
+
+  it("rejects the mistake that started this: taskId where id was wanted", () => {
+    // The real call. It used to return success and create an empty task row,
+    // because Evolu turns an unknown id into an insert.
+    expect(() => assertRequiredArgs("td_update_task", { taskId: "abc", status: "done" }, schema))
+      .toThrow(/missing required argument\(s\): id/);
+  });
+
+  it("names the stray argument, since the failure is usually a near-miss", () => {
+    let message = "";
+    try {
+      assertRequiredArgs("td_update_task", { taskId: "abc" }, schema);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain("Unrecognised argument(s): taskId");
+    expect(message).toContain("Accepted arguments: id, name, status");
+  });
+
+  it("treats undefined, null and empty string as absent", () => {
+    for (const value of [undefined, null, ""]) {
+      expect(() => assertRequiredArgs("t", { id: value }, schema)).toThrow(/missing required/);
+    }
+  });
+
+  it("accepts 0 and false, which are present values", () => {
+    const numeric = { required: ["durationMinutes"], properties: { durationMinutes: {} } };
+    expect(() => assertRequiredArgs("td_add_worklog", { durationMinutes: 0 }, numeric)).not.toThrow();
+    const flag = { required: ["isDeleted"], properties: { isDeleted: {} } };
+    expect(() => assertRequiredArgs("t", { isDeleted: false }, flag)).not.toThrow();
+  });
+
+  it("does nothing for a tool that requires nothing", () => {
+    expect(() => assertRequiredArgs("td_list_projects", {}, { properties: {} })).not.toThrow();
+    expect(() => assertRequiredArgs("td_list_projects", {}, undefined)).not.toThrow();
+  });
+
+  it("reports every missing argument at once, not just the first", () => {
+    const multi = { required: ["sharedOwnerId", "ownerSecret", "id"], properties: { sharedOwnerId: {}, ownerSecret: {}, id: {} } };
+    expect(() => assertRequiredArgs("td_update_shared_task", { id: "x" }, multi))
+      .toThrow(/sharedOwnerId, ownerSecret/);
+  });
+});
+
+describe("assertRowExists (TODO-292)", () => {
+  /** Records the query the guard built, and answers with the given rows. */
+  function fakeEvolu(rows: unknown[]) {
+    const built: { table?: string; wheres: [string, string, unknown][] } = { wheres: [] };
+    const db = {
+      selectFrom(table: string) {
+        built.table = table;
+        return db;
+      },
+      select() {
+        return db;
+      },
+      where(column: string, op: string, value: unknown) {
+        built.wheres.push([column, op, value]);
+        return db;
+      },
+      limit() {
+        return db;
+      },
+    };
+    return {
+      built,
+      evolu: {
+        createQuery: (build: (d: unknown) => unknown) => build(db),
+        loadQuery: async () => rows,
+      },
+    };
+  }
+
+  it("passes when the row is there", async () => {
+    const { evolu } = fakeEvolu([{ id: "t1" }]);
+    await expect(assertRowExists(evolu, "task", "t1", "Task")).resolves.toBeUndefined();
+  });
+
+  it("throws instead of letting Evolu insert a new row", async () => {
+    const { evolu } = fakeEvolu([]);
+    await expect(assertRowExists(evolu, "task", "ghost", "Task")).rejects.toThrow("Task not found: ghost");
+  });
+
+  it("does not filter on isDeleted, or restoring from the trash would fail", async () => {
+    // td_update_task(isDeleted: false) is how a task comes back; a guard that
+    // skipped deleted rows would refuse exactly that call.
+    const { built, evolu } = fakeEvolu([{ id: "t1" }]);
+    await assertRowExists(evolu, "task", "t1", "Task");
+    expect(built.wheres.map((w) => w[0])).toEqual(["id"]);
+  });
+
+  it("scopes by owner for shared data, where one instance holds every project", async () => {
+    const { built, evolu } = fakeEvolu([{ id: "t1" }]);
+    await assertRowExists(evolu, "task", "t1", "Task", "owner-9");
+    expect(built.table).toBe("task");
+    expect(built.wheres).toEqual([
+      ["id", "=", "t1"],
+      ["ownerId", "=", "owner-9"],
+    ]);
+  });
+});

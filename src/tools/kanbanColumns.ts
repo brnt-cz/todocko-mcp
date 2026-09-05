@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type KanbanColumnId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 
 export const kanbanColumnTools: Tool[] = [
   {
@@ -121,6 +121,9 @@ async function updateKanbanColumn(
   evolu: EvoluInstance,
   args: { id: string; name?: string; color?: string; icon?: string; position?: number; isDefault?: boolean; showInKanban?: boolean }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "kanbanColumn", args.id, "Column");
+
   const updates: Record<string, unknown> = { id: args.id as KanbanColumnId };
   if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   if (args.color !== undefined) updates.color = EvoluString.orThrow(args.color);
