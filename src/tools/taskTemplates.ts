@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type TaskTemplateId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 
 export const taskTemplateTools: Tool[] = [
   {
@@ -166,6 +166,9 @@ async function updateTaskTemplate(
   evolu: EvoluInstance,
   args: { id: string; name?: string; taskName?: string; description?: string; priority?: string; estimate?: number; projectId?: string }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "taskTemplate", args.id, "Task template");
+
   const updates: Record<string, unknown> = { id: args.id as TaskTemplateId };
   if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
   if (args.taskName !== undefined) updates.taskName = args.taskName ? NonEmptyTrimmedString100.orThrow(args.taskName) : null;

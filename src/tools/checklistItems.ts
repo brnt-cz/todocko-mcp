@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type ChecklistItemId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const checklistItemTools: Tool[] = [
@@ -175,6 +175,9 @@ async function updateChecklistItem(
   evolu: EvoluInstance,
   args: { id: string; title?: string; isChecked?: boolean; position?: number }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "checklistItem", args.id, "Checklist item");
+
   const updates: Record<string, unknown> = {
     id: args.id as ChecklistItemId,
   };

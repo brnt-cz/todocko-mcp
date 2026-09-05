@@ -21,6 +21,8 @@ export {
   queryRows,
   FREE_TIER_LIMITS,
   freeTierWarning,
+  safeLoadQuery,
+  assertRowExists,
 } from "./pure.js";
 
 /**
@@ -60,16 +62,3 @@ export function createMutationWaiter(): { onComplete: () => void; waitForSync: (
 
 
 
-/**
- * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
- * If the query doesn't resolve within the timeout, throws an error.
- */
-export async function safeLoadQuery(evolu: EvoluInstance, query: any, timeoutMs = 15000): Promise<any[]> {
-  const result = await Promise.race([
-    evolu.loadQuery(query),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`loadQuery timed out after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
-  return result as any[];
-}

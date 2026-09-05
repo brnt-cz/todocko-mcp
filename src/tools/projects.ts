@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation} from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 
 export const projectTools: Tool[] = [
@@ -237,6 +237,9 @@ async function updateProject(
   evolu: EvoluInstance,
   args: { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean }
 ) {
+  // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
+  await assertRowExists(evolu, "project", args.id, "Project");
+
   const updates: Record<string, unknown> = {
     id: args.id as ProjectId,
   };

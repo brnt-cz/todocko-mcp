@@ -248,3 +248,103 @@ export function freeTierWarning(
     : ` NOTE: this owner is on the free plan, which allows ${limit} active tasks (completed ones do not count) — there are now ${count}.` +
       ` The app will refuse to create further tasks and show a limit message. Existing tasks keep working and nothing is lost.`;
 }
+
+/**
+ * Check a call's arguments against the tool's own declared `required` list.
+ *
+ * The tool schemas already say which arguments are mandatory, but nothing
+ * enforced it: the server passed `args` straight to the handler, and a call
+ * that named a parameter wrongly - `taskId` where `td_update_task` wants `id`,
+ * a confusion the toolset invites, since `td_add_worklog` really does take
+ * `taskId` - arrived with the required field `undefined`.
+ *
+ * That is worse than it sounds, because of how Evolu writes. `update()` goes
+ * through `on conflict ("ownerId","id") do update`, so an id that is not there
+ * does not raise: it inserts. One mistyped parameter therefore created a new,
+ * empty task row and reported `success: true`. Three of them accumulated in a
+ * single session before one turned up in the app's "unknown statuses" drawer;
+ * the changes they were supposed to make had never happened, and the caller was
+ * told they had. (TODO-292)
+ *
+ * The message names the parameters the tool does accept, because the failure
+ * this catches is almost always a near-miss on a name.
+ */
+export function assertRequiredArgs(
+  toolName: string,
+  args: Record<string, unknown>,
+  schema: { required?: string[]; properties?: Record<string, unknown> } | undefined,
+): void {
+  const required = schema?.required ?? [];
+  const missing = required.filter((key) => {
+    const value = args[key];
+    return value === undefined || value === null || value === "";
+  });
+  if (missing.length === 0) return;
+
+  const accepted = Object.keys(schema?.properties ?? {});
+  const supplied = Object.keys(args);
+  const strays = supplied.filter((key) => !accepted.includes(key));
+  const hint = strays.length > 0 ? ` Unrecognised argument(s): ${strays.join(", ")}.` : "";
+  throw new Error(
+    `${toolName}: missing required argument(s): ${missing.join(", ")}.${hint}` +
+      ` Accepted arguments: ${accepted.join(", ") || "(none)"}.`,
+  );
+}
+
+/**
+ * The shape these helpers need from an Evolu instance.
+ *
+ * Structural, not the real `EvoluInstance`: importing that type would pull
+ * ../evolu.js into this module and undo the reason pure.ts exists.
+ */
+export interface QueryableEvolu {
+  createQuery: (build: any) => any;
+  loadQuery: (query: any) => Promise<unknown>;
+}
+
+/**
+ * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
+ * If the query doesn't resolve within the timeout, throws an error.
+ */
+export async function safeLoadQuery(evolu: QueryableEvolu, query: any, timeoutMs = 15000): Promise<any[]> {
+  const result = await Promise.race([
+    evolu.loadQuery(query),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`loadQuery timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+  return result as any[];
+}
+
+/**
+ * Refuse to write to a row that is not there.
+ *
+ * Evolu's `update()` compiles to `on conflict ("ownerId","id") do update`, so an
+ * id nobody has ever seen is not an error - it inserts. An update aimed at a
+ * mistyped or stale id therefore creates a fresh row holding only the fields
+ * that were being changed, and reports success. (TODO-292, and the same
+ * reasoning as the bulk guards in TODO-285.)
+ *
+ * Deliberately does **not** filter on `isDeleted`: `td_update_task` with
+ * `isDeleted: false` is how a task is restored from the trash, and a check that
+ * skipped deleted rows would refuse exactly that.
+ */
+export async function assertRowExists(
+  evolu: QueryableEvolu,
+  table: string,
+  id: string,
+  label = table,
+  ownerId?: string,
+): Promise<void> {
+  const query = evolu.createQuery((db: any) => {
+    let q = db.selectFrom(table).select(["id"]).where("id", "=", id as never);
+    // Shared-project data is partitioned by owner in one instance, so an id
+    // alone would also match a row in somebody else's project.
+    if (ownerId) q = q.where("ownerId", "=", ownerId as never);
+    return q.limit(1);
+  });
+  const found = await safeLoadQuery(evolu, query);
+  if (!found || found.length === 0) {
+    throw new Error(`${label} not found: ${id}`);
+  }
+}

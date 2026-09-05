@@ -25,7 +25,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject } from "./helpers.js";
+import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -1246,6 +1246,9 @@ async function updateSharedTask(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "task", args.id, "Task", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   // Clear, actionable errors before the opaque Evolu orThrow (TODO-181)
@@ -1741,6 +1744,9 @@ async function updateSharedChecklistItem(
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "checklistItem", args.id, "Checklist item", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as ChecklistItemId };
@@ -1844,6 +1850,9 @@ async function updateSharedTaskComment(
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "taskComment", args.id, "Comment", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
@@ -2043,6 +2052,9 @@ async function updateSharedRepositoryLink(
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "repositoryLink", args.id, "Repository link", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as RepositoryLinkId };
@@ -2084,6 +2096,9 @@ async function updateSharedDeploymentStage(
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "deploymentStage", args.id, "Deployment stage", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as DeploymentStageId };
@@ -2166,6 +2181,9 @@ async function updateSharedTag(
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "tag", args.id, "Tag", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const updates: Record<string, unknown> = { id: args.id as TagId };
@@ -2411,6 +2429,9 @@ async function updateSharedMember(
 
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
+  // Scoped by owner, not just id: shared data for every project lives in one
+  // instance, and an unknown id would be an insert, not an error. (TODO-292)
+  await assertRowExists(projectEvolu, "projectMember", args.id, "Member", sharedOwner.id as string);
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   try {
