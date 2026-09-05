@@ -9,7 +9,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { createMutationWaiter, resolveDownloadPath, assertAttachmentSize , assertMutation} from "./helpers.js";
+import { createMutationWaiter, resolveDownloadPath, resolveUploadPath, assertAttachmentSize , assertMutation} from "./helpers.js";
 
 // Attachments for LOCAL project notes (localNoteAttachment table, AppOwner).
 // Shared-project note attachments (noteAttachment in ProjectSchema) are not
@@ -103,13 +103,15 @@ async function uploadNoteAttachment(
   let size: number;
 
   if (args.filePath) {
-    if (!existsSync(args.filePath)) {
+    // Confined to the upload directory; see resolveUploadPath (TODO-286).
+    const uploadPath = resolveUploadPath(args.filePath);
+    if (!existsSync(uploadPath)) {
       throw new Error(`File not found: ${args.filePath}`);
     }
-    const fileBuffer = readFileSync(args.filePath);
+    const fileBuffer = readFileSync(uploadPath);
     fileContent = fileBuffer.toString("base64");
     size = fileBuffer.length;
-    filename = args.filename || basename(args.filePath);
+    filename = args.filename || basename(uploadPath);
     mimeType = args.mimeType || lookup(filename) || "application/octet-stream";
   } else {
     if (!args.filename) {
