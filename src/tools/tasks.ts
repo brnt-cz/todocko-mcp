@@ -1112,23 +1112,27 @@ async function bulkUpdateTasks(
         updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
       }
 
-      let oldTask: Record<string, unknown> = {};
-      try {
-        const oldQuery = evolu.createQuery((db: any) =>
-          db.selectFrom("task")
-            .select([...TRACKED_TASK_FIELDS])
-            .where("id", "=", taskId as TaskId)
-            .limit(1)
-        );
-        const rows = await safeLoadQuery(evolu, oldQuery);
-        if (rows && rows.length > 0) oldTask = rows[0] as Record<string, unknown>;
-      } catch {
-        // ignore — no old-state diff is fine
+      // The row has to exist. v8's update() validates the shape of the change
+      // and nothing else, and the worker writes it with `on conflict do
+      // update`, so an unknown id creates a NEW row rather than failing - a
+      // phantom task nobody asked for, reported as a success. The old-state
+      // read below was already happening for the activity diff; making it
+      // authoritative costs nothing. (TODO-285)
+      const oldQuery = evolu.createQuery((db: any) =>
+        db.selectFrom("task")
+          .select([...TRACKED_TASK_FIELDS])
+          .where("id", "=", taskId as TaskId)
+          .where("isDeleted", "is not", SQLITE_TRUE)
+          .limit(1)
+      );
+      const rows = await safeLoadQuery(evolu, oldQuery);
+      if (!rows || rows.length === 0) {
+        skippedCount++;
+        continue;
       }
+      const oldTask = rows[0] as Record<string, unknown>;
 
-      // TODO-90 M11: check the Result — update() doesn't throw, so without this
-      // a failed mutation would still be counted as a success.
-      const r = evolu.update("task", updates as any);
+      evolu.update("task", updates as any);
       logTaskUpdate(evolu, taskId, oldTask, updates);
       successCount++;
     } catch {
@@ -1159,13 +1163,27 @@ async function bulkDeleteTasks(
 
   for (const taskId of args.taskIds) {
     try {
+      // Existence first, for the same reason as the bulk update: deleting an id
+      // that is not there would create a tombstone row for a task that never
+      // existed, and report it deleted. (TODO-285)
+      const existsQuery = evolu.createQuery((db: any) =>
+        db.selectFrom("task")
+          .select(["id"])
+          .where("id", "=", taskId as TaskId)
+          .where("isDeleted", "is not", SQLITE_TRUE)
+          .limit(1)
+      );
+      const found = await safeLoadQuery(evolu, existsQuery);
+      if (!found || found.length === 0) {
+        skippedCount++;
+        continue;
+      }
+
       // Same cascade as the single delete and the app: worklogs, attachments
       // (content kept) and task links. (TODO-206)
       await cascadeDeleteTaskChildren(evolu, taskId);
 
-      // Delete the task itself. TODO-90 M11: check the Result so a failed
-      // delete is reported as skipped, not silently counted as success.
-      const r = evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any);
+      evolu.update("task", { id: taskId as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any);
       logTaskDelete(evolu, taskId);
       successCount++;
     } catch {

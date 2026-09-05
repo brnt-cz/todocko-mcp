@@ -47,7 +47,8 @@ import {
   AppName,
   Mnemonic,
 } from "@evolu/common";
-import { createAppOwner, mnemonicToOwnerSecret, OwnerSecret as OwnerSecretType } from "@evolu/common/local-first";
+import { createAppOwner, mnemonicToOwnerSecret, OwnerSecret as OwnerSecretType, type AppOwner } from "@evolu/common/local-first";
+import { createIdFromString } from "@evolu/common";
 
 // Re-create schema for MCP server (mirrors main app)
 export const ProjectId = id("Project");
@@ -825,59 +826,23 @@ function getTodockoDir(): string {
 /**
  * Get the database path for the Evolu database
  */
-function getDbPath(): string {
-  // Evolu uses the app name as the database file name
-  return join(getTodockoDir(), `${DB_NAME}.db`);
+function getDbPath(appOwner: AppOwner): string {
+  // v8 names the file after the owner, not after the app alone. Pointing at
+  // `${DB_NAME}.db` meant every raw-SQLite helper below operated on the v7
+  // database, which is still on disk and no longer read by anything: the
+  // mnemonic guard silently answered "no mismatch" for years' worth of boots,
+  // and ensureMissingColumns ALTERed a file nobody opens. (TODO-285)
+  return join(getTodockoDir(), `${DB_NAME}-${createIdFromString(appOwner.id as string)}.db`);
 }
 
-/**
- * Does the local database belong to a different mnemonic?
- *
- * v7 answered this to decide whether to call `restoreAppOwner`, which wiped the
- * local database and re-synced under the new owner. v8 has no restore: the
- * owner is configuration. Without this check a switched mnemonic would leave
- * the old owner's rows in place, encrypted under a key the new owner does not
- * have — invisible, but still there and still counted.
- *
- * Returns false for a fresh database and for one v7 never wrote, so only a
- * genuine mismatch is reported.
- */
-function belongsToDifferentMnemonic(mnemonic: string): boolean {
-  const dbPath = getDbPath();
-  if (!existsSync(dbPath)) return false;
-
-  try {
-    const db = new Database(dbPath, { readonly: true });
-    try {
-      const tableExists = db
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='evolu_config'")
-        .get();
-      if (!tableExists) return false;
-
-      const config = db
-        .prepare("SELECT appOwnerMnemonic FROM evolu_config LIMIT 1")
-        .get() as { appOwnerMnemonic: string | null } | undefined;
-      const stored = config?.appOwnerMnemonic?.trim();
-      if (!stored) return false;
-
-      // Never log either value — both are private keys.
-      return stored !== mnemonic.trim();
-    } finally {
-      db.close();
-    }
-  } catch {
-    // A database we cannot read is not evidence of a mismatch.
-    return false;
-  }
-}
 
 /**
  * Ensure columns declared in Schema exist in the SQLite database.
  * Evolu's ensureSchema doesn't always add new columns to existing tables,
  * which causes loadQuery to hang silently when SELECTing missing columns.
  */
-function ensureMissingColumns(): void {
-  const dbPath = getDbPath();
+function ensureMissingColumns(appOwner: AppOwner): void {
+  const dbPath = getDbPath(appOwner);
   if (!existsSync(dbPath)) return;
 
   try {
@@ -937,18 +902,23 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
 
   const transports = RELAY_SERVERS.map(url => ({ type: "WebSocket" as const, url }));
 
+  // The owner comes first now: both helpers below need it to know which file
+  // v8 will actually open. (TODO-285)
+  const appOwnerForChecks = createAppOwner(mnemonicToOwnerSecret(mnemonicResult.value));
+
   // Ensure missing columns exist in DB before Evolu starts
   // Evolu's ensureSchema doesn't always add new columns to existing tables
-  ensureMissingColumns();
+  ensureMissingColumns(appOwnerForChecks);
 
-  if (belongsToDifferentMnemonic(mnemonic)) {
-    console.error(
-      "The local database at ~/.todocko belongs to a different mnemonic. " +
-        "v8 cannot re-own it the way v7's restoreAppOwner did. " +
-        "Delete ~/.todocko/todocko.db to start fresh — the relay still has the data.",
-    );
-    return null;
-  }
+  // There used to be a belongsToDifferentMnemonic() guard here. It was written
+  // for v7, where every mnemonic shared one database file and a switch would
+  // have left the previous owner's rows in place. v8 names the file after the
+  // owner, so a different mnemonic simply opens a different file and there is
+  // nothing to collide with - the check could only ever answer "no". It read
+  // `evolu_config.appOwnerMnemonic`, a column v8 does not create, so in
+  // practice it threw and its catch returned false on every boot. Removed
+  // rather than repaired: a guard that cannot fire is worse than none, because
+  // it reads like protection. (TODO-285)
 
   try {
     // v8 takes the AppOwner as configuration, so the mnemonic is turned into an
@@ -956,7 +926,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     // restoreAppOwner triggered a reloadApp, which meant creating the instance
     // without transports, racing the restore against a reload callback and a
     // 3s timeout, and then rebuilding it. None of that is needed now.
-    const appOwner = createAppOwner(mnemonicToOwnerSecret(mnemonicResult.value));
+    const appOwner = appOwnerForChecks;
     appOwnerForProcess = appOwner;
     projectAppOwnerForProcess = deriveProjectInstanceOwner(mnemonicResult.value);
 
@@ -968,8 +938,7 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     }));
 
     if (!created.ok) {
-      console.error("Failed to create Evolu instance");
-      return null;
+      return failInit("Failed to create Evolu instance");
     }
     // Local, non-null reference for the rest of setup. The module-level slot
     // is typed nullable, and every use below would otherwise need a `!`.
@@ -1047,6 +1016,21 @@ export function getEvolu(): EvoluInstance | null {
 }
 
 // --- Readiness tracking ---
+
+/**
+ * Fail initialisation loudly.
+ *
+ * Every `return null` here used to leave `evoluReadyPromise` pending forever:
+ * nothing rejected it, `main()` did not check the return value and printed
+ * "Evolu instance created", and the first tool call then awaited a promise that
+ * would never settle. The MCP client saw a server that had started and then
+ * answered nothing at all, with no error anywhere. (TODO-285)
+ */
+function failInit(message: string): null {
+  console.error(message);
+  if (evoluReadyReject) evoluReadyReject(new Error(message));
+  return null;
+}
 
 let evoluReadyResolve: (() => void) | null = null;
 let evoluReadyReject: ((err: Error) => void) | null = null;
@@ -1138,26 +1122,33 @@ export function decodeOwnerSecret(encoded: string): OwnerSecret {
  * Get or create a SharedOwner for a project
  */
 export function getSharedOwner(ownerId: string, ownerSecretBase64: string): SharedOwner {
-  let sharedOwner = sharedOwnersCache.get(ownerId);
+  // Derived every time, not only on a cache miss.
+  //
+  // The mismatch check below existed since TODO-206, but it sat inside the miss
+  // branch: after one successful call for an ownerId, any string at all passed
+  // as the secret, because the cached owner was returned without the argument
+  // being read. The check that exists to catch a wrong secret stopped looking
+  // at the secret. Deriving is cheap next to the query that follows.
+  // (TODO-285)
+  const ownerSecret = decodeOwnerSecret(ownerSecretBase64);
+  const sharedOwner = createSharedOwner(ownerSecret);
 
-  if (!sharedOwner) {
-    const ownerSecret = decodeOwnerSecret(ownerSecretBase64);
-    sharedOwner = createSharedOwner(ownerSecret);
-
-    // The owner id is derived from the secret, so a mismatch means the caller
-    // paired the wrong secret with this ownerId. Without this check the write
-    // silently lands in whichever partition the SECRET points at — either
-    // another project, or a phantom owner nobody can ever read back. Reads look
-    // equally plausible, so the caller never learns. (TODO-206)
-    if ((sharedOwner.id as string) !== ownerId) {
-      throw new Error(
-        `ownerSecret does not match sharedOwnerId (derived ${sharedOwner.id as string}, expected ${ownerId})`,
-      );
-    }
-
-    sharedOwnersCache.set(sharedOwner.id as string, sharedOwner);
+  // The owner id is derived from the secret, so a mismatch means the caller
+  // paired the wrong secret with this ownerId. Without this check the write
+  // silently lands in whichever partition the SECRET points at — either
+  // another project, or a phantom owner nobody can ever read back. Reads look
+  // equally plausible, so the caller never learns. (TODO-206)
+  if ((sharedOwner.id as string) !== ownerId) {
+    throw new Error(
+      `ownerSecret does not match sharedOwnerId (derived ${sharedOwner.id as string}, expected ${ownerId})`,
+    );
   }
 
+  // Kept so useOwner()/stopUsingSharedOwner() still see one object per owner:
+  // the reference identity matters to Evolu, the derivation does not.
+  const cached = sharedOwnersCache.get(ownerId);
+  if (cached) return cached;
+  sharedOwnersCache.set(ownerId, sharedOwner);
   return sharedOwner;
 }
 

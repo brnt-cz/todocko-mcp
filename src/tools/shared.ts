@@ -2583,6 +2583,7 @@ async function downloadSharedNoteAttachment(
         .selectFrom("noteAttachment")
         .select(["id", "filename", "mimeType", "data", "size"])
         .where("id", "=", args.id as NoteAttachmentId)
+        .where("ownerId", "=", sharedOwner.id as string)
         .where("isDeleted", "is not", SQLITE_TRUE)
         .limit(1)
     );
@@ -2766,6 +2767,9 @@ async function downloadSharedAttachment(
         .selectFrom("attachment")
         .select(["id", "filename", "mimeType", "data", "size"])
         .where("id", "=", args.id as AttachmentId)
+        // Scoped by owner in SQL: an id alone would read a row out of another
+        // project's partition, and the download returns its data. (TODO-285)
+        .where("ownerId", "=", sharedOwner.id as string)
         .where("isDeleted", "is not", SQLITE_TRUE)
         .limit(1)
     );
