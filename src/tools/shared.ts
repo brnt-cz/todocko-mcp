@@ -775,6 +775,99 @@ export const sharedTools: Tool[] = [
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
   },
+  {
+    name: "td_get_shared_task",
+    description: "Get one task in a shared project by ID or code, with its worklog total, checklist and comment counts. The shared counterpart of td_get_task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Task ID (either id or code is required)" },
+        code: { type: "string", description: "Task code, e.g. 'PROJ-12' (either id or code is required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
+  {
+    name: "td_list_shared_task_tags",
+    description: "List the tags on a task in a shared project. The shared counterpart of td_list_task_tags.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_bulk_update_shared_tasks",
+    description: "Update several tasks in a shared project at once. The shared counterpart of td_bulk_update_tasks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskIds: { type: "array", items: { type: "string" }, description: "Task IDs to update (required)" },
+        status: { type: "string", description: "New status for all of them", enum: ["backlog", "todo", "in_progress", "review", "done"] },
+        priority: { type: "string", description: "New priority for all of them", enum: ["low", "medium", "high", "urgent"] },
+        assigneeId: { type: "string", description: "Assignee user ID, or null to unassign" },
+        deploymentStageId: { type: "string", description: "Deployment stage ID, or null to clear" },
+        sprintNumber: { type: "number", description: "Sprint number, or null to clear" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskIds"],
+    },
+  },
+  {
+    name: "td_bulk_delete_shared_tasks",
+    description: "Soft-delete several tasks in a shared project at once, cascading their checklist items and comments. The shared counterpart of td_bulk_delete_tasks.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskIds: { type: "array", items: { type: "string" }, description: "Task IDs to delete (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskIds"],
+    },
+  },
+  {
+    name: "td_update_shared_worklog",
+    description: "Update a worklog in a shared project. The shared counterpart of td_update_worklog.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Worklog ID (required)" },
+        durationMinutes: { type: "number", description: "New duration in minutes" },
+        description: { type: "string", description: "New description, or null to clear" },
+        loggedAt: { type: "string", description: "New date the work was done (YYYY-MM-DD)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
+    name: "td_list_shared_activity_log",
+    description: "List activity log entries for a shared project. Read-only. The shared counterpart of td_list_activity_log.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Filter by task ID" },
+        actorId: { type: "string", description: "Filter by actor (user who made the change)" },
+        action: { type: "string", description: "Filter by action type (e.g., 'created', 'updated', 'deleted')" },
+        entityType: { type: "string", description: "Filter by entity type (e.g., 'task', 'comment', 'worklog')" },
+        from: { type: "string", description: "Only entries on/after this ISO date/datetime (inclusive)" },
+        to: { type: "string", description: "Only entries on/before this ISO date/datetime (inclusive)" },
+        limit: { type: "number", description: "Maximum results (default: 50)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret"],
+    },
+  },
 ];
 
 export async function handleSharedTool(
@@ -983,6 +1076,57 @@ export async function handleSharedTool(
         sharedOwnerId: string;
         ownerSecret: string;
         id: string;
+      });
+    case "td_get_shared_task":
+      return getSharedTask(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id?: string;
+        code?: string;
+      });
+    case "td_list_shared_task_tags":
+      return listSharedTaskTags(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        taskId: string;
+      });
+    case "td_bulk_update_shared_tasks":
+      return bulkUpdateSharedTasks(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        taskIds: string[];
+        status?: string;
+        priority?: string;
+        assigneeId?: string | null;
+        deploymentStageId?: string | null;
+        sprintNumber?: number | null;
+      });
+    case "td_bulk_delete_shared_tasks":
+      return bulkDeleteSharedTasks(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        taskIds: string[];
+      });
+    case "td_update_shared_worklog":
+      return updateSharedWorklog(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
+        durationMinutes?: number;
+        description?: string | null;
+        loggedAt?: string;
+      });
+    case "td_list_shared_activity_log":
+      return listSharedActivityLog(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        taskId?: string;
+        actorId?: string;
+        action?: string;
+        entityType?: string;
+        from?: string;
+        to?: string;
+        limit?: number;
       });
     default:
       return undefined;
@@ -2825,6 +2969,764 @@ async function deleteSharedAttachment(
     const result = projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared attachment deleted successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+// --- Parity with the personal tools (TODO-112) ---
+//
+// The shared side had list/create/update/delete for tasks but no single-task
+// read, no way to read a task's tags back, no bulk operations and no activity
+// log, all of which the personal side has had for months. The audit that found
+// this is in the TODO-112 worklog.
+
+async function getSharedTask(
+  args: { sharedOwnerId: string; ownerSecret: string; id?: string; code?: string }
+) {
+  if (!args.id && !args.code) {
+    throw new Error("Either id or code is required");
+  }
+
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const ownerId = sharedOwner.id as string;
+
+    // No joins: listSharedTasks gets away with them, but getTask on the
+    // personal side documents that loadQuery hangs on some of them, so the
+    // related rows are loaded separately below.
+    const query = projectEvolu.createQuery((db: any) => {
+      let q = db
+        .selectFrom("task")
+        .select([
+          "id",
+          "ownerId",
+          "title",
+          "name",
+          "description",
+          "status",
+          "priority",
+          "deadline",
+          "scheduledDate",
+          "isBlocked",
+          "blockedReason",
+          "estimate",
+          "completedAt",
+          "position",
+          "isOnProduction",
+          "deploymentStageId",
+          "sprintNumber",
+          "parentTaskId",
+          "projectId",
+          "assigneeId",
+          "recurrenceType",
+          "recurrenceInterval",
+          "recurrenceDay",
+          "recurrenceEndDate",
+        ])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        // Owner scoping in SQL, before the limit — see listSharedTasks.
+        .where("ownerId", "=", ownerId);
+
+      if (args.id) {
+        q = q.where("id", "=", args.id as TaskId);
+      } else {
+        q = q.where("title", "=", args.code as unknown as typeof NonEmptyTrimmedString100.Output);
+      }
+
+      return q.limit(1);
+    });
+
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter(
+      (t) => (t.ownerId as string) === ownerId
+    );
+    if (rows.length === 0) {
+      return { error: "Shared task not found" };
+    }
+    const t = rows[0];
+
+    const [projectRows, stageRows, worklogRows, checklistRows, commentRows] = await Promise.all([
+      t.projectId
+        ? projectEvolu.loadQuery(projectEvolu.createQuery((db: any) =>
+            db.selectFrom("project").select(["id", "ownerId", "name", "code", "color"])
+              .where("id", "=", t.projectId as ProjectId)
+              .where("isDeleted", "is not", SQLITE_TRUE)
+              .limit(1)))
+        : Promise.resolve([] as any[]),
+      t.deploymentStageId
+        ? projectEvolu.loadQuery(projectEvolu.createQuery((db: any) =>
+            db.selectFrom("deploymentStage").select(["id", "ownerId", "name", "color"])
+              .where("id", "=", t.deploymentStageId as DeploymentStageId)
+              .where("isDeleted", "is not", SQLITE_TRUE)
+              .limit(1)))
+        : Promise.resolve([] as any[]),
+      projectEvolu.loadQuery(projectEvolu.createQuery((db: any) =>
+        db.selectFrom("worklog").select(["ownerId", "durationMinutes"])
+          .where("taskId", "=", t.id)
+          .where("isDeleted", "is not", SQLITE_TRUE))),
+      projectEvolu.loadQuery(projectEvolu.createQuery((db: any) =>
+        db.selectFrom("checklistItem").select(["ownerId", "isChecked"])
+          .where("taskId", "=", t.id)
+          .where("isDeleted", "is not", SQLITE_TRUE))),
+      projectEvolu.loadQuery(projectEvolu.createQuery((db: any) =>
+        db.selectFrom("taskComment").select(["ownerId"])
+          .where("taskId", "=", t.id)
+          .where("isDeleted", "is not", SQLITE_TRUE))),
+    ]);
+
+    const mine = (rs: any[]) => rs.filter((r) => (r.ownerId as string) === ownerId);
+    const worklogs = mine(worklogRows as any[]);
+    const checklist = mine(checklistRows as any[]);
+    const project = mine(projectRows as any[])[0];
+    const stage = mine(stageRows as any[])[0];
+
+    return {
+      id: t.id,
+      code: t.title,
+      name: t.name,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      deadline: t.deadline,
+      scheduledDate: t.scheduledDate,
+      isBlocked: t.isBlocked === SQLITE_TRUE,
+      blockedReason: t.blockedReason,
+      estimate: t.estimate,
+      totalLoggedMinutes: worklogs.reduce((sum: number, w: any) => sum + (w.durationMinutes || 0), 0),
+      completedAt: t.completedAt,
+      isOnProduction: t.isOnProduction === SQLITE_TRUE,
+      sprintNumber: t.sprintNumber ?? null,
+      parentTaskId: t.parentTaskId ?? null,
+      assigneeId: t.assigneeId ?? null,
+      checklist: {
+        total: checklist.length,
+        checked: checklist.filter((c: any) => c.isChecked === SQLITE_TRUE).length,
+      },
+      commentCount: mine(commentRows as any[]).length,
+      recurrence: t.recurrenceType
+        ? {
+            type: t.recurrenceType,
+            interval: t.recurrenceInterval ?? 1,
+            day: t.recurrenceDay ?? null,
+            endDate: t.recurrenceEndDate ?? null,
+          }
+        : null,
+      deploymentStage: stage
+        ? { id: stage.id, name: stage.name, color: stage.color }
+        : null,
+      project: project
+        ? { id: project.id, name: project.name, code: project.code, color: project.color }
+        : null,
+      sharedOwnerId: ownerId,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedTaskTags(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const ownerId = sharedOwner.id as string;
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskTag")
+        .innerJoin("tag", "taskTag.tagId", "tag.id")
+        .select([
+          "taskTag.id as taskTagId",
+          "taskTag.ownerId as ownerId",
+          "tag.id as tagId",
+          "tag.name",
+          "tag.color",
+        ])
+        .where("taskTag.taskId", "=", args.taskId as TaskId)
+        .where("taskTag.isDeleted", "is not", SQLITE_TRUE)
+        .where("tag.isDeleted", "is not", SQLITE_TRUE)
+        .where("taskTag.ownerId", "=", ownerId)
+    );
+
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter(
+      (r) => (r.ownerId as string) === ownerId
+    );
+
+    return {
+      count: rows.length,
+      sharedOwnerId: ownerId,
+      tags: rows.map((t: any) => ({
+        taskTagId: t.taskTagId,
+        tagId: t.tagId,
+        name: t.name,
+        color: t.color,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function bulkUpdateSharedTasks(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    taskIds: string[];
+    status?: string;
+    priority?: string;
+    assigneeId?: string | null;
+    deploymentStageId?: string | null;
+    sprintNumber?: number | null;
+  }
+) {
+  if (!args.taskIds || args.taskIds.length === 0) {
+    throw new Error("taskIds array is required and must not be empty");
+  }
+
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const ownerId = sharedOwner.id as string;
+    const skipped: string[] = [];
+
+    // Build the changes first, apply them second. The waiter has to hang off a
+    // mutation that is really being made: attaching it to a synthetic update
+    // would insert a phantom row, because v8's update() writes with `on
+    // conflict do update` and an unknown id is an insert, not an error.
+    const pending: Record<string, unknown>[] = [];
+
+    for (const taskId of args.taskIds) {
+      try {
+        // The row has to exist and belong to this owner, for the same reason.
+        // Same guard as updateSharedTask (TODO-292).
+        const existing = ((await projectEvolu.loadQuery(projectEvolu.createQuery((db: any) =>
+          db.selectFrom("task").select(["id", "ownerId"])
+            .where("id", "=", taskId as TaskId)
+            .where("isDeleted", "is not", SQLITE_TRUE)
+            .where("ownerId", "=", ownerId)
+            .limit(1)))) as any[]).filter((r) => (r.ownerId as string) === ownerId);
+        if (existing.length === 0) {
+          skipped.push(taskId);
+          continue;
+        }
+
+        const updates: Record<string, unknown> = { id: taskId as TaskId };
+        if (args.status !== undefined) {
+          updates.status = args.status;
+          updates.completedAt = args.status === "done" ? new Date().toISOString() : null;
+        }
+        if (args.priority !== undefined) {
+          updates.priority = args.priority;
+        }
+        if (args.assigneeId !== undefined) {
+          updates.assigneeId = args.assigneeId ? (args.assigneeId as UserId) : null;
+        }
+        if (args.deploymentStageId !== undefined) {
+          updates.deploymentStageId = args.deploymentStageId
+            ? (args.deploymentStageId as DeploymentStageId)
+            : null;
+        }
+        if (args.sprintNumber !== undefined) {
+          updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
+        }
+
+        pending.push(updates);
+      } catch {
+        skipped.push(taskId);
+      }
+    }
+
+    let updatedCount = 0;
+    if (pending.length > 0) {
+      // One waiter for the batch, armed from every mutation. Arming only the
+      // last one would hang the batch if that one threw; onComplete resolves
+      // the same promise, so extra calls are harmless.
+      const waiter = createMutationWaiter();
+      for (const updates of pending) {
+        try {
+          projectEvolu.update(
+            "task",
+            updates as any,
+            { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+          );
+          updatedCount++;
+        } catch {
+          skipped.push(updates.id as string);
+        }
+      }
+      if (updatedCount > 0) {
+        await waiter.waitForSync();
+      }
+    }
+
+    return {
+      success: true,
+      updatedCount,
+      skippedCount: skipped.length,
+      skippedTaskIds: skipped,
+      sharedOwnerId: ownerId,
+      message: `Updated ${updatedCount} shared task(s)${skipped.length ? `, skipped ${skipped.length}` : ""}`,
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function bulkDeleteSharedTasks(
+  args: { sharedOwnerId: string; ownerSecret: string; taskIds: string[] }
+) {
+  if (!args.taskIds || args.taskIds.length === 0) {
+    throw new Error("taskIds array is required and must not be empty");
+  }
+
+  let deletedCount = 0;
+  const skipped: string[] = [];
+  let cascadedChecklistItems = 0;
+  let cascadedComments = 0;
+
+  // Reuses deleteSharedTask so the cascade stays in one place. It opens and
+  // closes the owner per task, which is slower than one shared window but
+  // keeps the two tools from drifting apart.
+  for (const id of args.taskIds) {
+    try {
+      const result = await deleteSharedTask({
+        sharedOwnerId: args.sharedOwnerId,
+        ownerSecret: args.ownerSecret,
+        id,
+      }) as { message?: string };
+      deletedCount++;
+      const m = /cascaded (\d+) checklist item\(s\), (\d+) comment\(s\)/.exec(result.message ?? "");
+      if (m) {
+        cascadedChecklistItems += Number(m[1]);
+        cascadedComments += Number(m[2]);
+      }
+    } catch {
+      skipped.push(id);
+    }
+  }
+
+  return {
+    success: true,
+    deletedCount,
+    skippedCount: skipped.length,
+    skippedTaskIds: skipped,
+    cascadedChecklistItems,
+    cascadedComments,
+    message: `Deleted ${deletedCount} shared task(s)${skipped.length ? `, skipped ${skipped.length}` : ""}`,
+  };
+}
+
+async function listSharedActivityLog(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    taskId?: string;
+    actorId?: string;
+    action?: string;
+    entityType?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  try {
+    const ownerId = sharedOwner.id as string;
+    const query = projectEvolu.createQuery((db: any) => {
+      let q = db
+        .selectFrom("activityLog")
+        .leftJoin("task", "activityLog.taskId", "task.id")
+        .select([
+          "activityLog.id",
+          "activityLog.ownerId as ownerId",
+          "activityLog.taskId",
+          "activityLog.actorId",
+          "activityLog.action",
+          "activityLog.entityType",
+          "activityLog.field",
+          "activityLog.oldValue",
+          "activityLog.newValue",
+          "activityLog.metadata",
+          "activityLog.createdAt",
+          "task.title as taskCode",
+          "task.name as taskName",
+        ])
+        .where("activityLog.isDeleted", "is not", SQLITE_TRUE)
+        // Owner scoping in SQL, before the limit — see listSharedTasks.
+        .where("activityLog.ownerId", "=", ownerId)
+        .orderBy("activityLog.createdAt", "desc");
+
+      if (args.taskId) {
+        q = q.where("activityLog.taskId", "=", args.taskId as TaskId);
+      }
+      if (args.actorId) {
+        q = q.where("activityLog.actorId", "=", args.actorId);
+      }
+      if (args.action) {
+        q = q.where("activityLog.action", "=", args.action);
+      }
+      if (args.entityType) {
+        q = q.where("activityLog.entityType", "=", args.entityType);
+      }
+      if (args.from) {
+        q = q.where("activityLog.createdAt", ">=", args.from);
+      }
+      if (args.to) {
+        q = q.where("activityLog.createdAt", "<=", args.to);
+      }
+
+      return q.limit(args.limit || 50);
+    });
+
+    const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter(
+      (e) => (e.ownerId as string) === ownerId
+    );
+
+    return {
+      count: rows.length,
+      sharedOwnerId: ownerId,
+      entries: rows.map((e: any) => ({
+        id: e.id,
+        taskId: e.taskId,
+        taskCode: e.taskCode,
+        taskName: e.taskName,
+        actorId: e.actorId,
+        action: e.action,
+        entityType: e.entityType,
+        field: e.field,
+        oldValue: e.oldValue,
+        newValue: e.newValue,
+        metadata: e.metadata,
+        createdAt: e.createdAt,
+      })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+// --- Reading every joined shared project at once (TODO-112) ---
+//
+// The analytics and search tools only ever saw the personal instance, so a
+// shared project's tasks were invisible to the dashboard, the workload split,
+// the overdue list and the search. They cannot take a sharedOwnerId the way
+// the tools above do - there is nothing project-shaped in "how much is
+// overdue" - so they need every joined project at once.
+//
+// The naive way is a useSharedOwner plus a one-second settle per project,
+// which for five projects is five seconds per call. All shared rows live in
+// one instance partitioned by ownerId, so instead every owner is opened first,
+// the settle is paid once, and one query covers them all.
+
+export interface SharedProjectMeta {
+  sharedOwnerId: string;
+  projectId: string;
+  name: string;
+  code: string | null;
+  color: string;
+  permission: string | null;
+  isOwner: boolean;
+}
+
+export interface SharedScope {
+  /** The shared instance. Rows for every joined project live here. */
+  projectEvolu: EvoluInstance;
+  /** Owner ids to scope queries to, in SQL, before any limit. */
+  ownerIds: string[];
+  /** Project metadata by shared owner id, from projectRef - no query needed. */
+  byOwnerId: Map<string, SharedProjectMeta>;
+}
+
+/**
+ * Run `fn` with every joined shared project readable at once.
+ *
+ * Returns `null` when there is nothing to read (no joined projects, or the
+ * shared instance is not up), so callers can skip the shared half without
+ * treating it as a failure.
+ */
+export async function withAllSharedOwners<T>(
+  evolu: EvoluInstance,
+  fn: (scope: SharedScope) => Promise<T>,
+  options: { includeArchived?: boolean } = {}
+): Promise<T | null> {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) return null;
+
+  const refsQuery = evolu.createQuery((db: any) => {
+    let q = db
+      .selectFrom("projectRef")
+      .select([
+        "projectId",
+        "ownerSecret",
+        "sharedOwnerId",
+        "name",
+        "code",
+        "color",
+        "permission",
+        "isOwner",
+        "isArchived",
+      ])
+      .where("isDeleted", "is not", SQLITE_TRUE);
+    if (!options.includeArchived) {
+      q = q.where("isArchived", "is not", SQLITE_TRUE);
+    }
+    return q;
+  });
+
+  const refs = ((await evolu.loadQuery(refsQuery)) as any[]).filter(
+    (r) => r.sharedOwnerId && r.ownerSecret
+  );
+  if (refs.length === 0) return null;
+
+  const opened: ReturnType<typeof getSharedOwner>[] = [];
+  const byOwnerId = new Map<string, SharedProjectMeta>();
+
+  try {
+    for (const r of refs) {
+      // A single unreadable ref must not take the whole call down: the others
+      // are still worth reporting.
+      try {
+        const owner = getSharedOwner(r.sharedOwnerId as string, r.ownerSecret as string);
+        useSharedOwner(owner);
+        opened.push(owner);
+        byOwnerId.set(owner.id as string, {
+          sharedOwnerId: owner.id as string,
+          projectId: r.projectId as string,
+          name: r.name as string,
+          code: (r.code as string) ?? null,
+          color: r.color as string,
+          permission: (r.permission as string) ?? null,
+          isOwner: r.isOwner === SQLITE_TRUE,
+        });
+      } catch {
+        continue;
+      }
+    }
+
+    if (opened.length === 0) return null;
+
+    // One settle for the whole set, not one per project.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    return await fn({
+      projectEvolu,
+      ownerIds: [...byOwnerId.keys()],
+      byOwnerId,
+    });
+  } finally {
+    for (const owner of opened) {
+      stopUsingSharedOwner(owner);
+    }
+  }
+}
+
+export interface SharedAnalyticsTask {
+  id: string;
+  code: string | null;
+  name: string | null;
+  status: string | null;
+  priority: string | null;
+  deadline: string | null;
+  scheduledDate: string | null;
+  completedAt: string | null;
+  estimate: number | null;
+  assigneeId: string | null;
+  isBlocked: boolean;
+  recurrenceType: string | null;
+  recurrenceInterval: number | null;
+  recurrenceDay: string | null;
+  recurrenceEndDate: string | null;
+  sharedOwnerId: string;
+  project: { id: string; name: string; code: string | null; color: string; isShared: true };
+}
+
+export interface SharedAnalyticsData {
+  tasks: SharedAnalyticsTask[];
+  worklogs: { taskId: string | null; userId: string | null; durationMinutes: number; loggedAt: string | null; sharedOwnerId: string }[];
+}
+
+/**
+ * Every task and worklog in every joined shared project, in one pass.
+ *
+ * The analytics tools each apply a different predicate to the same two tables.
+ * Pushing each predicate into its own shared query would mean re-opening the
+ * owners per tool; loading once and filtering in JS keeps it to a single
+ * settle. Returns `null` when there is nothing shared to read. (TODO-112)
+ */
+export async function loadSharedAnalyticsData(
+  evolu: EvoluInstance
+): Promise<SharedAnalyticsData | null> {
+  return withAllSharedOwners(evolu, async ({ projectEvolu, ownerIds, byOwnerId }) => {
+    const taskQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("task")
+        .select([
+          "id",
+          "ownerId",
+          "title",
+          "name",
+          "status",
+          "priority",
+          "deadline",
+          "scheduledDate",
+          "completedAt",
+          "estimate",
+          "assigneeId",
+          "isBlocked",
+          "recurrenceType",
+          "recurrenceInterval",
+          "recurrenceDay",
+          "recurrenceEndDate",
+        ])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "in", ownerIds)
+    );
+    const worklogQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("worklog")
+        // userId so the workload split can attribute shared logged time to a
+        // person. Without it the shared minutes could only be a total, which
+        // is the one thing a per-user breakdown cannot use.
+        .select(["ownerId", "taskId", "userId", "durationMinutes", "loggedAt"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "in", ownerIds)
+    );
+
+    const [taskRows, worklogRows] = await Promise.all([
+      projectEvolu.loadQuery(taskQuery),
+      projectEvolu.loadQuery(worklogQuery),
+    ]);
+
+    const tasks = (taskRows as any[])
+      .filter((t) => byOwnerId.has(t.ownerId as string))
+      .map((t) => {
+        const meta = byOwnerId.get(t.ownerId as string)!;
+        return {
+          id: t.id as string,
+          code: (t.title as string) ?? null,
+          name: (t.name as string) ?? null,
+          status: (t.status as string) ?? null,
+          priority: (t.priority as string) ?? null,
+          deadline: (t.deadline as string) ?? null,
+          scheduledDate: (t.scheduledDate as string) ?? null,
+          completedAt: (t.completedAt as string) ?? null,
+          estimate: (t.estimate as number) ?? null,
+          assigneeId: (t.assigneeId as string) ?? null,
+          isBlocked: t.isBlocked === SQLITE_TRUE,
+          recurrenceType: (t.recurrenceType as string) ?? null,
+          recurrenceInterval: (t.recurrenceInterval as number) ?? null,
+          recurrenceDay: (t.recurrenceDay as string) ?? null,
+          recurrenceEndDate: (t.recurrenceEndDate as string) ?? null,
+          sharedOwnerId: meta.sharedOwnerId,
+          project: {
+            id: meta.projectId,
+            name: meta.name,
+            code: meta.code,
+            color: meta.color,
+            isShared: true as const,
+          },
+        };
+      });
+
+    const worklogs = (worklogRows as any[])
+      .filter((w) => byOwnerId.has(w.ownerId as string))
+      .map((w) => ({
+        taskId: (w.taskId as string) ?? null,
+        userId: (w.userId as string) ?? null,
+        durationMinutes: (w.durationMinutes as number) ?? 0,
+        loggedAt: (w.loggedAt as string) ?? null,
+        sharedOwnerId: w.ownerId as string,
+      }));
+
+    return { tasks, worklogs };
+  });
+}
+
+/**
+ * The shared counterpart of td_update_worklog.
+ *
+ * The app has no shared-worklog edit path of its own (useSharedProjectDatabase
+ * creates and deletes only), so this fills a parity gap the app has too. It
+ * writes nothing the app cannot read: a corrected duration or date on a row
+ * that already exists. (TODO-112)
+ */
+async function updateSharedWorklog(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    id: string;
+    durationMinutes?: number;
+    description?: string | null;
+    loggedAt?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  // Settle first, then check. The other shared tools check before the settle,
+  // which risks reading the row before its owner's data is there and calling a
+  // real worklog missing.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Scoped by owner: an id from another project would otherwise be an insert.
+  await assertRowExists(projectEvolu, "worklog", args.id, "Worklog", sharedOwner.id as string);
+
+  try {
+    const updates: Record<string, unknown> = { id: args.id as WorklogId };
+
+    if (args.durationMinutes !== undefined) {
+      updates.durationMinutes = Int.orThrow(args.durationMinutes);
+    }
+    if (args.description !== undefined) {
+      updates.description = args.description
+        ? NonEmptyTrimmedString1000.orThrow(args.description)
+        : null;
+    }
+    if (args.loggedAt !== undefined) {
+      updates.loggedAt = EvoluString.orThrow(args.loggedAt);
+    }
+
+    const waiter = createMutationWaiter();
+    projectEvolu.update("worklog", updates as any, {
+      ownerId: sharedOwner.id,
+      onComplete: waiter.onComplete,
+    });
+    await waiter.waitForSync();
+
+    return { success: true, message: "Shared worklog updated successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }

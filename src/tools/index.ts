@@ -25,6 +25,7 @@ import { activityLogTools, handleActivityLogTool } from "./activityLog.js";
 import { projectNoteTools, handleProjectNoteTool } from "./projectNotes.js";
 import { projectDocTools, handleProjectDocTool } from "./projectDocs.js";
 import { systemNotificationTools, handleSystemNotificationTool } from "./systemNotifications.js";
+import { userMessageTools, handleUserMessageTool } from "./userMessages.js";
 import { analyticsTools, handleAnalyticsTool } from "./analytics.js";
 import { gitEventTools, handleGitEventTool } from "./gitEvents.js";
 
@@ -51,6 +52,7 @@ export const tools: Tool[] = [
   ...projectDocTools,
   ...sharedTools,
   ...systemNotificationTools,
+  ...userMessageTools,
   ...analyticsTools,
   ...gitEventTools,
   ...diagnosticTools,
@@ -79,6 +81,7 @@ const handlers: Array<(name: string, args: Record<string, unknown>, evolu: Evolu
   handleProjectDocTool,
   handleSharedTool,
   handleSystemNotificationTool,
+  (name, args, _evolu) => handleUserMessageTool(name, args),
   handleAnalyticsTool,
   (name, args, _evolu) => handleGitEventTool(name, args),
   (name, args, _evolu) => handleDiagnosticTool(name, args),

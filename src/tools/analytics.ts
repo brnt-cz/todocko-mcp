@@ -1,6 +1,10 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { SQLITE_TRUE, type EvoluInstance } from "../evolu.js";
 import { queryRows } from "./pure.js";
+import {
+  loadSharedAnalyticsData,
+  type SharedAnalyticsTask,
+} from "./shared.js";
 
 /**
  * Rows from `loadQuery`, loosened at the boundary.
@@ -17,10 +21,16 @@ export const analyticsTools: Tool[] = [
   {
     name: "td_get_dashboard_summary",
     description:
-      "Get a dashboard summary: tasks scheduled today, overdue tasks, this week's logged time, and upcoming deadlines. Useful for quick status reports.",
+      "Get a dashboard summary: tasks scheduled today, overdue tasks, this week's logged time, and upcoming deadlines. Covers joined shared projects too. Useful for quick status reports.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        includeShared: {
+          type: "boolean",
+          description:
+            "Include tasks from joined shared projects (default: true). Pass false to answer from personal data only, which is faster.",
+        },
+      },
     },
   },
   {
@@ -42,13 +52,18 @@ export const analyticsTools: Tool[] = [
           type: "number",
           description: "Working hours per day per user (default: 8)",
         },
+        includeShared: {
+          type: "boolean",
+          description:
+            "Include tasks from joined shared projects (default: true). Pass false to answer from personal data only, which is faster.",
+        },
       },
     },
   },
   {
     name: "td_list_recurring_tasks",
     description:
-      "List all tasks with recurring schedule configured. Shows recurrence type, interval, day, and next scheduled date.",
+      "List all tasks with recurring schedule configured, including tasks in joined shared projects. Shows recurrence type, interval, day, and next scheduled date.",
     inputSchema: {
       type: "object",
       properties: {
@@ -56,13 +71,18 @@ export const analyticsTools: Tool[] = [
           type: "string",
           description: "Filter by project ID (optional)",
         },
+        includeShared: {
+          type: "boolean",
+          description:
+            "Include tasks from joined shared projects (default: true). Pass false to answer from personal data only, which is faster.",
+        },
       },
     },
   },
   {
     name: "td_list_overdue_tasks",
     description:
-      "List all tasks that are past their deadline and not yet completed. Sorted by deadline ascending (most overdue first).",
+      "List all tasks that are past their deadline and not yet completed, including tasks in joined shared projects. Sorted by deadline ascending (most overdue first).",
     inputSchema: {
       type: "object",
       properties: {
@@ -74,13 +94,18 @@ export const analyticsTools: Tool[] = [
           type: "string",
           description: "Filter by assignee user ID (optional)",
         },
+        includeShared: {
+          type: "boolean",
+          description:
+            "Include tasks from joined shared projects (default: true). Pass false to answer from personal data only, which is faster.",
+        },
       },
     },
   },
   {
     name: "td_list_tasks_by_date_range",
     description:
-      "List tasks filtered by scheduledDate or deadline within a date range. Useful for calendar/planning queries.",
+      "List tasks filtered by scheduledDate or deadline within a date range, including tasks in joined shared projects. Useful for calendar/planning queries.",
     inputSchema: {
       type: "object",
       properties: {
@@ -101,6 +126,11 @@ export const analyticsTools: Tool[] = [
           type: "string",
           enum: ["backlog", "todo", "in_progress", "review", "done"],
           description: "Filter by status (optional)",
+        },
+        includeShared: {
+          type: "boolean",
+          description:
+            "Include tasks from joined shared projects (default: true). Pass false to answer from personal data only, which is faster.",
         },
       },
       required: ["startDate", "endDate"],
@@ -129,19 +159,24 @@ export async function handleAnalyticsTool(
 ): Promise<unknown> {
   switch (name) {
     case "td_get_dashboard_summary":
-      return getDashboardSummary(evolu);
+      return getDashboardSummary(evolu, args as { includeShared?: boolean });
     case "td_get_team_workload":
       return getTeamWorkload(evolu, args as {
         startDate?: string;
         endDate?: string;
         capacityHoursPerDay?: number;
+        includeShared?: boolean;
       });
     case "td_list_recurring_tasks":
-      return listRecurringTasks(evolu, args as { projectId?: string });
+      return listRecurringTasks(evolu, args as {
+        projectId?: string;
+        includeShared?: boolean;
+      });
     case "td_list_overdue_tasks":
       return listOverdueTasks(evolu, args as {
         projectId?: string;
         assigneeId?: string;
+        includeShared?: boolean;
       });
     case "td_list_tasks_by_date_range":
       return listTasksByDateRange(evolu, args as {
@@ -149,6 +184,7 @@ export async function handleAnalyticsTool(
         endDate: string;
         dateField?: string;
         status?: string;
+        includeShared?: boolean;
       });
     case "td_analyze_dependencies":
       return analyzeDependencies(evolu, args as { projectId?: string });
@@ -197,9 +233,55 @@ function formatMinutes(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+// --- Shared project helpers ---
+
+/**
+ * Joined shared projects, or null when the caller opted out.
+ *
+ * Opening the shared owners costs a settle, so every tool below calls this
+ * exactly once and applies its own predicate to the result in JS. (TODO-112)
+ */
+async function loadShared(
+  evolu: EvoluInstance,
+  includeShared: boolean | undefined
+) {
+  if (includeShared === false) return null;
+  return loadSharedAnalyticsData(evolu);
+}
+
+/**
+ * `status != "done"` in SQLite drops rows whose status is NULL, because the
+ * comparison yields NULL rather than true. A plain `!==` in JS would keep
+ * them, so the shared half would list tasks the personal half hides.
+ */
+function isNotDone(status: string | null): boolean {
+  return status !== null && status !== "done";
+}
+
+/** The personal queries all drop rows without an id and a code (`task.title`). */
+function hasCode(t: SharedAnalyticsTask): boolean {
+  return Boolean(t.id && t.code);
+}
+
+function compareText(a: string | null, b: string | null): number {
+  const left = a ?? "";
+  const right = b ?? "";
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function byDeadlineAsc(
+  a: { deadline: string | null },
+  b: { deadline: string | null }
+): number {
+  return compareText(a.deadline, b.deadline);
+}
+
 // --- Tool implementations ---
 
-async function getDashboardSummary(evolu: EvoluInstance) {
+async function getDashboardSummary(
+  evolu: EvoluInstance,
+  args: { includeShared?: boolean }
+) {
   const today = getToday();
   const week = getWeekBounds();
 
@@ -282,12 +364,13 @@ async function getDashboardSummary(evolu: EvoluInstance) {
       .limit(5)
   );
 
-  const [todayResult, overdueResult, worklogResult, deadlineResult] =
+  const [todayResult, overdueResult, worklogResult, deadlineResult, shared] =
     await Promise.all([
       evolu.loadQuery(todayQuery),
       evolu.loadQuery(overdueQuery),
       evolu.loadQuery(worklogQuery),
       evolu.loadQuery(deadlineQuery),
+      loadShared(evolu, args.includeShared),
     ]);
 
   // v8 `loadQuery` resolves to the rows themselves; v7 wrapped them in
@@ -307,43 +390,118 @@ async function getDashboardSummary(evolu: EvoluInstance) {
     (r: any) => r.id && r.title && r.deadline
   );
 
-  const weekTotalMinutes = worklogs.reduce(
-    (sum: number, w: any) => sum + (w.durationMinutes || 0),
-    0
+  const sharedTasks = shared?.tasks ?? [];
+
+  const sharedTodayTasks = sharedTasks
+    .filter(
+      (t) =>
+        hasCode(t) &&
+        isNotDone(t.status) &&
+        (t.scheduledDate === today || t.deadline === today)
+    )
+    .sort((a, b) => compareText(b.priority, a.priority));
+
+  const sharedOverdueTasks = sharedTasks
+    .filter(
+      (t) =>
+        hasCode(t) &&
+        isNotDone(t.status) &&
+        t.deadline !== null &&
+        t.deadline < today
+    )
+    .sort(byDeadlineAsc);
+
+  const sharedWeekWorklogs = (shared?.worklogs ?? []).filter(
+    (w) =>
+      w.durationMinutes &&
+      w.loggedAt !== null &&
+      w.loggedAt >= week.start &&
+      w.loggedAt <= week.end
   );
 
-  return {
-    today: getToday(),
-    tasksToday: todayTasks.length,
-    tasksTodayList: todayTasks.map((t: any) => ({
-      id: t.id,
-      code: t.title,
-      name: t.name,
-      status: t.status,
-      priority: t.priority,
-      project: t.projectName,
-    })),
-    overdueCount: overdueTasks.length,
-    overdueList: overdueTasks.map((t: any) => ({
+  const weekTotalMinutes =
+    worklogs.reduce((sum: number, w: any) => sum + (w.durationMinutes || 0), 0) +
+    sharedWeekWorklogs.reduce((sum, w) => sum + w.durationMinutes, 0);
+
+  // The personal query takes the five nearest deadlines, so the five nearest
+  // overall are always inside the union of both sides' top five.
+  const sharedUpcoming = sharedTasks
+    .filter(
+      (t) =>
+        hasCode(t) &&
+        isNotDone(t.status) &&
+        t.deadline !== null &&
+        t.deadline >= today
+    )
+    .sort(byDeadlineAsc)
+    .slice(0, 5);
+
+  const upcomingList = [
+    ...upcomingDeadlines.map((t: any) => ({
       id: t.id,
       code: t.title,
       name: t.name,
       deadline: t.deadline,
+      status: t.status,
       project: t.projectName,
     })),
+    ...sharedUpcoming.map((t) => ({
+      id: t.id,
+      code: t.code,
+      name: t.name,
+      deadline: t.deadline,
+      status: t.status,
+      project: t.project,
+    })),
+  ]
+    .sort(byDeadlineAsc)
+    .slice(0, 5);
+
+  return {
+    today: getToday(),
+    sharedIncluded: shared !== null,
+    tasksToday: todayTasks.length + sharedTodayTasks.length,
+    tasksTodayList: [
+      ...todayTasks.map((t: any) => ({
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        project: t.projectName,
+      })),
+      ...sharedTodayTasks.map((t) => ({
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        project: t.project,
+      })),
+    ],
+    overdueCount: overdueTasks.length + sharedOverdueTasks.length,
+    overdueList: [
+      ...overdueTasks.map((t: any) => ({
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        deadline: t.deadline,
+        project: t.projectName,
+      })),
+      ...sharedOverdueTasks.map((t) => ({
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        deadline: t.deadline,
+        project: t.project,
+      })),
+    ],
     weekWorklog: {
       totalMinutes: weekTotalMinutes,
       formatted: formatMinutes(weekTotalMinutes),
       period: `${week.start} — ${week.end}`,
     },
-    upcomingDeadlines: upcomingDeadlines.map((t: any) => ({
-      id: t.id,
-      code: t.title,
-      name: t.name,
-      deadline: t.deadline,
-      status: t.status,
-      project: t.projectName,
-    })),
+    upcomingDeadlines: upcomingList,
   };
 }
 
@@ -353,6 +511,7 @@ async function getTeamWorkload(
     startDate?: string;
     endDate?: string;
     capacityHoursPerDay?: number;
+    includeShared?: boolean;
   }
 ) {
   const week = getWeekBounds();
@@ -395,10 +554,11 @@ async function getTeamWorkload(
       .where("task.estimate", "is not", null)
   );
 
-  const [userResult, worklogResult, taskResult] = await Promise.all([
+  const [userResult, worklogResult, taskResult, shared] = await Promise.all([
     evolu.loadQuery(userQuery),
     evolu.loadQuery(worklogQuery),
     evolu.loadQuery(taskQuery),
+    loadShared(evolu, args.includeShared),
   ]);
 
   const users = rowsOf(userResult).filter((r: any) => r.id && r.name);
@@ -412,11 +572,23 @@ async function getTeamWorkload(
   const workingDays = countWorkingDays(startDate, endDate);
   const capacityMinutes = capacityHoursPerDay * 60 * workingDays;
 
-  // Aggregate logged time per user
   const loggedByUser = new Map<string, number>();
   for (const w of worklogs) {
     const uid = w.userId || "unassigned";
     loggedByUser.set(uid, (loggedByUser.get(uid) ?? 0) + (w.durationMinutes || 0));
+  }
+
+  // Same predicate as the worklog query above, applied to the shared projects:
+  // a truthy duration and loggedAt inside the period. Utilization is computed
+  // from logged time, so leaving the shared minutes out did not just omit
+  // them, it understated everyone who works in a shared project. (TODO-112)
+  const sharedLoggedByUser = new Map<string, number>();
+  for (const w of shared?.worklogs ?? []) {
+    if (!w.durationMinutes) continue;
+    if (!w.loggedAt || w.loggedAt < startDate || w.loggedAt > endDate) continue;
+    const uid = w.userId || "unassigned";
+    sharedLoggedByUser.set(uid, (sharedLoggedByUser.get(uid) ?? 0) + w.durationMinutes);
+    loggedByUser.set(uid, (loggedByUser.get(uid) ?? 0) + w.durationMinutes);
   }
 
   // Aggregate estimates per user
@@ -428,9 +600,27 @@ async function getTeamWorkload(
     );
   }
 
-  const userWorkloads = users.map((u: any) => {
-    const logged = loggedByUser.get(u.id) ?? 0;
-    const estimated = estimateByUser.get(u.id) ?? 0;
+  // Same predicate as the task query above, applied to the shared projects.
+  const sharedEstimateByUser = new Map<string, number>();
+  for (const t of shared?.tasks ?? []) {
+    if (!isNotDone(t.status) || !t.assigneeId || !t.estimate) continue;
+    sharedEstimateByUser.set(
+      t.assigneeId,
+      (sharedEstimateByUser.get(t.assigneeId) ?? 0) + t.estimate
+    );
+    estimateByUser.set(
+      t.assigneeId,
+      (estimateByUser.get(t.assigneeId) ?? 0) + t.estimate
+    );
+  }
+
+  const buildWorkload = (
+    userId: string,
+    userName: string | null,
+    isSharedOnly: boolean
+  ) => {
+    const logged = loggedByUser.get(userId) ?? 0;
+    const estimated = estimateByUser.get(userId) ?? 0;
     const utilization =
       capacityMinutes > 0
         ? Math.round((logged / capacityMinutes) * 100)
@@ -441,8 +631,8 @@ async function getTeamWorkload(
     else if (utilization >= 80) status = "warning";
 
     return {
-      userId: u.id,
-      userName: u.name,
+      userId,
+      userName,
       loggedMinutes: logged,
       loggedFormatted: formatMinutes(logged),
       estimateMinutes: estimated,
@@ -451,8 +641,27 @@ async function getTeamWorkload(
       capacityFormatted: formatMinutes(capacityMinutes),
       utilizationPercent: utilization,
       status,
+      sharedEstimateMinutes: sharedEstimateByUser.get(userId) ?? 0,
+      sharedLoggedMinutes: sharedLoggedByUser.get(userId) ?? 0,
+      isSharedOnly,
     };
-  });
+  };
+
+  const userWorkloads = users.map((u: any) =>
+    buildWorkload(u.id, u.name, false)
+  );
+
+  // An assignee of a shared task need not exist in the personal `user` table,
+  // so there is no name to show. Dropping the row would hide the estimate.
+  const knownUserIds = new Set(users.map((u: any) => u.id as string));
+  const sharedOnlyIds = new Set<string>([
+    ...sharedEstimateByUser.keys(),
+    ...sharedLoggedByUser.keys(),
+  ]);
+  for (const userId of sharedOnlyIds) {
+    if (knownUserIds.has(userId)) continue;
+    userWorkloads.push(buildWorkload(userId, null, true));
+  }
 
   // Sort by utilization descending
   userWorkloads.sort(
@@ -471,6 +680,7 @@ async function getTeamWorkload(
 
   return {
     period: { startDate, endDate },
+    sharedIncluded: shared !== null,
     workingDays,
     capacityHoursPerDay,
     users: userWorkloads,
@@ -487,7 +697,7 @@ async function getTeamWorkload(
 
 async function listRecurringTasks(
   evolu: EvoluInstance,
-  args: { projectId?: string }
+  args: { projectId?: string; includeShared?: boolean }
 ) {
   const query = evolu.createQuery((db: any) => {
     let q = db
@@ -518,32 +728,64 @@ async function listRecurringTasks(
     return q.orderBy("task.scheduledDate", "asc");
   });
 
-  const result = await evolu.loadQuery(query);
+  const [result, shared] = await Promise.all([
+    evolu.loadQuery(query),
+    loadShared(evolu, args.includeShared),
+  ]);
   const tasks = queryRows<any>(result).filter((r: any) => r.id && r.title);
 
+  const sharedTasks = (shared?.tasks ?? [])
+    .filter(
+      (t) =>
+        hasCode(t) &&
+        t.recurrenceType !== null &&
+        t.recurrenceType !== "none" &&
+        (!args.projectId || t.project.id === args.projectId)
+    )
+    .sort((a, b) => compareText(a.scheduledDate, b.scheduledDate));
+
   return {
-    count: tasks.length,
-    tasks: tasks.map((t: any) => ({
-      id: t.id,
-      code: t.title,
-      name: t.name,
-      status: t.status,
-      scheduledDate: t.scheduledDate,
-      recurrence: {
-        type: t.recurrenceType,
-        interval: t.recurrenceInterval,
-        day: t.recurrenceDay,
-        endDate: t.recurrenceEndDate,
-      },
-      project: t.projectName,
-      assignee: t.assigneeName,
-    })),
+    count: tasks.length + sharedTasks.length,
+    sharedIncluded: shared !== null,
+    tasks: [
+      ...tasks.map((t: any) => ({
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        status: t.status,
+        scheduledDate: t.scheduledDate,
+        recurrence: {
+          type: t.recurrenceType,
+          interval: t.recurrenceInterval,
+          day: t.recurrenceDay,
+          endDate: t.recurrenceEndDate,
+        },
+        project: t.projectName,
+        assignee: t.assigneeName,
+      })),
+      ...sharedTasks.map((t) => ({
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        status: t.status,
+        scheduledDate: t.scheduledDate,
+        recurrence: {
+          type: t.recurrenceType,
+          interval: t.recurrenceInterval,
+          day: t.recurrenceDay,
+          endDate: t.recurrenceEndDate,
+        },
+        project: t.project,
+        assignee: null,
+        assigneeId: t.assigneeId,
+      })),
+    ],
   };
 }
 
 async function listOverdueTasks(
   evolu: EvoluInstance,
-  args: { projectId?: string; assigneeId?: string }
+  args: { projectId?: string; assigneeId?: string; includeShared?: boolean }
 ) {
   const today = getToday();
 
@@ -578,32 +820,63 @@ async function listOverdueTasks(
     return q.orderBy("task.deadline", "asc");
   });
 
-  const result = await evolu.loadQuery(query);
+  const [result, shared] = await Promise.all([
+    evolu.loadQuery(query),
+    loadShared(evolu, args.includeShared),
+  ]);
   const tasks = queryRows<any>(result).filter((r: any) => r.id && r.title);
 
-  return {
-    count: tasks.length,
-    today,
-    tasks: tasks.map((t: any) => {
-      const deadlineDate = new Date(t.deadline);
-      const todayDate = new Date(today);
-      const daysOverdue = Math.floor(
-        (todayDate.getTime() - deadlineDate.getTime()) / (1000 * 60 * 60 * 24)
-      );
+  const sharedTasks = (shared?.tasks ?? [])
+    .filter(
+      (t) =>
+        hasCode(t) &&
+        isNotDone(t.status) &&
+        t.deadline !== null &&
+        t.deadline < today &&
+        (!args.projectId || t.project.id === args.projectId) &&
+        (!args.assigneeId || t.assigneeId === args.assigneeId)
+    )
+    .sort(byDeadlineAsc);
 
-      return {
+  const daysOverdueOf = (deadline: string) => {
+    const deadlineDate = new Date(deadline);
+    const todayDate = new Date(today);
+    return Math.floor(
+      (todayDate.getTime() - deadlineDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+  };
+
+  return {
+    count: tasks.length + sharedTasks.length,
+    today,
+    sharedIncluded: shared !== null,
+    tasks: [
+      ...tasks.map((t: any) => ({
         id: t.id,
         code: t.title,
         name: t.name,
         status: t.status,
         priority: t.priority,
         deadline: t.deadline,
-        daysOverdue,
+        daysOverdue: daysOverdueOf(t.deadline),
         estimate: t.estimate ? formatMinutes(t.estimate) : null,
         project: t.projectName,
         assignee: t.assigneeName,
-      };
-    }),
+      })),
+      ...sharedTasks.map((t) => ({
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        deadline: t.deadline,
+        daysOverdue: daysOverdueOf(t.deadline!),
+        estimate: t.estimate ? formatMinutes(t.estimate) : null,
+        project: t.project,
+        assignee: null,
+        assigneeId: t.assigneeId,
+      })),
+    ],
   };
 }
 
@@ -614,6 +887,7 @@ async function listTasksByDateRange(
     endDate: string;
     dateField?: string;
     status?: string;
+    includeShared?: boolean;
   }
 ) {
   const field = args.dateField === "deadline" ? "task.deadline" : "task.scheduledDate";
@@ -647,28 +921,68 @@ async function listTasksByDateRange(
     return q.orderBy(field, "asc");
   });
 
-  const result = await evolu.loadQuery(query);
+  const [result, shared] = await Promise.all([
+    evolu.loadQuery(query),
+    loadShared(evolu, args.includeShared),
+  ]);
   const tasks = queryRows<any>(result).filter((r: any) => r.id && r.title);
 
+  const dateOf = (t: SharedAnalyticsTask) =>
+    args.dateField === "deadline" ? t.deadline : t.scheduledDate;
+
+  const sharedTasks = (shared?.tasks ?? [])
+    .filter((t) => {
+      const value = dateOf(t);
+      return (
+        hasCode(t) &&
+        value !== null &&
+        value >= args.startDate &&
+        value <= args.endDate &&
+        (!args.status || t.status === args.status)
+      );
+    })
+    .sort((a, b) => compareText(dateOf(a), dateOf(b)));
+
   return {
-    count: tasks.length,
+    count: tasks.length + sharedTasks.length,
     dateField: args.dateField || "scheduledDate",
     period: { startDate: args.startDate, endDate: args.endDate },
-    tasks: tasks.map((t: any) => ({
-      id: t.id,
-      code: t.title,
-      name: t.name,
-      status: t.status,
-      priority: t.priority,
-      scheduledDate: t.scheduledDate,
-      deadline: t.deadline,
-      estimate: t.estimate ? formatMinutes(t.estimate) : null,
-      project: t.projectName,
-      assignee: t.assigneeName,
-    })),
+    sharedIncluded: shared !== null,
+    tasks: [
+      ...tasks.map((t: any) => ({
+        id: t.id,
+        code: t.title,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        scheduledDate: t.scheduledDate,
+        deadline: t.deadline,
+        estimate: t.estimate ? formatMinutes(t.estimate) : null,
+        project: t.projectName,
+        assignee: t.assigneeName,
+      })),
+      ...sharedTasks.map((t) => ({
+        id: t.id,
+        code: t.code,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        scheduledDate: t.scheduledDate,
+        deadline: t.deadline,
+        estimate: t.estimate ? formatMinutes(t.estimate) : null,
+        project: t.project,
+        assignee: null,
+        assigneeId: t.assigneeId,
+      })),
+    ],
   };
 }
 
+/**
+ * Personal-only on purpose. The app reads shared `taskLink` rows but never
+ * writes any: every `insert("taskLink")` goes through `useDatabase.ts` on the
+ * personal instance, so a shared project has no links to analyse. (TODO-112)
+ */
 async function analyzeDependencies(
   evolu: EvoluInstance,
   args: { projectId?: string }
