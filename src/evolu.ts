@@ -460,6 +460,20 @@ export const ProjectSchema = {
     data: nullOr(String), // Base64 encoded content
     size: Int,
   },
+  // Checklist items (subtasks of a shared task).
+  //
+  // Same omission as activityLog below: four td_*_shared_checklist_item tools
+  // have been querying this table since MCP VI and `as any` hid that the
+  // shared instance had never declared it, so every call hit "no such table"
+  // and every checklist message the app sent went to quarantine. Shape copied
+  // from the app's projectSchema.ts. (TODO-112)
+  checklistItem: {
+    id: ChecklistItemId,
+    taskId: TaskId,
+    title: NonEmptyTrimmedString1000,
+    isChecked: nullOr(SqliteBoolean),
+    position: Int,
+  },
   // Task comments (rich text discussion, per shared task)
   taskComment: {
     id: TaskCommentId,

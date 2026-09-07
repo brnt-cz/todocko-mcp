@@ -275,11 +275,18 @@ async function updateProject(
 }
 
 async function deleteProject(evolu: EvoluInstance, args: { id: string }) {
+  // `deletedAt` is what puts the row in the app's Trash: useTrash.ts filters on
+  // it (`isInTrashWindow(p.deletedAt)`) and restoreProject clears it. Setting
+  // only `isDeleted` hid the project from every list with no way back — the
+  // same defect fixed for tasks in v1.2.3, which left projects behind.
+  // Matches the app's useDatabase.deleteProject, which does not cascade.
+  // (TODO-112)
   const waiter = createMutationWaiter();
   assertMutation("deleteProject",
     evolu.update("project", {
       id: args.id as ProjectId,
       isDeleted: SQLITE_TRUE,
+      deletedAt: new Date().toISOString(),
     } as any, { onComplete: waiter.onComplete })
   );
 
