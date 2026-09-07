@@ -4,6 +4,7 @@ import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type
 import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
+import { withAllSharedOwners } from "./shared.js";
 
 export const taskTools: Tool[] = [
   {
@@ -238,7 +239,7 @@ export const taskTools: Tool[] = [
   },
   {
     name: "td_search_tasks",
-    description: "Search tasks by code, name, or description",
+    description: "Search tasks by code, name, or description. Covers shared projects as well as personal ones.",
     inputSchema: {
       type: "object",
       properties: {
@@ -249,6 +250,10 @@ export const taskTools: Tool[] = [
         limit: {
           type: "number",
           description: "Maximum results (default: 20)",
+        },
+        includeShared: {
+          type: "boolean",
+          description: "Search joined shared projects too (default: true). Set false to skip them and answer faster.",
         },
       },
       required: ["query"],
@@ -381,7 +386,7 @@ export async function handleTaskTool(
         isDeleted?: boolean;
       });
     case "td_search_tasks":
-      return searchTasks(evolu, args as { query: string; limit?: number });
+      return searchTasks(evolu, args as { query: string; limit?: number; includeShared?: boolean });
     case "td_bulk_update_tasks":
       return bulkUpdateTasks(evolu, args as {
         taskIds: string[];
@@ -1006,10 +1011,14 @@ async function updateTask(
 
 async function searchTasks(
   evolu: EvoluInstance,
-  args: { query: string; limit?: number }
+  args: { query: string; limit?: number; includeShared?: boolean }
 ) {
   const searchQuery = args.query.toLowerCase();
   const limit = args.limit || 20;
+  const matches = (t: any) =>
+    (t.title || "").toLowerCase().includes(searchQuery) ||
+    (t.name || "").toLowerCase().includes(searchQuery) ||
+    (t.description || "").toLowerCase().includes(searchQuery);
 
   // Query tasks without LEFT JOINs (Evolu loadQuery hangs with joins)
   const query = evolu.createQuery((db: any) =>
@@ -1029,18 +1038,43 @@ async function searchTasks(
 
   const allTasks = await safeLoadQuery(evolu,query);
 
-  const filtered = allTasks.filter((t: any) => {
-    const title = (t.title || "").toLowerCase();
-    const name = (t.name || "").toLowerCase();
-    const description = (t.description || "").toLowerCase();
-    return (
-      title.includes(searchQuery) ||
-      name.includes(searchQuery) ||
-      description.includes(searchQuery)
-    );
-  });
+  const filtered = allTasks.filter(matches);
 
+  // Shared projects were invisible here: the search read only the personal
+  // instance, so a task in a joined project could not be found by any query.
+  // (TODO-112)
+  const sharedMatches = args.includeShared === false
+    ? null
+    : await withAllSharedOwners(evolu, async ({ projectEvolu, ownerIds, byOwnerId }) => {
+        const q = projectEvolu.createQuery((db: any) =>
+          db
+            .selectFrom("task")
+            .select(["id", "ownerId", "title", "name", "description", "status", "priority", "projectId"])
+            .where("isDeleted", "is not", SQLITE_TRUE)
+            .where("ownerId", "in", ownerIds)
+        );
+        const rows = ((await projectEvolu.loadQuery(q)) as any[]).filter(
+          (t) => byOwnerId.has(t.ownerId as string)
+        );
+        return rows.filter(matches).map((t) => {
+          const meta = byOwnerId.get(t.ownerId as string)!;
+          return {
+            id: t.id,
+            code: t.title,
+            name: t.name,
+            status: t.status,
+            priority: t.priority,
+            sharedOwnerId: meta.sharedOwnerId,
+            project: { id: meta.projectId, name: meta.name, code: meta.code, color: meta.color, isShared: true },
+          };
+        });
+      });
+
+  const shared = sharedMatches ?? [];
+  // The personal half fills the limit first, so a shared result is only
+  // dropped when there were already `limit` personal matches.
   const limited = filtered.slice(0, limit);
+  const sharedLimited = shared.slice(0, Math.max(0, limit - limited.length));
 
   // Enrich with project data
   const projectIds = new Set<string>();
@@ -1050,21 +1084,25 @@ async function searchTasks(
   const projectsMap = await loadProjectsMap(evolu, projectIds);
 
   return {
-    count: limited.length,
-    totalMatches: filtered.length,
-    tasks: limited.map((t: any) => {
-      const project = projectsMap.get(t.projectId);
-      return {
-        id: t.id,
-        code: t.title,
-        name: t.name,
-        status: t.status,
-        priority: t.priority,
-        project: project
-          ? { id: t.projectId, name: project.name, code: project.code, color: project.color }
-          : null,
-      };
-    }),
+    count: limited.length + sharedLimited.length,
+    totalMatches: filtered.length + shared.length,
+    sharedSearched: sharedMatches !== null,
+    tasks: [
+      ...limited.map((t: any) => {
+        const project = projectsMap.get(t.projectId);
+        return {
+          id: t.id,
+          code: t.title,
+          name: t.name,
+          status: t.status,
+          priority: t.priority,
+          project: project
+            ? { id: t.projectId, name: project.name, code: project.code, color: project.color }
+            : null,
+        };
+      }),
+      ...sharedLimited,
+    ],
   };
 }
 

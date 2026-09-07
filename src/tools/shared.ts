@@ -3409,3 +3409,236 @@ async function listSharedActivityLog(
     stopUsingSharedOwner(sharedOwner);
   }
 }
+
+// --- Reading every joined shared project at once (TODO-112) ---
+//
+// The analytics and search tools only ever saw the personal instance, so a
+// shared project's tasks were invisible to the dashboard, the workload split,
+// the overdue list and the search. They cannot take a sharedOwnerId the way
+// the tools above do - there is nothing project-shaped in "how much is
+// overdue" - so they need every joined project at once.
+//
+// The naive way is a useSharedOwner plus a one-second settle per project,
+// which for five projects is five seconds per call. All shared rows live in
+// one instance partitioned by ownerId, so instead every owner is opened first,
+// the settle is paid once, and one query covers them all.
+
+export interface SharedProjectMeta {
+  sharedOwnerId: string;
+  projectId: string;
+  name: string;
+  code: string | null;
+  color: string;
+  permission: string | null;
+  isOwner: boolean;
+}
+
+export interface SharedScope {
+  /** The shared instance. Rows for every joined project live here. */
+  projectEvolu: EvoluInstance;
+  /** Owner ids to scope queries to, in SQL, before any limit. */
+  ownerIds: string[];
+  /** Project metadata by shared owner id, from projectRef - no query needed. */
+  byOwnerId: Map<string, SharedProjectMeta>;
+}
+
+/**
+ * Run `fn` with every joined shared project readable at once.
+ *
+ * Returns `null` when there is nothing to read (no joined projects, or the
+ * shared instance is not up), so callers can skip the shared half without
+ * treating it as a failure.
+ */
+export async function withAllSharedOwners<T>(
+  evolu: EvoluInstance,
+  fn: (scope: SharedScope) => Promise<T>,
+  options: { includeArchived?: boolean } = {}
+): Promise<T | null> {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) return null;
+
+  const refsQuery = evolu.createQuery((db: any) => {
+    let q = db
+      .selectFrom("projectRef")
+      .select([
+        "projectId",
+        "ownerSecret",
+        "sharedOwnerId",
+        "name",
+        "code",
+        "color",
+        "permission",
+        "isOwner",
+        "isArchived",
+      ])
+      .where("isDeleted", "is not", SQLITE_TRUE);
+    if (!options.includeArchived) {
+      q = q.where("isArchived", "is not", SQLITE_TRUE);
+    }
+    return q;
+  });
+
+  const refs = ((await evolu.loadQuery(refsQuery)) as any[]).filter(
+    (r) => r.sharedOwnerId && r.ownerSecret
+  );
+  if (refs.length === 0) return null;
+
+  const opened: ReturnType<typeof getSharedOwner>[] = [];
+  const byOwnerId = new Map<string, SharedProjectMeta>();
+
+  try {
+    for (const r of refs) {
+      // A single unreadable ref must not take the whole call down: the others
+      // are still worth reporting.
+      try {
+        const owner = getSharedOwner(r.sharedOwnerId as string, r.ownerSecret as string);
+        useSharedOwner(owner);
+        opened.push(owner);
+        byOwnerId.set(owner.id as string, {
+          sharedOwnerId: owner.id as string,
+          projectId: r.projectId as string,
+          name: r.name as string,
+          code: (r.code as string) ?? null,
+          color: r.color as string,
+          permission: (r.permission as string) ?? null,
+          isOwner: r.isOwner === SQLITE_TRUE,
+        });
+      } catch {
+        continue;
+      }
+    }
+
+    if (opened.length === 0) return null;
+
+    // One settle for the whole set, not one per project.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    return await fn({
+      projectEvolu,
+      ownerIds: [...byOwnerId.keys()],
+      byOwnerId,
+    });
+  } finally {
+    for (const owner of opened) {
+      stopUsingSharedOwner(owner);
+    }
+  }
+}
+
+export interface SharedAnalyticsTask {
+  id: string;
+  code: string | null;
+  name: string | null;
+  status: string | null;
+  priority: string | null;
+  deadline: string | null;
+  scheduledDate: string | null;
+  completedAt: string | null;
+  estimate: number | null;
+  assigneeId: string | null;
+  isBlocked: boolean;
+  recurrenceType: string | null;
+  recurrenceInterval: number | null;
+  recurrenceDay: string | null;
+  recurrenceEndDate: string | null;
+  sharedOwnerId: string;
+  project: { id: string; name: string; code: string | null; color: string; isShared: true };
+}
+
+export interface SharedAnalyticsData {
+  tasks: SharedAnalyticsTask[];
+  worklogs: { taskId: string | null; durationMinutes: number; loggedAt: string | null; sharedOwnerId: string }[];
+}
+
+/**
+ * Every task and worklog in every joined shared project, in one pass.
+ *
+ * The analytics tools each apply a different predicate to the same two tables.
+ * Pushing each predicate into its own shared query would mean re-opening the
+ * owners per tool; loading once and filtering in JS keeps it to a single
+ * settle. Returns `null` when there is nothing shared to read. (TODO-112)
+ */
+export async function loadSharedAnalyticsData(
+  evolu: EvoluInstance
+): Promise<SharedAnalyticsData | null> {
+  return withAllSharedOwners(evolu, async ({ projectEvolu, ownerIds, byOwnerId }) => {
+    const taskQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("task")
+        .select([
+          "id",
+          "ownerId",
+          "title",
+          "name",
+          "status",
+          "priority",
+          "deadline",
+          "scheduledDate",
+          "completedAt",
+          "estimate",
+          "assigneeId",
+          "isBlocked",
+          "recurrenceType",
+          "recurrenceInterval",
+          "recurrenceDay",
+          "recurrenceEndDate",
+        ])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "in", ownerIds)
+    );
+    const worklogQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("worklog")
+        .select(["ownerId", "taskId", "durationMinutes", "loggedAt"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "in", ownerIds)
+    );
+
+    const [taskRows, worklogRows] = await Promise.all([
+      projectEvolu.loadQuery(taskQuery),
+      projectEvolu.loadQuery(worklogQuery),
+    ]);
+
+    const tasks = (taskRows as any[])
+      .filter((t) => byOwnerId.has(t.ownerId as string))
+      .map((t) => {
+        const meta = byOwnerId.get(t.ownerId as string)!;
+        return {
+          id: t.id as string,
+          code: (t.title as string) ?? null,
+          name: (t.name as string) ?? null,
+          status: (t.status as string) ?? null,
+          priority: (t.priority as string) ?? null,
+          deadline: (t.deadline as string) ?? null,
+          scheduledDate: (t.scheduledDate as string) ?? null,
+          completedAt: (t.completedAt as string) ?? null,
+          estimate: (t.estimate as number) ?? null,
+          assigneeId: (t.assigneeId as string) ?? null,
+          isBlocked: t.isBlocked === SQLITE_TRUE,
+          recurrenceType: (t.recurrenceType as string) ?? null,
+          recurrenceInterval: (t.recurrenceInterval as number) ?? null,
+          recurrenceDay: (t.recurrenceDay as string) ?? null,
+          recurrenceEndDate: (t.recurrenceEndDate as string) ?? null,
+          sharedOwnerId: meta.sharedOwnerId,
+          project: {
+            id: meta.projectId,
+            name: meta.name,
+            code: meta.code,
+            color: meta.color,
+            isShared: true as const,
+          },
+        };
+      });
+
+    const worklogs = (worklogRows as any[])
+      .filter((w) => byOwnerId.has(w.ownerId as string))
+      .map((w) => ({
+        taskId: (w.taskId as string) ?? null,
+        durationMinutes: (w.durationMinutes as number) ?? 0,
+        loggedAt: (w.loggedAt as string) ?? null,
+        sharedOwnerId: w.ownerId as string,
+      }));
+
+    return { tasks, worklogs };
+  });
+}
