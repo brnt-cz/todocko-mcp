@@ -1,5 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getQuarantineCounts, getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
+import { getSocketTraffic } from "../evoluPlatform.js";
+import { judgeSyncFreshness } from "./pure.js";
 
 export const diagnosticTools: Tool[] = [
   {
@@ -60,6 +62,20 @@ async function syncStatus(args: { retest?: boolean }) {
   const anyRelayReachable = Object.values(health.wsConnectivity).some((s) => s === 'ok');
   const quarantine = await getQuarantineCounts();
 
+  // Skutečný provoz na drátě, měřený obalem kolem createWebSocket. Do TODO-294
+  // se tady nic takového neměřilo a `status` se řídil tím, jestli jde otevřít
+  // socket — což hodinu hlásilo `ok`, zatímco neodešla ani zpráva.
+  const traffic = getSocketTraffic();
+  const lastOutgoingAt = Math.max(0, ...Object.values(traffic).map((t) => t.lastOutgoingAt ?? 0)) || null;
+  const lastIncomingAt = Math.max(0, ...Object.values(traffic).map((t) => t.lastIncomingAt ?? 0)) || null;
+  const freshness = judgeSyncFreshness({
+    lastOutgoingAt,
+    lastIncomingAt,
+    lastLocalMutationAt: health.lastLocalMutationAt,
+    now: Date.now(),
+  });
+  const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());
+
   return {
     // Judged on what can be observed. Sync errors are observable again since
     // TODO-266, through Evolu's console rather than the instance hook v8
@@ -75,7 +91,27 @@ async function syncStatus(args: { retest?: boolean }) {
     // can never resolve, a `user.enableDependencyGraph` from an app version
     // that no longer declares it. A status permanently stuck on "degraded"
     // over that is a status nobody reads. (TODO-267)
-    status: !health.evoluReady ? 'not-ready' : anyRelayReachable ? 'ok' : 'no-relay',
+    // Pořadí je záměr: nejdřív se nesmí lhát o tom, že se nesynchronizuje.
+    // `stale` znamená, že lokální zápis čeká a nic neodchází — to je vada, i
+    // když je socket otevřený a relay dosažitelný. (TODO-294)
+    status: !health.evoluReady
+      ? 'not-ready'
+      : !anyRelayReachable
+        ? 'no-relay'
+        : freshness.verdict === 'stale'
+          ? 'stale'
+          : 'ok',
+    /** Co o synchronizaci říká skutečně změřený provoz, ne stav socketu. */
+    sync: {
+      verdict: freshness.verdict,
+      reason: freshness.reason,
+      lastOutgoingAt: iso(lastOutgoingAt),
+      lastIncomingAt: iso(lastIncomingAt),
+      lastLocalMutationAt: iso(health.lastLocalMutationAt),
+      pendingForSeconds: freshness.pendingForMs === null ? null : Math.round(freshness.pendingForMs / 1000),
+      quietForSeconds: freshness.quietForMs === null ? null : Math.round(freshness.quietForMs / 1000),
+      framesPerRelay: traffic,
+    },
     evoluReady: health.evoluReady,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
@@ -90,6 +126,8 @@ async function syncStatus(args: { retest?: boolean }) {
       "If relays show 'failed'/'timeout', check network/firewall",
       "quarantinedRows counts data this schema cannot apply — growth means the schema is behind the app",
       "onCompleteCount tracks successfully applied local mutations",
+      "sync.verdict is the one to read: 'stale' means a local write is waiting and nothing is leaving, which an open socket does not tell you",
+      "'idle' is not a fault — nothing was written, so nothing had to go out",
     ],
   };
 }

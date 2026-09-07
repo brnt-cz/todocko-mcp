@@ -51,6 +51,108 @@ import {
 } from "@evolu/common/local-first";
 import { createBetterSqliteDriver, createBroadcastChannel } from "@evolu/nodejs";
 
+import type { CreateWebSocket } from "@evolu/common";
+
+/**
+ * Kdy naposledy něco skutečně odešlo a přišlo po drátě. (TODO-294)
+ *
+ * Proč zvlášť a proč tady: Evolu v8 klientovi o stavu syncu nic nehlásí — žádný
+ * hook, nic v logu. `td_sync_status` proto měřil to jediné, co změřit umělo,
+ * tedy že se dá otevřít WebSocket, a hlásil `ok`. To je ale odpověď na jinou
+ * otázku: 7. 9. 2026 MCP hodinu neposlalo na relay ani zprávu a tenhle nástroj
+ * po celou dobu tvrdil, že je vše v pořádku. Poznat se to dalo jedině zvenčí,
+ * na relayi, podle `lastTimestamp` u ownera.
+ *
+ * `createWebSocket` je injektovatelná závislost (`CreateWebSocketDep`), kterou
+ * Evolu konzumuje v `Shared.js` — takže obal kolem ní vidí každý rámec, který
+ * opravdu proteče. Nic to nesimuluje a nic neodhaduje.
+ *
+ * Stav smí ležet v modulu, protože oba "workery" tady běží **in-process** (jsou
+ * to Evoluovy memory-only fallbacky, viz hlavička souboru). Ve skutečném
+ * `worker_threads` by se sem musela dostat zprávou.
+ */
+interface SocketTraffic {
+  lastOutgoingAt: number | null;
+  lastIncomingAt: number | null;
+  outgoingCount: number;
+  incomingCount: number;
+  /**
+   * Otevření a zavření spojení. Tohle rozliší dvě věci, které jinak vypadají
+   * stejně a mají jinou příčinu: spojení spadlo a nepřipojilo se znovu, versus
+   * spojení stojí otevřené a nic se po něm neposílá. Bez toho se TODO-295 nedá
+   * vyšetřit, jen hádat.
+   */
+  openCount: number;
+  closeCount: number;
+  lastOpenAt: number | null;
+  lastCloseAt: number | null;
+  lastCloseCode: number | null;
+}
+
+const traffic = new Map<string, SocketTraffic>();
+
+function trafficFor(url: string): SocketTraffic {
+  let t = traffic.get(url);
+  if (!t) {
+    t = {
+      lastOutgoingAt: null, lastIncomingAt: null, outgoingCount: 0, incomingCount: 0,
+      openCount: 0, closeCount: 0, lastOpenAt: null, lastCloseAt: null, lastCloseCode: null,
+    };
+    traffic.set(url, t);
+  }
+  return t;
+}
+
+/** Obal, který zaznamená každý odeslaný i přijatý rámec. */
+const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
+  const t = trafficFor(url);
+  const wrappedOptions = {
+    ...options,
+    onMessage: (data: string | ArrayBuffer | Blob) => {
+      t.lastIncomingAt = Date.now();
+      t.incomingCount++;
+      options?.onMessage?.(data);
+    },
+    onOpen: () => {
+      t.lastOpenAt = Date.now();
+      t.openCount++;
+      options?.onOpen?.();
+    },
+    onClose: (event: CloseEvent) => {
+      t.lastCloseAt = Date.now();
+      t.lastCloseCode = event.code;
+      t.closeCount++;
+      options?.onClose?.(event);
+    },
+  };
+  // Task<T, E> je (run) => Awaitable<Result<T, E>>, takže obal je taky Task:
+  // zavolá původní, a když uspěje, podstrčí socketu vlastní `send`.
+  const task = createWebSocket(url, wrappedOptions);
+  return async (run) => {
+    const result = await task(run);
+    if (!result.ok) return result;
+    const socket = result.value;
+    const originalSend = socket.send.bind(socket);
+    socket.send = (data) => {
+      // Zaznamenat až po úspěchu: `send` vrací Result a na zavřeném socketu
+      // selže. Počítat pokus by vyrobilo další "ok", které nic neznamená —
+      // což je přesně vada, kterou tenhle nástroj má odstranit.
+      const sendResult = originalSend(data);
+      if (sendResult.ok) {
+        t.lastOutgoingAt = Date.now();
+        t.outgoingCount++;
+      }
+      return sendResult;
+    };
+    return result;
+  };
+};
+
+/** Naměřený provoz po URL. Čte to `td_sync_status`. */
+export function getSocketTraffic(): Record<string, SocketTraffic> {
+  return Object.fromEntries([...traffic.entries()].map(([url, t]) => [url, { ...t }]));
+}
+
 /**
  * Console, message-port and channel plumbing shared by both workers.
  *
@@ -100,7 +202,7 @@ function buildNodeEvoluDeps(): EvoluDeps {
   const sharedWorker = createSharedWorker<SharedWorkerInput, SharedWorkerOutput>((self) => {
     const run = createRun({
       ...createWorkerDeps(),
-      createWebSocket,
+      createWebSocket: createInstrumentedWebSocket,
       lockManager: navigator.locks,
     });
     void run(async (run) => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -217,5 +217,94 @@ describe("assertRowExists (TODO-292)", () => {
       ["id", "=", "t1"],
       ["ownerId", "=", "owner-9"],
     ]);
+  });
+});
+
+describe("judgeSyncFreshness (TODO-294)", () => {
+  const T = 1_700_000_000_000;
+
+  it("calls it stale when a local write has been waiting with nothing sent", () => {
+    // The incident: MCP wrote locally, nothing left the process for an hour,
+    // and the old status still said ok.
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: T - 60 * 60 * 1000,
+      lastIncomingAt: T - 60 * 60 * 1000,
+      lastLocalMutationAt: T - 55 * 60 * 1000,
+      now: T,
+    });
+    expect(f.verdict).toBe("stale");
+    expect(f.pendingForMs).toBe(55 * 60 * 1000);
+    expect(f.reason).toContain("ceka");
+  });
+
+  it("is stale when nothing has ever been sent but something was written", () => {
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: null,
+      lastIncomingAt: null,
+      lastLocalMutationAt: T - 5 * 60 * 1000,
+      now: T,
+    });
+    expect(f.verdict).toBe("stale");
+    expect(f.reason).toContain("zadny ramec");
+  });
+
+  it("does not blame silence when nothing is waiting - that is idleness", () => {
+    // Quiet with no pending write is the normal state of a tool nobody is
+    // using. Reporting that as a fault would make the status unreadable.
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: T - 3 * 60 * 60 * 1000,
+      lastIncomingAt: T - 3 * 60 * 60 * 1000,
+      lastLocalMutationAt: T - 4 * 60 * 60 * 1000,
+      now: T,
+    });
+    expect(f.verdict).toBe("idle");
+  });
+
+  it("accepts a write that is younger than the threshold", () => {
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: T - 90_000,
+      lastIncomingAt: null,
+      lastLocalMutationAt: T - 5_000,
+      now: T,
+    });
+    expect(f.verdict).toBe("ok");
+  });
+
+  it("is ok when the write went out after it happened", () => {
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: T - 1_000,
+      lastIncomingAt: T - 900,
+      lastLocalMutationAt: T - 2_000,
+      now: T,
+    });
+    expect(f.verdict).toBe("ok");
+    expect(f.pendingForMs).toBeNull();
+  });
+
+  it("reports never-synced on a fresh process that has done nothing", () => {
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: null, lastIncomingAt: null, lastLocalMutationAt: null, now: T,
+    });
+    expect(f.verdict).toBe("never-synced");
+  });
+
+  it("counts an incoming frame as traffic, not just outgoing", () => {
+    const f = judgeSyncFreshness({
+      lastOutgoingAt: T - 3 * 60 * 60 * 1000,
+      lastIncomingAt: T - 1_000,
+      lastLocalMutationAt: null,
+      now: T,
+    });
+    expect(f.verdict).toBe("ok");
+    expect(f.quietForMs).toBe(1_000);
+  });
+
+  it("honours a caller-supplied threshold", () => {
+    const input = {
+      lastOutgoingAt: T - 30_000, lastIncomingAt: null,
+      lastLocalMutationAt: T - 20_000, now: T,
+    };
+    expect(judgeSyncFreshness(input).verdict).toBe("ok");
+    expect(judgeSyncFreshness({ ...input, staleAfterMs: 10_000 }).verdict).toBe("stale");
   });
 });
