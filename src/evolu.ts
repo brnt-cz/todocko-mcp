@@ -571,6 +571,17 @@ function getAppOwnerForProjectInstance() {
 }
 
 /**
+ * The user's own owner id, or null before initEvolu has run.
+ *
+ * Only the id: it is public, unlike the secret on the owner object, and the
+ * relay's owner-authenticated endpoints need it as the claimed signer.
+ * (TODO-112)
+ */
+export function getAppOwnerId(): string | null {
+  return (appOwnerForProcess?.id as string) ?? null;
+}
+
+/**
  * A throwaway identity for the shared-project instance — deliberately not the
  * user's.
  *
