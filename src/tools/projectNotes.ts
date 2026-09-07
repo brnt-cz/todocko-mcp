@@ -299,7 +299,7 @@ async function createSharedProjectNote(
       content: args.content ? EvoluString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
-    }, { onComplete: waiter.onComplete });
+    }, { ownerId: owner.id, onComplete: waiter.onComplete });
 
     await waiter.waitForSync();
 
@@ -318,14 +318,26 @@ async function updateSharedProjectNote(
   }
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
+  // Scoped by owner, and checked before the write. v8's update() writes with
+  // `on conflict do update`, so an id from another project would not fail, it
+  // would insert a new row into this one. Same guard as updateSharedTask.
+  // (TODO-299, TODO-292)
+  await assertRowExists(projectEvolu, "projectNote", args.id, "Note", owner.id as string);
   try {
     const updates: Record<string, unknown> = { id: args.id as ProjectNoteId };
     if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
     if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
+    // `{ ownerId }` is what puts the row in the shared project's partition.
+    // Without it the write lands under the shared instance's own throwaway
+    // owner, which no relay subscription covers and every list query filters
+    // out: the tool answered `success` and the note was gone. Measured on two
+    // notes written into a shared project, both found under owner
+    // iXO1duq-onrYm9n19nT-eA instead of the project's. Every write in
+    // shared.ts already passes it. (TODO-299)
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", updates as any, { onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", updates as any, { ownerId: owner.id, onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
     return { success: true, message: "Shared note updated" };
@@ -343,9 +355,14 @@ async function deleteSharedProjectNote(
   }
   const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(owner);
+  // Scoped by owner, and checked before the write. v8's update() writes with
+  // `on conflict do update`, so an id from another project would not fail, it
+  // would insert a new row into this one. Same guard as updateSharedTask.
+  // (TODO-299, TODO-292)
+  await assertRowExists(projectEvolu, "projectNote", args.id, "Note", owner.id as string);
   try {
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { ownerId: owner.id, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared note deleted" };
   } finally {
