@@ -561,7 +561,7 @@ todo add "Opravit login" -p TODO --priority high --scheduled today
 # Změna stavu (identifikace kódem úkolu)
 todo done TODO-160          # status=done
 todo start TODO-160         # status=in_progress
-todo mv TODO-160 review     # backlog|todo|in_progress|review|done
+todo mv TODO-160 review     # backlog|todo|in_progress|review|done|recurring
 
 # Worklog
 todo log TODO-160 1h30m "ladění OAuth"

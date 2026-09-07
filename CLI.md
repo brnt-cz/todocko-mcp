@@ -51,7 +51,7 @@ todo add "Zavolat účetní" --scheduled tomorrow
 ```bash
 todo done TODO-184      # → status=done
 todo start TODO-184     # → status=in_progress
-todo mv TODO-184 review # backlog | todo | in_progress | review | done
+todo mv TODO-184 review # backlog | todo | in_progress | review | done | recurring
 #  → ✓ TODO-184  todo → done
 ```
 Úkol se identifikuje **kódem** (`TODO-184`); CLI si ho přeloží na ID.
