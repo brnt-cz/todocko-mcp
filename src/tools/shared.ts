@@ -834,6 +834,22 @@ export const sharedTools: Tool[] = [
     },
   },
   {
+    name: "td_update_shared_worklog",
+    description: "Update a worklog in a shared project. The shared counterpart of td_update_worklog.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Worklog ID (required)" },
+        durationMinutes: { type: "number", description: "New duration in minutes" },
+        description: { type: "string", description: "New description, or null to clear" },
+        loggedAt: { type: "string", description: "New date the work was done (YYYY-MM-DD)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
+  {
     name: "td_list_shared_activity_log",
     description: "List activity log entries for a shared project. Read-only. The shared counterpart of td_list_activity_log.",
     inputSchema: {
@@ -1090,6 +1106,15 @@ export async function handleSharedTool(
         sharedOwnerId: string;
         ownerSecret: string;
         taskIds: string[];
+      });
+    case "td_update_shared_worklog":
+      return updateSharedWorklog(args as {
+        sharedOwnerId: string;
+        ownerSecret: string;
+        id: string;
+        durationMinutes?: number;
+        description?: string | null;
+        loggedAt?: string;
       });
     case "td_list_shared_activity_log":
       return listSharedActivityLog(args as {
@@ -3547,7 +3572,7 @@ export interface SharedAnalyticsTask {
 
 export interface SharedAnalyticsData {
   tasks: SharedAnalyticsTask[];
-  worklogs: { taskId: string | null; durationMinutes: number; loggedAt: string | null; sharedOwnerId: string }[];
+  worklogs: { taskId: string | null; userId: string | null; durationMinutes: number; loggedAt: string | null; sharedOwnerId: string }[];
 }
 
 /**
@@ -3589,7 +3614,10 @@ export async function loadSharedAnalyticsData(
     const worklogQuery = projectEvolu.createQuery((db: any) =>
       db
         .selectFrom("worklog")
-        .select(["ownerId", "taskId", "durationMinutes", "loggedAt"])
+        // userId so the workload split can attribute shared logged time to a
+        // person. Without it the shared minutes could only be a total, which
+        // is the one thing a per-user breakdown cannot use.
+        .select(["ownerId", "taskId", "userId", "durationMinutes", "loggedAt"])
         .where("isDeleted", "is not", SQLITE_TRUE)
         .where("ownerId", "in", ownerIds)
     );
@@ -3634,6 +3662,7 @@ export async function loadSharedAnalyticsData(
       .filter((w) => byOwnerId.has(w.ownerId as string))
       .map((w) => ({
         taskId: (w.taskId as string) ?? null,
+        userId: (w.userId as string) ?? null,
         durationMinutes: (w.durationMinutes as number) ?? 0,
         loggedAt: (w.loggedAt as string) ?? null,
         sharedOwnerId: w.ownerId as string,
@@ -3641,4 +3670,64 @@ export async function loadSharedAnalyticsData(
 
     return { tasks, worklogs };
   });
+}
+
+/**
+ * The shared counterpart of td_update_worklog.
+ *
+ * The app has no shared-worklog edit path of its own (useSharedProjectDatabase
+ * creates and deletes only), so this fills a parity gap the app has too. It
+ * writes nothing the app cannot read: a corrected duration or date on a row
+ * that already exists. (TODO-112)
+ */
+async function updateSharedWorklog(
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    id: string;
+    durationMinutes?: number;
+    description?: string | null;
+    loggedAt?: string;
+  }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  // Settle first, then check. The other shared tools check before the settle,
+  // which risks reading the row before its owner's data is there and calling a
+  // real worklog missing.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Scoped by owner: an id from another project would otherwise be an insert.
+  await assertRowExists(projectEvolu, "worklog", args.id, "Worklog", sharedOwner.id as string);
+
+  try {
+    const updates: Record<string, unknown> = { id: args.id as WorklogId };
+
+    if (args.durationMinutes !== undefined) {
+      updates.durationMinutes = Int.orThrow(args.durationMinutes);
+    }
+    if (args.description !== undefined) {
+      updates.description = args.description
+        ? NonEmptyTrimmedString1000.orThrow(args.description)
+        : null;
+    }
+    if (args.loggedAt !== undefined) {
+      updates.loggedAt = EvoluString.orThrow(args.loggedAt);
+    }
+
+    const waiter = createMutationWaiter();
+    projectEvolu.update("worklog", updates as any, {
+      ownerId: sharedOwner.id,
+      onComplete: waiter.onComplete,
+    });
+    await waiter.waitForSync();
+
+    return { success: true, message: "Shared worklog updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
 }
