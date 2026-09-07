@@ -135,7 +135,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (143)
+## Dostupné nástroje (152)
 
 ### Projekty
 
@@ -317,6 +317,30 @@ Sdílené projekty (TODO-235):
 | `td_update_project_note` | Aktualizace lokální poznámky |
 | `td_delete_project_note` | Smazání lokální poznámky (soft delete) |
 
+### Dokumentace projektu
+
+Dokumenty jsou poznámky s `isDoc`, takže mohou být zanořené pod jiný dokument
+(`parentDocId`).
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_project_docs` | Seznam dokumentů projektu |
+| `td_create_project_doc` | Vytvoření dokumentu |
+| `td_update_project_doc` | Aktualizace dokumentu |
+| `td_delete_project_doc` | Smazání dokumentu (soft delete) |
+
+### Systémová oznámení (relay)
+
+Broadcast oznámení pro všechny uživatele. Zápis a výpis včetně expirovaných
+vyžaduje `TODOCKO_RELAY_ADMIN_KEY`; obráceným směrem jdou zprávy od uživatelů,
+viz níž.
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_system_notifications` | Seznam aktivních oznámení (s `admin: true` i expirovaná) |
+| `td_create_system_notification` | Vytvoření oznámení pro všechny uživatele |
+| `td_delete_system_notification` | Smazání oznámení |
+
 ### Deployment stages
 
 | Nástroj | Popis |
@@ -378,6 +402,29 @@ Sdílené projekty (TODO-235):
 | `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
 | `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
 | `td_delete_shared_note_attachment` | Smazání přílohy poznámky sdíleného projektu |
+| `td_list_shared_project_docs` | Seznam dokumentů sdíleného projektu |
+| `td_create_shared_project_doc` | Vytvoření dokumentu ve sdíleném projektu |
+| `td_update_shared_project_doc` | Aktualizace dokumentu ve sdíleném projektu |
+| `td_delete_shared_project_doc` | Smazání dokumentu ve sdíleném projektu |
+| `td_get_shared_task` | Detail jednoho úkolu ve sdíleném projektu (podle ID nebo kódu, s odpracovaným časem a počty checklistu a komentářů) |
+| `td_list_shared_task_tags` | Tagy úkolu ve sdíleném projektu |
+| `td_bulk_update_shared_tasks` | Hromadná úprava úkolů ve sdíleném projektu |
+| `td_bulk_delete_shared_tasks` | Hromadné smazání úkolů ve sdíleném projektu (kaskáda na checklist a komentáře) |
+| `td_update_shared_worklog` | Úprava worklogu ve sdíleném projektu |
+| `td_list_shared_activity_log` | Aktivita ve sdíleném projektu (stejné filtry jako u osobní) |
+
+### Zprávy od uživatelů (relay)
+
+Zprávy, které uživatelé posílají z aplikace (hlášení vad, návrhy, vzkazy).
+Výpis a mazání umí jen **admin owner** a relay od TODO-90 H2 nevěří samotnému
+`ownerId` — požadavek se podepisuje Ed25519 klíčem odvozeným z nastaveného
+mnemoniku. Odesílání relay nechává nepřihlášené, stejně jako formulář v appce.
+
+| Nástroj | Popis |
+|---------|-------|
+| `td_list_user_messages` | Výpis zpráv od uživatelů (jen admin owner) |
+| `td_submit_user_message` | Odeslání zprávy adminům (hlášení vady, návrh, vzkaz) |
+| `td_delete_user_message` | Smazání zprávy na relayi (jen admin owner, tvrdé smazání) |
 
 ### Analytika a přehledy
 
@@ -396,6 +443,18 @@ Sdílené projekty (TODO-235):
 > opakování jde přečíst tou nejpřímější cestou.
 | `td_list_tasks_by_date_range` | Úkoly filtrované podle scheduledDate nebo deadline v daném rozmezí |
 | `td_analyze_dependencies` | Analýza závislostí: blokované úkoly, blokující řetězce, kritická cesta |
+
+> **Sdílené projekty se do analytiky počítají (TODO-112).** Do MCP IX čtlo všech
+> pět přehledů jen osobní instanci, takže úkol ve sdíleném projektu neviděl
+> dashboard, rozdělení vytížení, seznam opakujících se ani po termínu, ani dotaz
+> na rozmezí dat. U vytížení to nebylo jen chybějící číslo: počítá se
+> z odpracovaného času, takže vynechané sdílené minuty podhodnocovaly každého,
+> kdo ve sdíleném projektu pracuje. Každý nástroj bere `includeShared`
+> (výchozí `true`) a vrací `sharedIncluded`, ať je vidět, jestli se sdílená
+> polovina opravdu načetla. `td_analyze_dependencies` zůstává záměrně jen
+> osobní: appka sdílené `taskLink` řádky čte, ale žádné nezapisuje.
+>
+> `td_search_tasks` hledá ve sdílených projektech taky, se stejným přepínačem.
 
 ### Diagnostika
 
