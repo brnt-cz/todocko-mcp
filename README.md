@@ -413,6 +413,18 @@ viz níž.
 | `td_update_shared_worklog` | Úprava worklogu ve sdíleném projektu |
 | `td_list_shared_activity_log` | Aktivita ve sdíleném projektu (stejné filtry jako u osobní) |
 
+> **Stavy úkolů a validace argumentů (TODO-296, TODO-297).** Stav
+> `recurring` je plnohodnotný, appka ho používá pro opakované úkoly a MCP ho
+> teď nabízí ve všech devíti enumech. Zároveň se **kontrolují hodnoty enumů a
+> odmítají nedeklarované argumenty**. Dřív byly enumy jen dokumentace a
+> neznámý argument se tiše zahodil, což je přesně způsob, jak
+> `td_create_shared_checklist_item` přijal `isChecked`, vrátil `success`
+> a položku založil neodškrtnutou. Ten argument tam dnes je.
+>
+> Při té příležitosti se srovnal i `linkType`: MCP nabízelo `related`, kterému
+> appka nerozumí, a chyběly mu `explicit` a `mention`, které appka opravdu
+> zapisuje. Platné hodnoty jsou `blocks`, `explicit`, `mention`.
+
 ### Zprávy od uživatelů (relay)
 
 Zprávy, které uživatelé posílají z aplikace (hlášení vad, návrhy, vzkazy).

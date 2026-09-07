@@ -133,7 +133,10 @@ describe("assertRequiredArgs (TODO-292)", () => {
     } catch (e) {
       message = (e as Error).message;
     }
-    expect(message).toContain("Unrecognised argument(s): taskId");
+    // Wording changed in TODO-297, when the stray became a rejection in its own
+    // right rather than a hint appended to a missing-argument error. The point
+    // of the test is unchanged: the near-miss has to be named.
+    expect(message).toContain("unrecognised argument(s): taskId");
     expect(message).toContain("Accepted arguments: id, name, status");
   });
 
@@ -306,5 +309,57 @@ describe("judgeSyncFreshness (TODO-294)", () => {
     };
     expect(judgeSyncFreshness(input).verdict).toBe("ok");
     expect(judgeSyncFreshness({ ...input, staleAfterMs: 10_000 }).verdict).toBe("stale");
+  });
+});
+
+describe("assertRequiredArgs rejects more than a missing id (TODO-297)", () => {
+  const schema = {
+    properties: {
+      projectId: { type: "string" },
+      name: { type: "string" },
+      status: { type: "string", enum: ["backlog", "todo", "done", "recurring"] },
+    },
+    required: ["projectId"],
+  };
+
+  // An undeclared argument used to be mentioned only when something required
+  // was ALSO missing, and otherwise dropped without a word. That is how
+  // `isChecked` on the shared checklist tool returned success and wrote an
+  // unticked item.
+  it("refuses an argument the schema does not declare", () => {
+    expect(() => assertRequiredArgs("td_demo", { projectId: "p", isChecked: true }, schema))
+      .toThrow(/unrecognised argument\(s\): isChecked/);
+  });
+
+  it("refuses a value outside a declared enum, and says what was expected", () => {
+    expect(() => assertRequiredArgs("td_demo", { projectId: "p", status: "quarterly" }, schema))
+      .toThrow(/invalid value\(s\): status="quarterly".*backlog, todo, done, recurring/);
+  });
+
+  it("accepts recurring, which the app treats as a real status", () => {
+    expect(() => assertRequiredArgs("td_demo", { projectId: "p", status: "recurring" }, schema))
+      .not.toThrow();
+  });
+
+  it("leaves an omitted or null optional alone", () => {
+    expect(() => assertRequiredArgs("td_demo", { projectId: "p" }, schema)).not.toThrow();
+    expect(() => assertRequiredArgs("td_demo", { projectId: "p", status: null }, schema)).not.toThrow();
+  });
+
+  it("reports every problem at once rather than one per round trip", () => {
+    let message = "";
+    try {
+      assertRequiredArgs("td_demo", { status: "nope", stray: 1 }, schema);
+    } catch (e) {
+      message = String((e as Error).message);
+    }
+    expect(message).toContain("missing required argument(s): projectId");
+    expect(message).toContain("unrecognised argument(s): stray");
+    expect(message).toContain('invalid value(s): status="nope"');
+  });
+
+  it("says nothing when the call is clean", () => {
+    expect(() => assertRequiredArgs("td_demo", { projectId: "p", name: "x", status: "done" }, schema))
+      .not.toThrow();
   });
 });
