@@ -348,3 +348,86 @@ export async function assertRowExists(
     throw new Error(`${label} not found: ${id}`);
   }
 }
+
+/**
+ * Co změřený provoz říká o tom, jestli sync žije. (TODO-294)
+ *
+ * Dosud `td_sync_status` hlásil `ok`, když se dal otevřít WebSocket. To je
+ * odpověď na jinou otázku: 7. 9. 2026 MCP hodinu neposlalo na relay ani zprávu
+ * a ten nástroj celou dobu tvrdil, že je vše v pořádku. Poznat se to dalo jedině
+ * zvenčí, na relayi, podle `lastTimestamp` u ownera.
+ *
+ * Rozhoduje se tedy podle jediného, co o synchronizaci něco vypovídá: kdy
+ * naposledy něco odešlo a přišlo, a jestli od té doby nevznikl lokální zápis.
+ *
+ * Ticho samo o sobě není vada — když nikdo nic nezapsal, nemá co odcházet.
+ * Vadou je **lokální zápis novější než poslední odchozí rámec**, protože to
+ * znamená, že něco čeká a neodchází. Přesně to se stalo.
+ */
+export interface SyncFreshnessInput {
+  /** Kdy naposledy skutečně odešel rámec, přes všechny relaye. */
+  readonly lastOutgoingAt: number | null;
+  /** Kdy naposledy nějaký přišel. */
+  readonly lastIncomingAt: number | null;
+  /** Kdy naposledy proběhla lokální mutace. */
+  readonly lastLocalMutationAt: number | null;
+  readonly now: number;
+  /** Jak dlouho smí zápis čekat, než to je vada. Default 60 s. */
+  readonly staleAfterMs?: number;
+}
+
+export type SyncVerdict = "ok" | "stale" | "idle" | "never-synced";
+
+export interface SyncFreshness {
+  readonly verdict: SyncVerdict;
+  readonly reason: string;
+  /** Jak dlouho už nejstarší nevypravený zápis čeká, nebo null. */
+  readonly pendingForMs: number | null;
+  readonly quietForMs: number | null;
+}
+
+export const SYNC_STALE_AFTER_MS = 60_000;
+
+export function judgeSyncFreshness(input: SyncFreshnessInput): SyncFreshness {
+  const { lastOutgoingAt, lastIncomingAt, lastLocalMutationAt, now } = input;
+  const staleAfterMs = input.staleAfterMs ?? SYNC_STALE_AFTER_MS;
+
+  const lastTraffic = Math.max(lastOutgoingAt ?? 0, lastIncomingAt ?? 0) || null;
+  const quietForMs = lastTraffic === null ? null : now - lastTraffic;
+
+  // Lokální zápis, který neodešel. Tohle je ta vada.
+  const pending =
+    lastLocalMutationAt !== null &&
+    (lastOutgoingAt === null || lastLocalMutationAt > lastOutgoingAt);
+  const pendingForMs = pending ? now - lastLocalMutationAt : null;
+
+  if (pending && pendingForMs !== null && pendingForMs > staleAfterMs) {
+    return {
+      verdict: "stale",
+      reason:
+        `lokalni zapis ceka ${Math.round(pendingForMs / 1000)} s a nic neodeslo` +
+        (lastOutgoingAt === null ? " (od startu neodesel zadny ramec)" : ""),
+      pendingForMs,
+      quietForMs,
+    };
+  }
+
+  if (lastTraffic === null) {
+    return {
+      verdict: lastLocalMutationAt === null ? "never-synced" : "ok",
+      reason:
+        lastLocalMutationAt === null
+          ? "od startu neproteklo nic a nic se nezapsalo"
+          : "zapis je novy, jeste nemusel odejit",
+      pendingForMs,
+      quietForMs,
+    };
+  }
+
+  if (!pending && quietForMs !== null && quietForMs > staleAfterMs) {
+    // Ticho bez cekajiciho zapisu je normalni stav necinnosti, ne vada.
+    return { verdict: "idle", reason: `nic se nedeje ${Math.round(quietForMs / 1000)} s`, pendingForMs, quietForMs };
+  }
+
+  return { verdict: "ok", reason: "provoz je aktualni", pendingForMs, quietForMs };
+}

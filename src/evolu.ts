@@ -608,6 +608,8 @@ interface SyncHealth {
   wsConnectivity: Map<string, 'untested' | 'ok' | 'failed'>;
   evoluReady: boolean;
   onCompleteCount: number;
+  /** Kdy naposledy proběhla lokální mutace. Bez času nejde poznat, že něco čeká. */
+  lastLocalMutationAt: number | null;
   /** Per-table count of incoming change events observed via subscribeQuery. */
   incomingChangesByTable: Map<string, number>;
 }
@@ -616,6 +618,7 @@ const syncHealth: SyncHealth = {
   wsConnectivity: new Map(RELAY_SERVERS.map(url => [url, 'untested' as const])),
   evoluReady: false,
   onCompleteCount: 0,
+  lastLocalMutationAt: null,
   incomingChangesByTable: new Map(),
 };
 
@@ -626,12 +629,14 @@ export function getSyncHealth(): {
   wsConnectivity: Record<string, string>;
   evoluReady: boolean;
   onCompleteCount: number;
+  lastLocalMutationAt: number | null;
   relayServers: string[];
 } {
   return {
     wsConnectivity: Object.fromEntries(syncHealth.wsConnectivity),
     evoluReady: syncHealth.evoluReady,
     onCompleteCount: syncHealth.onCompleteCount,
+    lastLocalMutationAt: syncHealth.lastLocalMutationAt,
     relayServers: RELAY_SERVERS,
   };
 }
@@ -671,6 +676,9 @@ export async function getQuarantineCounts(): Promise<{ app: number | null; proje
 /** Track onComplete calls from mutations */
 export function trackOnComplete(): void {
   syncHealth.onCompleteCount++;
+  // Čas, ne jen počet: bez něj se nedá poznat "zapsáno lokálně a neodešlo",
+  // což je ta vada, kterou td_sync_status neviděl. (TODO-294)
+  syncHealth.lastLocalMutationAt = Date.now();
 }
 
 /**
