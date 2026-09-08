@@ -1,6 +1,9 @@
 /** Task status handling for the CLI (TODO-160). */
 
-export const TASK_STATUSES = ['backlog', 'todo', 'in_progress', 'review', 'done'] as const;
+// `recurring` belongs here for the same reason it belongs in the MCP enums: the
+// app treats it as a real status, not a decoration. Without it the CLI refuses
+// to move a task to the column the app puts recurring tasks in. (TODO-296)
+export const TASK_STATUSES = ['backlog', 'todo', 'in_progress', 'review', 'done', 'recurring'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
 /**

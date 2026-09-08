@@ -124,7 +124,7 @@ export const analyticsTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "Filter by status (optional)",
         },
         includeShared: {

@@ -274,19 +274,47 @@ export function assertRequiredArgs(
   args: Record<string, unknown>,
   schema: { required?: string[]; properties?: Record<string, unknown> } | undefined,
 ): void {
+  const properties = (schema?.properties ?? {}) as Record<string, { enum?: unknown[] }>;
+  const accepted = Object.keys(properties);
+  const supplied = Object.keys(args);
+
   const required = schema?.required ?? [];
   const missing = required.filter((key) => {
     const value = args[key];
     return value === undefined || value === null || value === "";
   });
-  if (missing.length === 0) return;
 
-  const accepted = Object.keys(schema?.properties ?? {});
-  const supplied = Object.keys(args);
+  // An argument the schema does not declare used to be mentioned only when
+  // something required was ALSO missing, and otherwise dropped without a word.
+  // That is how `isChecked` on td_create_shared_checklist_item, which the
+  // shared tool never accepted, returned `success` and wrote an unticked item.
+  // (TODO-297)
   const strays = supplied.filter((key) => !accepted.includes(key));
-  const hint = strays.length > 0 ? ` Unrecognised argument(s): ${strays.join(", ")}.` : "";
+
+  // Values outside a declared enum were never looked at either, so the enums
+  // were documentation rather than a contract. `recurring` reached the task
+  // status this way: a value the app treats as real, that MCP does not list.
+  // (TODO-296, TODO-297)
+  const badEnums: string[] = [];
+  for (const key of supplied) {
+    const allowed = properties[key]?.enum;
+    if (!Array.isArray(allowed) || allowed.length === 0) continue;
+    const value = args[key];
+    if (value === undefined || value === null) continue;
+    if (!allowed.includes(value)) {
+      badEnums.push(`${key}=${JSON.stringify(value)} (expected one of: ${allowed.join(", ")})`);
+    }
+  }
+
+  if (missing.length === 0 && strays.length === 0 && badEnums.length === 0) return;
+
+  const parts: string[] = [];
+  if (missing.length > 0) parts.push(`missing required argument(s): ${missing.join(", ")}`);
+  if (strays.length > 0) parts.push(`unrecognised argument(s): ${strays.join(", ")}`);
+  if (badEnums.length > 0) parts.push(`invalid value(s): ${badEnums.join("; ")}`);
+
   throw new Error(
-    `${toolName}: missing required argument(s): ${missing.join(", ")}.${hint}` +
+    `${toolName}: ${parts.join(". ")}.` +
       ` Accepted arguments: ${accepted.join(", ") || "(none)"}.`,
   );
 }

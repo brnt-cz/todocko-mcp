@@ -57,7 +57,7 @@ export const sharedTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "Filter by status",
         },
         limit: {
@@ -205,7 +205,7 @@ export const sharedTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "Task status",
         },
         priority: {
@@ -285,7 +285,7 @@ export const sharedTools: Tool[] = [
         projectId: { type: "string", description: "Project ID within the shared project (required)" },
         name: { type: "string", description: "Human-readable task name/summary" },
         description: { type: "string", description: "Task description (HTML supported)" },
-        status: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done"], description: "Task status (default: todo)" },
+        status: { type: "string", enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"], description: "Task status (default: todo)" },
         priority: { type: "string", enum: ["low", "medium", "high", "urgent"], description: "Task priority (default: medium)" },
         deadline: { type: "string", description: "Deadline in ISO format" },
         scheduledDate: { type: "string", description: "Scheduled date (YYYY-MM-DD)" },
@@ -382,6 +382,7 @@ export const sharedTools: Tool[] = [
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         taskId: { type: "string", description: "Task ID (required)" },
         title: { type: "string", description: "Checklist item text (required)" },
+        isChecked: { type: "boolean", description: "Create it already ticked (default: false)" },
         position: { type: "number", description: "Position (default: appended to the end)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "taskId", "title"],
@@ -811,7 +812,7 @@ export const sharedTools: Tool[] = [
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         taskIds: { type: "array", items: { type: "string" }, description: "Task IDs to update (required)" },
-        status: { type: "string", description: "New status for all of them", enum: ["backlog", "todo", "in_progress", "review", "done"] },
+        status: { type: "string", description: "New status for all of them", enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"] },
         priority: { type: "string", description: "New priority for all of them", enum: ["low", "medium", "high", "urgent"] },
         assigneeId: { type: "string", description: "Assignee user ID, or null to unassign" },
         deploymentStageId: { type: "string", description: "Deployment stage ID, or null to clear" },
@@ -958,7 +959,7 @@ export async function handleSharedTool(
     case "td_list_shared_checklist_items":
       return listSharedChecklistItems(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
     case "td_create_shared_checklist_item":
-      return createSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; title: string; position?: number });
+      return createSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; title: string; isChecked?: boolean; position?: number });
     case "td_update_shared_checklist_item":
       return updateSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; isChecked?: boolean; position?: number });
     case "td_delete_shared_checklist_item":
@@ -1845,7 +1846,7 @@ async function listSharedChecklistItems(
 }
 
 async function createSharedChecklistItem(
-  args: { sharedOwnerId: string; ownerSecret: string; taskId: string; title: string; position?: number }
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string; title: string; isChecked?: boolean; position?: number }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
@@ -1869,7 +1870,11 @@ async function createSharedChecklistItem(
       {
         taskId: args.taskId as TaskId,
         title: NonEmptyTrimmedString1000.orThrow(args.title),
-        isChecked: null,
+        // The personal td_create_checklist_item has taken isChecked since it
+        // was written; this one hardcoded null and did not even declare the
+        // argument, so a ticked item could not be created through the shared
+        // tool and passing one was dropped without a word. (TODO-297)
+        isChecked: args.isChecked ? SQLITE_TRUE : null,
         position: Int.orThrow(position),
       },
       { ownerId: sharedOwner.id, onComplete: waiter.onComplete }

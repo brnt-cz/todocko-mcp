@@ -34,8 +34,14 @@ export const taskLinkTools: Tool[] = [
         },
         linkType: {
           type: "string",
-          enum: ["blocks", "related"],
-          description: "Link type (default: 'blocks')",
+          // The app's TaskLinkType is 'explicit' | 'mention' | 'blocks'
+          // (useDatabase.ts:29). This listed "related", which nothing in the
+          // app understands, and omitted the two the app actually writes
+          // (useDashboardTaskOperations.ts:620 and :641). Harmless while the
+          // enum was only documentation; with the values now enforced it would
+          // have refused legitimate links. (TODO-297)
+          enum: ["blocks", "explicit", "mention"],
+          description: "Link type: 'blocks' for a dependency, 'explicit' for a manual link, 'mention' for one detected in a description (default: 'blocks')",
         },
       },
       required: ["sourceTaskId", "targetTaskId"],

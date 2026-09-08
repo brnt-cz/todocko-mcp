@@ -23,7 +23,7 @@ export const taskTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "Filter by status",
         },
         priority: {
@@ -79,7 +79,7 @@ export const taskTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "Task status (default: 'todo')",
         },
         priority: {
@@ -164,7 +164,7 @@ export const taskTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "Task status",
         },
         priority: {
@@ -272,7 +272,7 @@ export const taskTools: Tool[] = [
         },
         status: {
           type: "string",
-          enum: ["backlog", "todo", "in_progress", "review", "done"],
+          enum: ["backlog", "todo", "in_progress", "review", "done", "recurring"],
           description: "New status for all tasks",
         },
         priority: {
