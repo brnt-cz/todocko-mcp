@@ -132,6 +132,14 @@ async function createTaskComment(
   evolu: EvoluInstance,
   args: { taskId: string; content: string; userId?: string }
 ) {
+  // The task has to exist, and not be in the bin. Without this the row is
+  // written against an id nothing resolves: every listing goes through taskId,
+  // so nobody ever reads it back, while the tool answers `success` with an id.
+  // Measured before this: one orphan row in taskComment and one in
+  // checklistItem from two calls with a made-up task id. td_add_worklog has
+  // refused this since TODO-90 M12; these two never did. (TODO-300)
+  await assertRowExists(evolu, "task", args.taskId, "Task", undefined, true);
+
   const waiter = createMutationWaiter();
   const result = evolu.insert("taskComment", {
     taskId: args.taskId as TaskId,

@@ -363,12 +363,25 @@ export async function assertRowExists(
   id: string,
   label = table,
   ownerId?: string,
+  /**
+   * Treat a soft-deleted row as absent.
+   *
+   * Off by default, because the callers that came first use this to guard an
+   * update, where refusing to touch a trashed row would be a behaviour change.
+   * The child-entity tools want it on: attaching a comment to a task in the
+   * bin is the same mistake as attaching one to a task that never existed.
+   * (TODO-300)
+   */
+  excludeDeleted = false,
 ): Promise<void> {
   const query = evolu.createQuery((db: any) => {
     let q = db.selectFrom(table).select(["id"]).where("id", "=", id as never);
     // Shared-project data is partitioned by owner in one instance, so an id
     // alone would also match a row in somebody else's project.
     if (ownerId) q = q.where("ownerId", "=", ownerId as never);
+    // The literal, not the SQLITE_TRUE constant: pure.ts stays free of
+    // ../evolu.js imports, which is the whole reason this module exists.
+    if (excludeDeleted) q = q.where("isDeleted", "is not", 1 as never);
     return q.limit(1);
   });
   const found = await safeLoadQuery(evolu, query);
