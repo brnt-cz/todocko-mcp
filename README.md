@@ -771,7 +771,11 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (143)
+## Available Tools (152)
+
+> **This English list is incomplete: it covers 104 of the 152 tools.** It has
+> been drifting for several releases, not just this one. The Czech table above
+> is complete and is checked against the loaded tool names. Tracked in TODO-303.
 
 ### Projects
 
