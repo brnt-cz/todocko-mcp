@@ -6,6 +6,7 @@
  */
 
 import WebSocket from "ws";
+import { isSocketUnanswered } from "./tools/pure.js";
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { createHash } from "crypto";
@@ -18,9 +19,79 @@ import { homedir } from "os";
 // instead of having to allow all originless clients (`no-origin`). See TODO-169.
 const TODOCKO_MCP_ORIGIN = "https://todocko-mcp";
 
+/**
+ * How often to ping, and how long to wait for the pong. (TODO-295)
+ *
+ * On 2026-09-07 this process wrote to its local database for an hour while the
+ * relay received nothing from it, then flushed 24 messages the moment it was
+ * restarted. Nothing reported a fault: a WebSocket could be opened (that test
+ * dials a NEW connection, which says nothing about the sync one), the relay
+ * showed five live connections, and its log refused nothing.
+ *
+ * The mechanism, from reading the code: there is no keepalive anywhere.
+ * @evolu/common's WebSocket.js sends none, this class sent none, and the relay
+ * sends none. Evolu does reconnect, with unlimited exponential backoff, but
+ * only `onclose` starts it. A connection dropped without a FIN, by a proxy or
+ * a stateful firewall on the path, leaves a half-open socket that never fires
+ * `onclose`, so the reconnect never happens and every send goes nowhere.
+ *
+ * A ping is the only thing that tells a half-open socket from an idle one. 30s
+ * is well inside the usual idle windows; 70s to answer is generous, two pings'
+ * worth, so one lost pong does not tear down a working connection.
+ */
+const WS_PING_INTERVAL_MS = 30_000;
+const WS_PONG_TIMEOUT_MS = 70_000;
+
 class TodockoMcpWebSocket extends WebSocket {
   constructor(url: string | URL, protocols?: string | string[]) {
     super(url, protocols, { origin: TODOCKO_MCP_ORIGIN });
+
+    // `this` is typed as the subclass, which TypeScript does not see as the
+    // `ws` WebSocket here, so the event and control methods are reached through
+    // a typed alias rather than a cast per call.
+    const sock: WebSocket = this;
+
+    let lastPongAt = Date.now();
+    let timer: NodeJS.Timeout | null = null;
+
+    const stop = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+    };
+
+    sock.on("pong", () => {
+      lastPongAt = Date.now();
+    });
+
+    sock.on("open", () => {
+      lastPongAt = Date.now();
+      stop();
+      timer = setInterval(() => {
+        if (isSocketUnanswered(lastPongAt, Date.now(), WS_PONG_TIMEOUT_MS)) {
+          // terminate(), not close(): a half-open socket will not complete a
+          // closing handshake, and close() would wait for a peer that is gone.
+          // terminate() fires `close` locally, which is what Evolu's reconnect
+          // is waiting for.
+          console.error(
+            `[Sync] No pong for ${Math.round((Date.now() - lastPongAt) / 1000)}s, dropping the socket so it reconnects`,
+          );
+          stop();
+          sock.terminate();
+          return;
+        }
+        try {
+          sock.ping();
+        } catch {
+          // Sending failed, so the socket is already gone; the close handler
+          // below clears the timer.
+        }
+      }, WS_PING_INTERVAL_MS);
+      // Do not hold the process open just to ping.
+      timer.unref?.();
+    });
+
+    sock.on("close", stop);
+    sock.on("error", stop);
   }
 }
 

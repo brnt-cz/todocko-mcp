@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -361,5 +361,35 @@ describe("assertRequiredArgs rejects more than a missing id (TODO-297)", () => {
   it("says nothing when the call is clean", () => {
     expect(() => assertRequiredArgs("td_demo", { projectId: "p", name: "x", status: "done" }, schema))
       .not.toThrow();
+  });
+});
+
+describe("isSocketUnanswered (TODO-295)", () => {
+  const TIMEOUT = 70_000;
+
+  it("is patient while pongs keep arriving", () => {
+    expect(isSocketUnanswered(1_000_000, 1_000_000, TIMEOUT)).toBe(false);
+    expect(isSocketUnanswered(1_000_000, 1_069_999, TIMEOUT)).toBe(false);
+  });
+
+  it("gives up once the timeout is passed", () => {
+    expect(isSocketUnanswered(1_000_000, 1_070_001, TIMEOUT)).toBe(true);
+  });
+
+  it("does not fire exactly on the boundary, so one late pong is forgiven", () => {
+    expect(isSocketUnanswered(1_000_000, 1_070_000, TIMEOUT)).toBe(false);
+  });
+
+  it("ignores a clock that jumped backwards", () => {
+    // A suspended laptop or an NTP correction must not look like a dead peer.
+    expect(isSocketUnanswered(2_000_000, 1_000_000, TIMEOUT)).toBe(false);
+  });
+
+  it("allows two pings' worth of silence at the shipped settings", () => {
+    // 30s interval, 70s timeout: one lost pong cannot tear down a live socket.
+    const PING = 30_000;
+    expect(isSocketUnanswered(0, PING, TIMEOUT)).toBe(false);
+    expect(isSocketUnanswered(0, PING * 2, TIMEOUT)).toBe(false);
+    expect(isSocketUnanswered(0, PING * 3, TIMEOUT)).toBe(true);
   });
 });

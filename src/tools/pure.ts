@@ -472,3 +472,26 @@ export function judgeSyncFreshness(input: SyncFreshnessInput): SyncFreshness {
 
   return { verdict: "ok", reason: "provoz je aktualni", pendingForMs, quietForMs };
 }
+
+/**
+ * Has this socket stopped answering long enough to be considered dead?
+ * (TODO-295)
+ *
+ * Pulled out of the WebSocket subclass so the decision can be tested. The
+ * teardown around it cannot: a genuinely half-open socket is what this
+ * detects, and `ws` answers pings below the application layer, so a local
+ * server cannot pretend to be one.
+ *
+ * `lastPongAt` is set when the socket opens as well as on every pong, so a
+ * connection that has never been answered is judged from when it opened rather
+ * than from the epoch.
+ */
+export function isSocketUnanswered(
+  lastPongAt: number,
+  now: number,
+  timeoutMs: number,
+): boolean {
+  // A clock that jumped backwards must not read as a timeout.
+  if (now < lastPongAt) return false;
+  return now - lastPongAt > timeoutMs;
+}
