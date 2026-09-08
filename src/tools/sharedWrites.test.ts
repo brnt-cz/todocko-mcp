@@ -93,3 +93,53 @@ describe("the detector itself", () => {
     expect(sharedWriteSites(long)[0]!.hasOwnerId).toBe(true);
   });
 });
+
+/**
+ * Every tool that writes a child of a task must check the task first (TODO-300).
+ *
+ * Without it the row is written against an id nothing resolves. Every listing
+ * goes through taskId, so it is never read back, and the tool answers
+ * `success` with an id. Measured before the fix: one orphan row in taskComment
+ * and one in checklistItem from two calls with a made-up task id, while
+ * td_add_worklog refused the same call with "Task not found".
+ *
+ * Source-level for the same reason as the owner check above: three tools
+ * behaved three different ways and all of them compiled.
+ */
+describe("tools that write a child of a task", () => {
+  const CHILD_WRITERS = [
+    ["checklistItems.ts", "createChecklistItem"],
+    ["taskComments.ts", "createTaskComment"],
+    ["worklogs.ts", "addWorklog"],
+    ["attachments.ts", "uploadAttachment"],
+    ["shared.ts", "createSharedChecklistItem"],
+    ["shared.ts", "createSharedTaskComment"],
+    ["shared.ts", "addSharedWorklog"],
+    ["shared.ts", "uploadSharedAttachment"],
+  ] as const;
+
+  /** The body of one top-level `async function name(` declaration. */
+  function bodyOf(file: string, fn: string): string {
+    const source = readFileSync(join(toolsDir, file), "utf8");
+    const start = source.indexOf(`async function ${fn}(`);
+    expect(start, `${file} declares ${fn}`).toBeGreaterThan(-1);
+    const end = source.indexOf("\n}\n", start);
+    return source.slice(start, end === -1 ? undefined : end);
+  }
+
+  for (const [file, fn] of CHILD_WRITERS) {
+    it(`${fn} refuses a task that is not there`, () => {
+      const body = bodyOf(file, fn);
+      // Either the shared helper, or the hand-rolled query the older tools use.
+      const guarded =
+        /assertRowExists\([^)]*"task"/.test(body) ||
+        /selectFrom\("task"\)[\s\S]{0,400}?(Task not found|not found)/.test(body);
+      expect(guarded, `${file}:${fn} writes a child without checking the task`).toBe(true);
+    });
+  }
+
+  it("the detector notices an unguarded body", () => {
+    const unguarded = `async function createThing(args) {\n  evolu.insert("taskComment", { taskId: args.taskId });\n}`;
+    expect(/assertRowExists\([^)]*"task"/.test(unguarded)).toBe(false);
+  });
+});

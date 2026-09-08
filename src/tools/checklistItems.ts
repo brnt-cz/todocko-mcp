@@ -37,6 +37,10 @@ export const checklistItemTools: Tool[] = [
           type: "boolean",
           description: "Whether the item is checked (default: false)",
         },
+        position: {
+          type: "number",
+          description: "Position (default: appended to the end)",
+        },
       },
       required: ["taskId", "title"],
     },
@@ -92,7 +96,7 @@ export async function handleChecklistItemTool(
     case "td_list_checklist_items":
       return listChecklistItems(evolu, args as { taskId: string });
     case "td_create_checklist_item":
-      return createChecklistItem(evolu, args as { taskId: string; title: string; isChecked?: boolean });
+      return createChecklistItem(evolu, args as { taskId: string; title: string; isChecked?: boolean; position?: number });
     case "td_update_checklist_item":
       return updateChecklistItem(evolu, args as { id: string; title?: string; isChecked?: boolean; position?: number });
     case "td_delete_checklist_item":
@@ -131,8 +135,16 @@ async function listChecklistItems(evolu: EvoluInstance, args: { taskId: string }
 
 async function createChecklistItem(
   evolu: EvoluInstance,
-  args: { taskId: string; title: string; isChecked?: boolean }
+  args: { taskId: string; title: string; isChecked?: boolean; position?: number }
 ) {
+  // The task has to exist, and not be in the bin. Without this the row is
+  // written against an id nothing resolves: every listing goes through taskId,
+  // so nobody ever reads it back, while the tool answers `success` with an id.
+  // Measured before this: one orphan row in taskComment and one in
+  // checklistItem from two calls with a made-up task id. td_add_worklog has
+  // refused this since TODO-90 M12; these two never did. (TODO-300)
+  await assertRowExists(evolu, "task", args.taskId, "Task", undefined, true);
+
   // Get max position for this task
   const posQuery = evolu.createQuery((db: any) =>
     db
@@ -145,13 +157,16 @@ async function createChecklistItem(
   );
   const posResult = await evolu.loadQuery(posQuery);
   const maxPosition = posResult.length > 0 ? ((posResult[0] as any).position || 0) : 0;
+  // The shared twin has taken an explicit position all along; this one derived
+  // it and gave the caller no say. (TODO-302)
+  const position = args.position !== undefined ? args.position : maxPosition + 1;
 
   const waiter = createMutationWaiter();
   const result = evolu.insert("checklistItem", {
     taskId: args.taskId as TaskId,
     title: NonEmptyTrimmedString1000.orThrow(args.title),
     isChecked: args.isChecked ? SQLITE_TRUE : null,
-    position: Int.orThrow(maxPosition + 1),
+    position: Int.orThrow(position),
   }, { onComplete: waiter.onComplete });
 
 

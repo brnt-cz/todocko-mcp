@@ -38,30 +38,23 @@ const BY_DESIGN: Record<string, string[]> = {
   "td_list_repository_links": ["projectId"],
   "td_create_task": ["code"],
   "td_list_tasks": ["projectCode", "projectId", "assigneeId", "priority", "includeShared"],
+  // td_update_shared_project resolves the project from the owner rather than
+  // taking its id, so there is nothing to identify. Recorded as debt at first
+  // and reclassified when the tool was read properly. (TODO-302)
+  "td_update_project": ["id"],
 };
 
 /**
- * Divergences that are debt, not design. Recorded so this test can be useful
- * today instead of waiting for all of them to be closed, and asserted as an
- * EXACT set: adding a gap fails, and closing one fails too until the entry is
- * removed. Tracked in TODO-302.
+ * Divergences that are debt, not design.
+ *
+ * Nine were recorded here when this test was written (TODO-297) and all nine
+ * are closed (TODO-302), so the list is empty and asserted as an EXACT set:
+ * a new gap fails, and so does closing one without removing its entry.
  */
-const KNOWN_GAPS: string[] = [
-  'td_list_shared_tags is missing "unassignedOnly", which td_list_tags accepts',
-  'td_update_shared_task is missing "parentTaskId", which td_update_task accepts',
-  'td_update_shared_task is missing "isDeleted", which td_update_task accepts',
-  'td_create_shared_task is missing "completedAt", which td_create_task accepts',
-  'td_update_shared_project is missing "id", which td_update_project accepts',
-  'td_update_shared_project is missing "name", which td_update_project accepts',
-  'td_update_shared_project is missing "code", which td_update_project accepts',
-  'td_update_shared_project is missing "color", which td_update_project accepts',
-  'td_update_shared_project is missing "autoApproveMembers", which td_update_project accepts',
-];
+const KNOWN_GAPS: string[] = [];
 
 /** The reverse direction, same rules. */
-const KNOWN_EXTRAS: string[] = [
-  'td_create_shared_checklist_item takes "position", which td_create_checklist_item does not',
-];
+const KNOWN_EXTRAS: string[] = [];
 
 /** Every tool whose name has a `_shared_` twin on the personal side. */
 function pairs(): { personal: string; shared: string }[] {

@@ -98,6 +98,7 @@ export const sharedTools: Tool[] = [
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        unassignedOnly: { type: "boolean", description: "Only tags not tied to a project" },
       },
       required: ["sharedOwnerId", "ownerSecret"],
     },
@@ -270,6 +271,14 @@ export const sharedTools: Tool[] = [
           type: "number",
           description: "Sprint number for the task, or null to clear",
         },
+        parentTaskId: {
+          type: "string",
+          description: "Parent task ID, or null to detach from parent",
+        },
+        isDeleted: {
+          type: "boolean",
+          description: "Soft-delete flag. Pass false to restore a task from the bin.",
+        },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -299,6 +308,7 @@ export const sharedTools: Tool[] = [
         sprintNumber: { type: "number", description: "Sprint number" },
         parentTaskId: { type: "string", description: "Parent task ID to create this as a sub-task" },
         code: { type: "string", description: "Override auto-generated task code (e.g., 'PROJ-12'). Must match the project code format." },
+        completedAt: { type: "string", description: "ISO timestamp for when the task was completed (only meaningful when status='done')" },
       },
       required: ["sharedOwnerId", "ownerSecret", "projectId"],
     },
@@ -620,14 +630,18 @@ export const sharedTools: Tool[] = [
   },
   {
     name: "td_update_shared_project",
-    description: "Update shared-project metadata (archive / hide from filters). Finds the project owned by the given sharedOwnerId.",
+    description: "Update a shared project: name, code, colour, archive, hide from filters, member auto-approval. Finds the project owned by the given sharedOwnerId, so it takes no project id.",
     inputSchema: {
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        name: { type: "string", description: "New project name" },
+        code: { type: "string", description: "New project code, or null to clear" },
+        color: { type: "string", description: "New project colour, e.g. '#6366f1'" },
         isArchived: { type: "boolean", description: "Archive / unarchive the project" },
         isHiddenFromFilters: { type: "boolean", description: "Hide the project from filters" },
+        autoApproveMembers: { type: "boolean", description: "Approve joining members automatically" },
       },
       required: ["sharedOwnerId", "ownerSecret"],
     },
@@ -913,6 +927,8 @@ export async function handleSharedTool(
         recurrenceEndDate?: string | null;
         recurrenceDay?: string | null;
         sprintNumber?: number | null;
+        parentTaskId?: string | null;
+        isDeleted?: boolean;
       });
     case "td_create_shared_task":
       return createSharedTask(args as {
@@ -935,6 +951,7 @@ export async function handleSharedTool(
         sprintNumber?: number;
         parentTaskId?: string;
         code?: string;
+        completedAt?: string;
       });
     case "td_delete_shared_task":
       return deleteSharedTask(args as {
@@ -1002,7 +1019,7 @@ export async function handleSharedTool(
     case "td_update_shared_deployment_stage":
       return updateSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string; name?: string; color?: string; position?: number });
     case "td_list_shared_tags":
-      return listSharedTags(args as { sharedOwnerId: string; ownerSecret: string });
+      return listSharedTags(args as { sharedOwnerId: string; ownerSecret: string; unassignedOnly?: boolean });
     case "td_create_shared_tag":
       return createSharedTag(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; name: string; color?: string; isDefault?: boolean });
     case "td_update_shared_tag":
@@ -1016,7 +1033,7 @@ export async function handleSharedTool(
     case "td_delete_shared_deployment_stage":
       return deleteSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_update_shared_project":
-      return updateSharedProject(args as { sharedOwnerId: string; ownerSecret: string; isArchived?: boolean; isHiddenFromFilters?: boolean });
+      return updateSharedProject(args as { sharedOwnerId: string; ownerSecret: string; name?: string; code?: string | null; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean });
     case "td_upload_shared_attachment":
       return uploadSharedAttachment(args as {
         sharedOwnerId: string;
@@ -1382,6 +1399,8 @@ async function updateSharedTask(
     recurrenceEndDate?: string | null;
     recurrenceDay?: string | null;
     sprintNumber?: number | null;
+    parentTaskId?: string | null;
+    isDeleted?: boolean;
   }
 ) {
   const projectEvolu = getProjectEvolu();
@@ -1460,6 +1479,15 @@ async function updateSharedTask(
     if (args.sprintNumber !== undefined) {
       updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
     }
+    if (args.parentTaskId !== undefined) {
+      updates.parentTaskId = args.parentTaskId ? (args.parentTaskId as TaskId) : null;
+    }
+    if (args.isDeleted !== undefined) {
+      // Restore writes 0, not null, for the same reason as the personal tool:
+      // the column is a real boolean and a restored row has to read as "not
+      // deleted", which `isDeleted is not 1` treats 0 as. (TODO-302, TODO-179)
+      updates.isDeleted = args.isDeleted ? SQLITE_TRUE : (0 as unknown as typeof SQLITE_TRUE);
+    }
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
@@ -1495,6 +1523,7 @@ async function createSharedTask(
     sprintNumber?: number;
     parentTaskId?: string;
     code?: string;
+    completedAt?: string;
   }
 ) {
   const projectEvolu = getProjectEvolu();
@@ -1589,7 +1618,10 @@ async function createSharedTask(
         isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
         isBlocked: null,
         blockedReason: null,
-        completedAt: null,
+        // Was hardcoded null, so a task could not be created already done with
+        // its real completion time, which an import or a backfill needs.
+        // (TODO-302)
+        completedAt: args.completedAt || null,
         recurrenceType: args.recurrenceType || null,
         recurrenceInterval: args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null,
         recurrenceEndDate: args.recurrenceEndDate || null,
@@ -1853,6 +1885,11 @@ async function createSharedChecklistItem(
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
   await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Scoped by owner and excluding the bin: the shared instance holds every
+  // project's rows, so an id alone would also match a task in someone else's
+  // project. td_add_shared_worklog has checked this all along, these two did
+  // not. (TODO-300)
+  await assertRowExists(projectEvolu, "task", args.taskId, "Task", sharedOwner.id as string, true);
   try {
     let position: number;
     if (args.position !== undefined) {
@@ -1974,6 +2011,11 @@ async function createSharedTaskComment(
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
   useSharedOwner(sharedOwner);
   await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Scoped by owner and excluding the bin: the shared instance holds every
+  // project's rows, so an id alone would also match a task in someone else's
+  // project. td_add_shared_worklog has checked this all along, these two did
+  // not. (TODO-300)
+  await assertRowExists(projectEvolu, "task", args.taskId, "Task", sharedOwner.id as string, true);
   try {
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert(
@@ -2265,7 +2307,7 @@ async function updateSharedDeploymentStage(
 
 // --- Project tags in shared projects (TODO-235) ---
 
-async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string }) {
+async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string; unassignedOnly?: boolean }) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
   const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
@@ -2284,7 +2326,13 @@ async function listSharedTags(args: { sharedOwnerId: string; ownerSecret: string
     // One Evolu instance holds every shared owner's rows, so filter by ownerId
     // or a caller sees other projects' tags.
     const actualOwnerId = sharedOwner.id as string;
-    const filtered = result.filter((t: any) => (t.ownerId as string | undefined) === actualOwnerId);
+    // Same filter as the personal td_list_tags: a tag with no projectId is
+    // shared across the project's tasks rather than tied to one. (TODO-302)
+    const filtered = result.filter(
+      (t: any) =>
+        (t.ownerId as string | undefined) === actualOwnerId &&
+        (!args.unassignedOnly || !t.projectId),
+    );
     return {
       count: filtered.length,
       tags: filtered.map((t: any) => ({
@@ -2459,7 +2507,16 @@ async function deleteSharedDeploymentStage(
 }
 
 async function updateSharedProject(
-  args: { sharedOwnerId: string; ownerSecret: string; isArchived?: boolean; isHiddenFromFilters?: boolean }
+  args: {
+    sharedOwnerId: string;
+    ownerSecret: string;
+    name?: string;
+    code?: string | null;
+    color?: string;
+    isArchived?: boolean;
+    isHiddenFromFilters?: boolean;
+    autoApproveMembers?: boolean;
+  }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
@@ -2476,8 +2533,15 @@ async function updateSharedProject(
     if (projects.length === 0) throw new Error("Project not found for this shared owner");
 
     const updates: Record<string, unknown> = { id: projects[0].id };
+    // Renaming was impossible until now: the tool took only the two flags, so
+    // a shared project's name, code and colour could be set at creation and
+    // never again. (TODO-302)
+    if (args.name !== undefined) updates.name = NonEmptyTrimmedString100.orThrow(args.name);
+    if (args.code !== undefined) updates.code = args.code ? NonEmptyTrimmedString100.orThrow(args.code) : null;
+    if (args.color !== undefined) updates.color = EvoluString.orThrow(args.color);
     if (args.isArchived !== undefined) updates.isArchived = args.isArchived ? SQLITE_TRUE : null;
     if (args.isHiddenFromFilters !== undefined) updates.isHiddenFromFilters = args.isHiddenFromFilters ? SQLITE_TRUE : null;
+    if (args.autoApproveMembers !== undefined) updates.autoApproveMembers = args.autoApproveMembers ? SQLITE_TRUE : null;
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("project", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });

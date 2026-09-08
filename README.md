@@ -368,7 +368,7 @@ viz níž.
 | `td_create_shared_task` | Vytvoření úkolu ve sdíleném projektu (auto-generovaný kód) |
 | `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu (všechna pole včetně recurrence, estimate, blocking) |
 | `td_delete_shared_task` | Smazání úkolu ve sdíleném projektu (soft delete, kaskáda na checklist) |
-| `td_update_shared_project` | Aktualizace metadat sdíleného projektu (archivace / skrytí z filtrů) |
+| `td_update_shared_project` | Aktualizace sdíleného projektu: název, kód, barva, archivace, skrytí z filtrů, automatické schvalování členů |
 | `td_list_shared_worklogs` | Seznam worklogů úkolu ve sdíleném projektu |
 | `td_add_shared_worklog` | Přidání worklogu k úkolu ve sdíleném projektu |
 | `td_delete_shared_worklog` | Smazání worklogu ve sdíleném projektu |
@@ -424,6 +424,17 @@ viz níž.
 > Při té příležitosti se srovnal i `linkType`: MCP nabízelo `related`, kterému
 > appka nerozumí, a chyběly mu `explicit` a `mention`, které appka opravdu
 > zapisuje. Platné hodnoty jsou `blocks`, `explicit`, `mention`.
+
+> **Rodič se ověřuje, argumenty jsou dorovnané (TODO-300, TODO-302).**
+> `td_create_task_comment` a `td_create_checklist_item` šly dřív založit na
+> **neexistující úkol**: řádek se zapsal proti ID, které nic nerozřeší, každý
+> výpis jde přes `taskId`, takže ho nikdo nikdy nepřečte, a tool vrátil
+> `success`. `td_add_worklog` to odmítal od TODO-90 M12, tyhle dva ne. Teď
+> odmítají obě strany, osobní i sdílená, a sdílená scopuje i podle ownera.
+>
+> Zároveň se dorovnalo devět argumentů, které sdílené tooly proti osobním
+> neměly. Nejcitelnější byl `td_update_shared_project`: uměl jen archivaci,
+> takže **sdílený projekt nešlo přejmenovat**.
 
 ### Zprávy od uživatelů (relay)
 
