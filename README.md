@@ -773,10 +773,6 @@ The installer will:
 
 ## Available Tools (152)
 
-> **This English list is incomplete: it covers 104 of the 152 tools.** It has
-> been drifting for several releases, not just this one. The Czech table above
-> is complete and is checked against the loaded tool names. Tracked in TODO-303.
-
 ### Projects
 
 | Tool | Description |
@@ -798,6 +794,8 @@ The installer will:
 | `td_search_tasks` | Search tasks by text |
 | `td_bulk_update_tasks` | Bulk update multiple tasks |
 | `td_bulk_delete_tasks` | Bulk delete multiple tasks |
+| `td_delete_task` | Soft-delete a single personal task (cascades to its worklogs and attachments). |
+| `td_list_git_events` | List git events (push, PR opened/merged/closed) for a task by its code. |
 
 ### Users
 
@@ -960,6 +958,9 @@ Shared projects (TODO-235):
 | Tool | Description |
 |------|-------------|
 | `td_list_deployment_stages` | List deployment stages for a project |
+| `td_create_deployment_stage` | Create a deployment stage for a personal project. |
+| `td_update_deployment_stage` | Update a deployment stage in a personal project. |
+| `td_delete_deployment_stage` | Soft-delete a deployment stage in a personal project. |
 
 ### Repository Links
 
@@ -968,6 +969,7 @@ Shared projects (TODO-235):
 | `td_list_repository_links` | List repository links |
 | `td_create_repository_link` | Create a repository link |
 | `td_delete_repository_link` | Delete a repository link |
+| `td_update_repository_link` | Update a repository link for a project. |
 
 ### Shared Projects
 
@@ -990,6 +992,69 @@ Shared projects (TODO-235):
 | `td_list_shared_note_attachments` | List attachments of a shared project note |
 | `td_download_shared_note_attachment` | Download a shared note attachment |
 | `td_delete_shared_note_attachment` | Delete a shared note attachment |
+| `td_list_shared_project_docs` | List document pages from a shared project |
+| `td_create_shared_project_doc` | Create a document page in a shared project |
+| `td_update_shared_project_doc` | Update a document page in a shared project |
+| `td_delete_shared_project_doc` | Delete a document page in a shared project (soft delete) |
+| `td_create_shared_task` | Create a task in a shared project. |
+| `td_delete_shared_task` | Soft-delete a task in a shared project (cascades to its checklist items and comments). |
+| `td_list_shared_worklogs` | List worklogs for a task in a shared project. |
+| `td_add_shared_worklog` | Add a worklog to a task in a shared project. |
+| `td_delete_shared_worklog` | Soft-delete a worklog in a shared project. |
+| `td_list_shared_checklist_items` | List checklist items for a task in a shared project. |
+| `td_create_shared_checklist_item` | Create a checklist item on a task in a shared project. |
+| `td_update_shared_checklist_item` | Update a checklist item in a shared project (toggle done, rename, reorder). |
+| `td_delete_shared_checklist_item` | Soft-delete a checklist item in a shared project. |
+| `td_list_shared_task_comments` | List comments for a task in a shared project. |
+| `td_create_shared_task_comment` | Add a comment to a task in a shared project. |
+| `td_update_shared_task_comment` | Update a comment in a shared project. |
+| `td_delete_shared_task_comment` | Soft-delete a comment in a shared project. |
+| `td_update_shared_repository_link` | Update a repository link in a shared project. |
+| `td_delete_shared_repository_link` | Soft-delete a repository link in a shared project. |
+| `td_update_shared_deployment_stage` | Update a deployment stage in a shared project. |
+| `td_delete_shared_deployment_stage` | Soft-delete a deployment stage in a shared project. |
+| `td_update_shared_project` | Update shared-project metadata (archive / hide from filters). |
+| `td_upload_shared_attachment` | Upload a file attachment to a task in a shared project. |
+| `td_list_shared_attachments` | List file attachments of a task in a shared project (metadata only, no data). |
+| `td_download_shared_attachment` | Download a task attachment from a shared project. |
+| `td_delete_shared_attachment` | Soft-delete a task attachment in a shared project. |
+| `td_get_shared_task` | Get one task in a shared project by ID or code, with its worklog total, checklist and comment counts. |
+| `td_list_shared_task_tags` | List the tags on a task in a shared project. |
+| `td_bulk_update_shared_tasks` | Update several tasks in a shared project at once. |
+| `td_bulk_delete_shared_tasks` | Soft-delete several tasks in a shared project at once, cascading their checklist items and comments. |
+| `td_update_shared_worklog` | Update a worklog in a shared project. |
+| `td_list_shared_activity_log` | List activity log entries for a shared project. |
+
+### Project Documentation
+
+Documents are notes with `isDoc`, so they can nest under another document via `parentDocId`.
+
+| Tool | Description |
+|------|-------------|
+| `td_list_project_docs` | List local project document pages (not synced to shared projects) |
+| `td_create_project_doc` | Create a local project document page |
+| `td_update_project_doc` | Update a local project document page |
+| `td_delete_project_doc` | Delete a local project document page (soft delete) |
+
+### System Notifications (relay)
+
+Broadcast notices for every user. Writing, and listing expired ones, needs `TODOCKO_RELAY_ADMIN_KEY`.
+
+| Tool | Description |
+|------|-------------|
+| `td_list_system_notifications` | List active system/broadcast notifications from the relay server. |
+| `td_create_system_notification` | Create a broadcast notification visible to all Todocko users. |
+| `td_delete_system_notification` | Delete a system notification by ID. |
+
+### User Messages (relay)
+
+What users send from the app: bug reports, feature requests, notes. Listing and deleting are admin-owner only and the request is signed with the configured mnemonic; submitting needs no admin rights.
+
+| Tool | Description |
+|------|-------------|
+| `td_list_user_messages` | List messages users have sent from the app (bug reports, feature requests, notes). |
+| `td_submit_user_message` | Send a message to the Todocko admins (bug report, feature request or note), the same way the app's feedback form does. |
+| `td_delete_user_message` | Delete one user message from the relay. |
 
 ### Analytics & Reports
 
