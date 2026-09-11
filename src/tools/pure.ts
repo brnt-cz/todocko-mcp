@@ -331,17 +331,66 @@ export interface QueryableEvolu {
 }
 
 /**
- * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
- * If the query doesn't resolve within the timeout, throws an error.
+ * How long to wait for the dbWorker before giving up on a query.
+ *
+ * A stalled worker never answers at all, so without a bound the promise never
+ * settles and the MCP client waits until *it* gives up, which is 1800s.
  */
-export async function safeLoadQuery(evolu: QueryableEvolu, query: any, timeoutMs = 15000): Promise<any[]> {
-  const result = await Promise.race([
-    evolu.loadQuery(query),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`loadQuery timed out after ${timeoutMs}ms`)), timeoutMs)
-    ),
-  ]);
-  return result as any[];
+export const LOAD_QUERY_TIMEOUT_MS = 15000;
+
+/**
+ * Race one `loadQuery` against the clock.
+ *
+ * Takes the load function rather than the instance so the instance wrapper
+ * below can pass the *original* method in without recursing into itself.
+ *
+ * The timer is cleared in `finally`. The previous version never cleared it, so
+ * every answered query still held a 15s timer and its reject closure alive.
+ */
+export async function loadQueryWithTimeout(
+  load: (query: any) => Promise<unknown>,
+  query: any,
+  timeoutMs = LOAD_QUERY_TIMEOUT_MS,
+): Promise<any> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      load(query),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`loadQuery timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
+ * Put the bound on the instance itself, so every call site gets it.
+ *
+ * Wrapping call by call was the old approach and it only ever covered 20 of
+ * the 121: the other 101 went straight at `evolu.loadQuery` and hung forever
+ * when the worker stalled. One fault showed up as two different symptoms
+ * depending on which helper the tool happened to use. (TODO-316)
+ */
+export function withLoadQueryTimeout<T extends { loadQuery: (query: any) => Promise<unknown> }>(
+  instance: T,
+  timeoutMs = LOAD_QUERY_TIMEOUT_MS,
+): T {
+  const original = instance.loadQuery.bind(instance);
+  return Object.assign(instance, {
+    loadQuery: (query: any) => loadQueryWithTimeout(original, query, timeoutMs),
+  });
+}
+
+/**
+ * Wrapper around evolu.loadQuery with a timeout to prevent infinite hangs.
+ *
+ * Kept for the call sites that already use it. Now that `withLoadQueryTimeout`
+ * bounds the instance, this is belt and braces rather than the only guard.
+ */
+export async function safeLoadQuery(evolu: QueryableEvolu, query: any, timeoutMs = LOAD_QUERY_TIMEOUT_MS): Promise<any[]> {
+  return (await loadQueryWithTimeout((q) => evolu.loadQuery(q), query, timeoutMs)) as any[];
 }
 
 /**

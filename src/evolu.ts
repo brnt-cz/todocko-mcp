@@ -6,7 +6,7 @@
  */
 
 import WebSocket from "ws";
-import { isSocketUnanswered } from "./tools/pure.js";
+import { isSocketUnanswered, withLoadQueryTimeout } from "./tools/pure.js";
 import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { createHash } from "crypto";
@@ -41,6 +41,14 @@ const TODOCKO_MCP_ORIGIN = "https://todocko-mcp";
  */
 const WS_PING_INTERVAL_MS = 30_000;
 const WS_PONG_TIMEOUT_MS = 70_000;
+
+/**
+ * How long the boot probe gives the dbWorker to answer one trivial query.
+ *
+ * A healthy worker answers in single-digit milliseconds (measured), so this is
+ * slack, not a budget. A dead one never answers at all. (TODO-316)
+ */
+const DB_WORKER_PROBE_TIMEOUT_MS = 8000;
 
 class TodockoMcpWebSocket extends WebSocket {
   constructor(url: string | URL, protocols?: string | string[]) {
@@ -617,7 +625,12 @@ export type EvoluInstance = EvoluWithQuery<EvoluSchema>;
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function withQueryBuilder(instance: any, schema: any): any {
-  return Object.assign(instance, { createQuery: createQueryBuilder(schema) });
+  // The timeout goes on here, not on each call site: both instances are built
+  // through this function, so one wrapper bounds all 121 loadQuery calls.
+  // (TODO-316)
+  return withLoadQueryTimeout(
+    Object.assign(instance, { createQuery: createQueryBuilder(schema) }),
+  );
 }
 
 let evoluInstance: EvoluInstance | null = null;
@@ -1058,29 +1071,31 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
       console.error("WARNING: Cannot connect to any relay server! Sync will not work.");
     }
 
-    // Fail fast if the SQLite native binding can't be loaded.
-    // Without this check the dbWorker init silently hangs forever and
-    // every loadQuery times out — see README "Troubleshooting".
+    // Fail fast if the dbWorker did not come up. A trivial query is the v8 way
+    // to ask: it only resolves once the worker is running. (TODO-265)
     //
-    // The probe used to await `appOwner`, which was a Promise in v7 and is a
-    // plain value in v8, so `appOwner?.then` was undefined and this warning
-    // could never fire. A trivial query is the v8 way to learn the same thing:
-    // it only resolves once the dbWorker is running. (TODO-265)
+    // This used to log and carry on, which is what made the fault invisible.
+    // Initialisation ran to the end, set `evoluReady` and printed "ready for
+    // queries", so the server answered `initialize` and looked healthy while
+    // every single query hung forever. The message went to stderr after the
+    // MCP connection was already up, where the host no longer logs it.
+    // Rejecting readiness turns 1800s of silence into an immediate, explicit
+    // error on the first tool call. (TODO-316)
     {
       const probeStarted = Date.now();
       const probe = instance.createQuery((db) => db.selectFrom("user").select(["id"]).limit(1));
-      Promise.race([
+      const dbWorkerAnswers = await Promise.race([
         instance.loadQuery(probe).then(() => true, () => false),
-        new Promise<boolean>((res) => setTimeout(() => res(false), 8000)),
-      ]).then((ok) => {
-        if (!ok) {
-          console.error(
-            `[todocko-mcp] FATAL: Evolu dbWorker init did not complete within ${Date.now()-probeStarted}ms. ` +
-            `Most likely cause: better-sqlite3 native binding was built against a different Node.js ABI. ` +
-            `Fix: cd ${process.cwd()} && cd node_modules/better-sqlite3 && npx node-gyp rebuild --release`,
-          );
-        }
-      });
+        new Promise<boolean>((res) => setTimeout(() => res(false), DB_WORKER_PROBE_TIMEOUT_MS)),
+      ]);
+      if (!dbWorkerAnswers) {
+        return failInit(
+          `Evolu dbWorker never answered (${Date.now() - probeStarted}ms). Every query would hang. ` +
+          `Known cause: two MCP processes creating this database at the same time - the loser aborts ` +
+          `with "table evolu_version already exists" and its worker stays dead for the life of the ` +
+          `process. Reconnect the MCP server to get a working one. (TODO-316)`,
+        );
+      }
     }
 
     // Wait for initial sync - use shorter timeout if WS is connected
@@ -1127,6 +1142,10 @@ const evoluReadyPromise = new Promise<void>((resolve, reject) => {
   evoluReadyResolve = resolve;
   evoluReadyReject = reject;
 });
+// Every tool call awaits this promise and handles the rejection, but a process
+// that is never asked for anything would otherwise die on an unhandled
+// rejection instead of sitting there with a clear reason. (TODO-316)
+void evoluReadyPromise.catch(() => {});
 
 /**
  * Wait for Evolu to be fully initialized and synced.
