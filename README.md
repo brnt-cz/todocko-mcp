@@ -658,7 +658,21 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - Zkontrolujte cestu k dist/index.js
 
 ### Každý `loadQuery` skončí timeoutem (`loadQuery timed out after 15000ms`)
-Příčina: `better-sqlite3` native binding byl zkompilován proti jiné Node.js ABI verzi, než pod kterou MCP server běží. `new Database()` selže s `ERR_DLOPEN_FAILED`, Evolu dbWorker init nikdy nedoběhne a všechny `loadQuery` volání visí navždy. Mutace (insert/update) reportují success, ale ve skutečnosti se nezapíšou.
+
+Příčiny jsou dvě, poznáte je podle toho, co server řekne.
+
+**1. Mrtvý dbWorker po závodu dvou procesů (TODO-316).** Dva MCP procesy, které
+současně zakládají schéma téže databáze, se porvou. Poražený dostane
+`SqliteError: table evolu_version already exists` a jeho dbWorker zůstane
+mrtvý do konce života procesu. Typicky při prvních startech po upgradu MCP,
+který přidá tabulku.
+
+Od TODO-316 to server pozná při startu a **odmítne se nastartovat**: každé
+volání nástroje hned vrátí `Evolu dbWorker never answered`. Dřív se tvářil
+zdravě a každý dotaz visel, dokud to klient po 1800 s nevzdal. Řešení je `/mcp`
+reconnect v Claude Code.
+
+**2. Nesedící native binding.** `better-sqlite3` native binding byl zkompilován proti jiné Node.js ABI verzi, než pod kterou MCP server běží. `new Database()` selže s `ERR_DLOPEN_FAILED`, Evolu dbWorker init nikdy nedoběhne a všechny `loadQuery` volání visí navždy. Mutace (insert/update) reportují success, ale ve skutečnosti se nezapíšou.
 
 Symptom v praxi: `td_sync_status` hlásí `ok`, `errorCount: 0`, ale `td_get_task`, `td_list_*` apod. timeoutují.
 
@@ -1230,7 +1244,21 @@ The database contains the owner ID from the previous mnemonic. After deletion, a
 - Check the path to dist/index.js
 
 ### Every `loadQuery` ends with a timeout (`loadQuery timed out after 15000ms`)
-Cause: the `better-sqlite3` native binding was compiled against a different Node.js ABI than the one running the MCP server. `new Database()` fails with `ERR_DLOPEN_FAILED`, the Evolu dbWorker init never completes, and every `loadQuery` hangs forever. Mutations (insert/update) report success but are silently lost.
+
+There are two causes, told apart by what the server says.
+
+**1. A dead dbWorker after two processes raced (TODO-316).** Two MCP processes
+creating the schema of the same database at the same time race each other. The
+loser gets `SqliteError: table evolu_version already exists` and its dbWorker
+stays dead for the life of the process. Typically on the first starts after an
+MCP upgrade that adds a table.
+
+Since TODO-316 the server detects this at startup and **refuses to start**:
+every tool call returns `Evolu dbWorker never answered` immediately. It used to
+look healthy while every query hung until the client gave up 1800s later. The
+fix is a `/mcp` reconnect in Claude Code.
+
+**2. A mismatched native binding.** The `better-sqlite3` native binding was compiled against a different Node.js ABI than the one running the MCP server. `new Database()` fails with `ERR_DLOPEN_FAILED`, the Evolu dbWorker init never completes, and every `loadQuery` hangs forever. Mutations (insert/update) report success but are silently lost.
 
 Typical symptoms: `td_sync_status` reports `ok` with `errorCount: 0`, but `td_get_task`, `td_list_*`, etc. all time out.
 

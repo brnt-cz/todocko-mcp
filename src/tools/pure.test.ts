@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered } from "./pure.js";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -391,5 +391,71 @@ describe("isSocketUnanswered (TODO-295)", () => {
     expect(isSocketUnanswered(0, PING, TIMEOUT)).toBe(false);
     expect(isSocketUnanswered(0, PING * 2, TIMEOUT)).toBe(false);
     expect(isSocketUnanswered(0, PING * 3, TIMEOUT)).toBe(true);
+  });
+});
+
+/**
+ * A stalled Evolu dbWorker never answers, so a `loadQuery` awaiting it never
+ * settles. 101 of the 121 call sites went straight at `evolu.loadQuery`, so a
+ * stall showed up as a tool that returned nothing at all until the MCP client
+ * gave up 1800s later, while the 20 wrapped ones failed in 15s. Same fault,
+ * two symptoms. Wrapping the instance puts the bound on all of them at once.
+ * (TODO-316)
+ */
+describe("loadQueryWithTimeout", () => {
+  it("rejects rather than hanging when the worker never answers", async () => {
+    const neverAnswers = () => new Promise<unknown>(() => {});
+    await expect(loadQueryWithTimeout(neverAnswers, "q", 20)).rejects.toThrow(/timed out after 20ms/);
+  });
+
+  it("passes the rows through untouched when the worker does answer", async () => {
+    const rows = [{ id: "a" }];
+    await expect(loadQueryWithTimeout(async () => rows, "q", 20)).resolves.toBe(rows);
+  });
+
+  it("passes the query to the underlying load", async () => {
+    let seen: unknown = null;
+    await loadQueryWithTimeout(async (q) => { seen = q; return []; }, "the-query", 20);
+    expect(seen).toBe("the-query");
+  });
+
+  it("propagates a real error instead of turning it into a timeout", async () => {
+    const boom = async () => { throw new Error("kaboom"); };
+    await expect(loadQueryWithTimeout(boom, "q", 20)).rejects.toThrow(/kaboom/);
+  });
+
+  it("clears the timer once the query answers, so it holds nothing open", async () => {
+    vi.useFakeTimers();
+    try {
+      await loadQueryWithTimeout(async () => [], "q", 15000);
+      // The old safeLoadQuery never cleared this, so every call kept a 15s
+      // timer (and its reject closure) alive after it was already answered.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("withLoadQueryTimeout", () => {
+  it("bounds loadQuery on the instance every call site shares", async () => {
+    const instance = {
+      createQuery: (b: unknown) => b,
+      loadQuery: (_q: unknown) => new Promise<unknown>(() => {}),
+    };
+    const wrapped = withLoadQueryTimeout(instance, 20);
+    await expect(wrapped.loadQuery("q")).rejects.toThrow(/timed out after 20ms/);
+  });
+
+  it("leaves createQuery alone", () => {
+    const createQuery = (b: unknown) => b;
+    const wrapped = withLoadQueryTimeout({ createQuery, loadQuery: async (_q: unknown) => [] }, 20);
+    expect(wrapped.createQuery).toBe(createQuery);
+  });
+
+  it("still returns rows from a healthy instance", async () => {
+    const rows = [{ id: "a" }];
+    const wrapped = withLoadQueryTimeout({ createQuery: (b: unknown) => b, loadQuery: async (_q: unknown) => rows }, 20);
+    await expect(wrapped.loadQuery("q")).resolves.toBe(rows);
   });
 });
