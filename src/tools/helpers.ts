@@ -23,6 +23,7 @@ export {
   freeTierWarning,
   safeLoadQuery,
   assertRowExists,
+  assertNotSharedProject,
 } from "./pure.js";
 
 /**

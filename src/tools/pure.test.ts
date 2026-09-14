@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -546,5 +546,62 @@ describe("describeDefect", () => {
     const a: Record<string, unknown> = { type: "X" };
     a.reason = a;
     expect(() => describeDefect(a)).not.toThrow();
+  });
+});
+
+/**
+ * A project that has been shared owns its data in the shared instance. The
+ * personal tools wrote there anyway, because routing was decided by which tool
+ * the caller picked, not by the project: `createTask` took a projectId and
+ * inserted it locally without ever asking whether that project was shared.
+ *
+ * The result was the same task twice, in two instances, drifting apart: on
+ * 2026-09-14 GRDN-1 was `todo` personally and `backlog` in the shared copy,
+ * and MISC-4 was `backlog` personally while the shared one sat in the trash.
+ * The app reads the shared side, so the user saw one thing and the tools
+ * reported another. (TODO-318)
+ */
+describe("assertNotSharedProject", () => {
+  const refs = [
+    { projectId: "Owft2v5NpIVvCnGmlLcJAw", code: "MISC", name: "Ostatní" },
+    { projectId: "WXWhBicgLkTZCL44PiqDhQ", code: "GRDN", name: "Garden" },
+  ];
+
+  it("refuses a personal write aimed at a shared project", () => {
+    expect(() => assertNotSharedProject("Owft2v5NpIVvCnGmlLcJAw", refs, "td_create_task"))
+      .toThrow(/shared project/i);
+  });
+
+  it("names the tool to use instead, so the caller is not left guessing", () => {
+    expect(() => assertNotSharedProject("Owft2v5NpIVvCnGmlLcJAw", refs, "td_create_task"))
+      .toThrow(/td_create_shared_task/);
+  });
+
+  it("names the project, because the id alone means nothing to a reader", () => {
+    expect(() => assertNotSharedProject("WXWhBicgLkTZCL44PiqDhQ", refs, "td_update_task"))
+      .toThrow(/GRDN|Garden/);
+  });
+
+  it("lets a genuinely personal project through", () => {
+    expect(() => assertNotSharedProject("jE06J8PTXO-CU2Au15T2pw", refs, "td_create_task")).not.toThrow();
+  });
+
+  it("does nothing when there are no shared projects at all", () => {
+    expect(() => assertNotSharedProject("anything", [], "td_create_task")).not.toThrow();
+  });
+
+  it("ignores a missing projectId rather than inventing a failure", () => {
+    expect(() => assertNotSharedProject(null, refs, "td_update_task")).not.toThrow();
+    expect(() => assertNotSharedProject(undefined, refs, "td_update_task")).not.toThrow();
+  });
+
+  it("maps every personal task tool to its shared counterpart", () => {
+    expect(sharedCounterpartTool("td_create_task")).toBe("td_create_shared_task");
+    expect(sharedCounterpartTool("td_update_task")).toBe("td_update_shared_task");
+    expect(sharedCounterpartTool("td_bulk_update_tasks")).toBe("td_bulk_update_shared_tasks");
+  });
+
+  it("falls back to a generic hint for a tool with no mapping", () => {
+    expect(sharedCounterpartTool("td_something_else")).toMatch(/shared/i);
   });
 });
