@@ -51,7 +51,8 @@ import {
 } from "@evolu/common/local-first";
 import { createBetterSqliteDriver, createBroadcastChannel } from "@evolu/nodejs";
 
-import type { CreateWebSocket } from "@evolu/common";
+import type { CreateWebSocket, ReportDefect } from "@evolu/common";
+import { describeDefect } from "./tools/pure.js";
 
 /**
  * Kdy naposledy něco skutečně odešlo a přišlo po drátě. (TODO-294)
@@ -148,6 +149,73 @@ const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
   };
 };
 
+/**
+ * Paniky ("defekty") z běhu workerů. (TODO-317)
+ *
+ * Oba workery běží in-process a spouštějí se jako `void run(...)`, takže jejich
+ * výsledek nikdo nečte. Když Run panikne, Evolu ho pošle do `deps.reportDefect`,
+ * jehož výchozí implementace ho vyhodí v microtasku — tedy mimo jakýkoli `try`,
+ * který by ho zachytil. Proces běží dál, ale dbWorker je mrtvý: jeho SQLite se
+ * zavře a každý další `loadQuery` na té instanci se už nikdy nevyřídí.
+ *
+ * Přesně tenhle stav byl 11. 9. změřen na živém procesu: otevřená zůstala jen
+ * sdílená databáze, osobní ne, a `td_sync_status` to ukázal jako
+ * `quarantinedRows.app === null`. Příčina smrti se ale nedala zjistit, protože
+ * defekt nikde nezůstal. Tohle ji uchová.
+ */
+export interface WorkerDefect {
+  readonly worker: "dbWorker" | "sharedWorker";
+  readonly at: number;
+  readonly message: string;
+  readonly stack: string | null;
+}
+
+const workerDefects: WorkerDefect[] = [];
+
+/** Co zabilo workery, nejstarší první. Čte `td_sync_status`. */
+export function getWorkerDefects(): WorkerDefect[] {
+  return [...workerDefects];
+}
+
+/**
+ * Důvod, proč nemá cenu se ptát, nebo `null`.
+ *
+ * `dbWorker` drží SQLite, takže jeho smrt znamená, že žádný dotaz už nikdy
+ * neodpoví. Smrt `sharedWorker` bere sync, ale lokální čtení dál funguje, proto
+ * se na ni dotazy neodmítají.
+ */
+export function getFatalWorkerReason(): string | null {
+  const fatal = workerDefects.find((d) => d.worker === "dbWorker");
+  if (!fatal) return null;
+  return (
+    `Evolu dbWorker died at ${new Date(fatal.at).toISOString()} and every query would hang: ` +
+    `${fatal.message}. Reconnect the MCP server to get a working one. (TODO-317)`
+  );
+}
+
+/**
+ * `RunCustomDeps` only accepts an override that matches the default's type
+ * exactly, so these are typed rather than inlined as arrow literals.
+ */
+const reportDbWorkerDefect: ReportDefect = (reported) => {
+  recordWorkerDefect("dbWorker", reported);
+};
+
+const reportSharedWorkerDefect: ReportDefect = (reported) => {
+  recordWorkerDefect("sharedWorker", reported);
+};
+
+function recordWorkerDefect(worker: WorkerDefect["worker"], error: unknown): void {
+  // Not `String(error)`: Evolu reports a `{ type, reason }` envelope, not an
+  // Error, and stringifying that gives "[object Object]". (TODO-317)
+  const message = describeDefect(error);
+  const stack = error instanceof Error ? (error.stack ?? null) : null;
+  workerDefects.push({ worker, at: Date.now(), message, stack });
+  // Not rethrown: the default reporter throws in a microtask, which is how this
+  // fault stayed invisible. Recorded and logged is strictly more than before.
+  console.error(`[todocko-mcp] FATAL: Evolu ${worker} defect: ${message}${stack ? `\n${stack}` : ""}`);
+}
+
 /** Naměřený provoz po URL. Čte to `td_sync_status`. */
 export function getSocketTraffic(): Record<string, SocketTraffic> {
   return Object.fromEntries([...traffic.entries()].map(([url, t]) => [url, { ...t }]));
@@ -195,6 +263,7 @@ function buildNodeEvoluDeps(): EvoluDeps {
         createSqliteDriver: createBetterSqliteDriver,
         lockManager: navigator.locks,
         randomBytes: createRandomBytes(),
+        reportDefect: reportDbWorkerDefect,
       });
       void run(startDbWorker(self));
     });
@@ -204,6 +273,7 @@ function buildNodeEvoluDeps(): EvoluDeps {
       ...createWorkerDeps(),
       createWebSocket: createInstrumentedWebSocket,
       lockManager: navigator.locks,
+      reportDefect: reportSharedWorkerDefect,
     });
     void run(async (run) => {
       // The shared worker owns sync for the whole process; keep it alive until

@@ -113,7 +113,7 @@ import {
   type EvoluSchema,
   type OwnerWebSocketTransport,
 } from "@evolu/common/local-first";
-import { createNodeEvoluDeps } from "./evoluPlatform.js";
+import { createNodeEvoluDeps, getFatalWorkerReason, getWorkerDefects } from "./evoluPlatform.js";
 import {
   id,
   nullOr,
@@ -630,6 +630,10 @@ function withQueryBuilder(instance: any, schema: any): any {
   // (TODO-316)
   return withLoadQueryTimeout(
     Object.assign(instance, { createQuery: createQueryBuilder(schema) }),
+    undefined,
+    // A dead dbWorker never answers, so waiting out the timeout on every call
+    // only delays the same failure and hides its cause. (TODO-317)
+    getFatalWorkerReason,
   );
 }
 
