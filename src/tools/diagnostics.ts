@@ -1,6 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getQuarantineCounts, getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
-import { getSocketTraffic } from "../evoluPlatform.js";
+import { getSocketTraffic, getWorkerDefects } from "../evoluPlatform.js";
 import { judgeSyncFreshness } from "./pure.js";
 
 export const diagnosticTools: Tool[] = [
@@ -66,6 +66,10 @@ async function syncStatus(args: { retest?: boolean }) {
   // se tady nic takového neměřilo a `status` se řídil tím, jestli jde otevřít
   // socket — což hodinu hlásilo `ok`, zatímco neodešla ani zpráva.
   const traffic = getSocketTraffic();
+  // A worker that panicked takes its instance with it, silently. Reported
+  // first because it outranks every other reading here: a dead dbWorker means
+  // the numbers below describe a process that cannot answer a query. (TODO-317)
+  const workerDefects = getWorkerDefects();
   const lastOutgoingAt = Math.max(0, ...Object.values(traffic).map((t) => t.lastOutgoingAt ?? 0)) || null;
   const lastIncomingAt = Math.max(0, ...Object.values(traffic).map((t) => t.lastIncomingAt ?? 0)) || null;
   const freshness = judgeSyncFreshness({
@@ -94,7 +98,9 @@ async function syncStatus(args: { retest?: boolean }) {
     // Pořadí je záměr: nejdřív se nesmí lhát o tom, že se nesynchronizuje.
     // `stale` znamená, že lokální zápis čeká a nic neodchází — to je vada, i
     // když je socket otevřený a relay dosažitelný. (TODO-294)
-    status: !health.evoluReady
+    status: workerDefects.some((d) => d.worker === 'dbWorker')
+      ? 'worker-dead'
+      : !health.evoluReady
       ? 'not-ready'
       : !anyRelayReachable
         ? 'no-relay'
@@ -113,6 +119,17 @@ async function syncStatus(args: { retest?: boolean }) {
       framesPerRelay: traffic,
     },
     evoluReady: health.evoluReady,
+    /**
+     * Panics from the in-process workers. Empty is the healthy answer. A
+     * `dbWorker` entry means every query on that instance would hang, and only
+     * a reconnect fixes it; a `sharedWorker` entry means sync is gone but
+     * local reads still work. (TODO-317)
+     */
+    workerDefects: workerDefects.map((d) => ({
+      worker: d.worker,
+      at: new Date(d.at).toISOString(),
+      message: d.message,
+    })),
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
     // Messages Evolu received and could not apply, per instance. Nothing logs

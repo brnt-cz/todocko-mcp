@@ -331,6 +331,53 @@ export interface QueryableEvolu {
 }
 
 /**
+ * Turn whatever Evolu reported as a panic into one readable line.
+ *
+ * `reportDefect` does not receive an Error. On 8.9.0 it receives a panic
+ * envelope, measured as `{ type, reason }`, and the reason can wrap the real
+ * cause again under `reason`, `defect`, `error` or `cause`. `String()` on that
+ * gives "[object Object]", so the message explaining a dead worker would have
+ * explained nothing.
+ *
+ * Walks down to the innermost thing that carries a message, keeping the outer
+ * `type` as context because "AbortError" and "SqliteError: ..." answer
+ * different halves of the question. (TODO-317)
+ */
+export function describeDefect(reported: unknown, depth = 0): string {
+  if (depth > 6) return "(defect nested too deep to describe)";
+  if (reported == null) return `(no defect detail: ${globalThis.String(reported)})`;
+  if (typeof reported === "string") return reported;
+  if (reported instanceof Error) return reported.message || reported.name;
+  if (typeof reported !== "object") return globalThis.String(reported);
+
+  const record = reported as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : null;
+
+  for (const key of ["reason", "defect", "error", "cause"] as const) {
+    const inner = record[key];
+    // Guard against a cycle: an envelope pointing at itself would otherwise
+    // recurse until the depth cap and report nothing useful.
+    if (inner != null && inner !== reported) {
+      const described = describeDefect(inner, depth + 1);
+      return type ? `${type}: ${described}` : described;
+    }
+  }
+
+  if (typeof record.message === "string" && record.message) {
+    return type ? `${type}: ${record.message}` : record.message;
+  }
+
+  let json: string;
+  try {
+    json = JSON.stringify(reported);
+  } catch {
+    json = "(unserialisable defect)";
+  }
+  if (!json || json === "{}") json = "(defect carried no detail)";
+  return type ? `${type}: ${json}` : json;
+}
+
+/**
  * How long to wait for the dbWorker before giving up on a query.
  *
  * A stalled worker never answers at all, so without a bound the promise never
@@ -376,10 +423,17 @@ export async function loadQueryWithTimeout(
 export function withLoadQueryTimeout<T extends { loadQuery: (query: any) => Promise<unknown> }>(
   instance: T,
   timeoutMs = LOAD_QUERY_TIMEOUT_MS,
+  getFatalReason?: () => string | null,
 ): T {
   const original = instance.loadQuery.bind(instance);
   return Object.assign(instance, {
-    loadQuery: (query: any) => loadQueryWithTimeout(original, query, timeoutMs),
+    loadQuery: (query: any) => {
+      // Checked per call, not once at wrap time: the worker is alive when the
+      // instance is built and dies later, which is the whole of TODO-317.
+      const fatal = getFatalReason?.();
+      if (fatal != null) return Promise.reject(new Error(fatal));
+      return loadQueryWithTimeout(original, query, timeoutMs);
+    },
   });
 }
 

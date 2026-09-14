@@ -657,6 +657,12 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - Zkontrolujte konfigurační soubor
 - Zkontrolujte cestu k dist/index.js
 
+### Worker umřel za běhu (`status: worker-dead`)
+Proces normálně naběhl a po nějaké době přestal odpovídat. `td_sync_status`
+vrátí `status: "worker-dead"` a v `workerDefects` je panika i s časem. Dotazy
+v tomhle stavu selžou **hned**, ne až po 15 s. Řešení je `/mcp` reconnect.
+Příčina, proč worker za běhu umírá, je otevřená (TODO-317).
+
 ### Každý `loadQuery` skončí timeoutem (`loadQuery timed out after 15000ms`)
 
 Příčiny jsou dvě, poznáte je podle toho, co server řekne.
@@ -668,7 +674,9 @@ mrtvý do konce života procesu. Typicky při prvních startech po upgradu MCP,
 který přidá tabulku.
 
 Od TODO-316 to server pozná při startu a **odmítne se nastartovat**: každé
-volání nástroje hned vrátí `Evolu dbWorker never answered`. Dřív se tvářil
+volání nástroje hned vrátí `Evolu dbWorker never answered`. Od TODO-317 se
+navíc zapíše i **proč** worker umřel, do `workerDefects` v `td_sync_status`
+a do stderr jako `FATAL: Evolu dbWorker defect: ...`. Dřív se tvářil
 zdravě a každý dotaz visel, dokud to klient po 1800 s nevzdal. Řešení je `/mcp`
 reconnect v Claude Code.
 
@@ -1254,7 +1262,9 @@ stays dead for the life of the process. Typically on the first starts after an
 MCP upgrade that adds a table.
 
 Since TODO-316 the server detects this at startup and **refuses to start**:
-every tool call returns `Evolu dbWorker never answered` immediately. It used to
+every tool call returns `Evolu dbWorker never answered` immediately. Since
+TODO-317 the reason the worker died is recorded too, in `workerDefects` from
+`td_sync_status` and on stderr as `FATAL: Evolu dbWorker defect: ...`. It used to
 look healthy while every query hung until the client gave up 1800s later. The
 fix is a `/mcp` reconnect in Claude Code.
 

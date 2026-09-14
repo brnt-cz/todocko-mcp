@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -457,5 +457,94 @@ describe("withLoadQueryTimeout", () => {
     const rows = [{ id: "a" }];
     const wrapped = withLoadQueryTimeout({ createQuery: (b: unknown) => b, loadQuery: async (_q: unknown) => rows }, 20);
     await expect(wrapped.loadQuery("q")).resolves.toBe(rows);
+  });
+});
+
+/**
+ * A dbWorker that dies at runtime leaves the instance answering nothing. The
+ * timeout added in TODO-316 bounds the wait, but 15s of waiting per call, with
+ * no reason given, is still the wrong answer when the cause is already known.
+ * (TODO-317)
+ */
+describe("withLoadQueryTimeout fatal reason", () => {
+  it("fails immediately, without waiting out the timeout, once the worker is known dead", async () => {
+    const started = Date.now();
+    const wrapped = withLoadQueryTimeout(
+      { createQuery: (b: unknown) => b, loadQuery: (_q: unknown) => new Promise<unknown>(() => {}) },
+      5000,
+      () => "dbWorker died: boom",
+    );
+    await expect(wrapped.loadQuery("q")).rejects.toThrow(/dbWorker died: boom/);
+    // The point of the change: not "eventually", but "now".
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("does not interfere while the worker is healthy", async () => {
+    const rows = [{ id: "a" }];
+    const wrapped = withLoadQueryTimeout(
+      { createQuery: (b: unknown) => b, loadQuery: async (_q: unknown) => rows },
+      20,
+      () => null,
+    );
+    await expect(wrapped.loadQuery("q")).resolves.toBe(rows);
+  });
+
+  it("is checked per call, so an instance that dies later starts failing fast", async () => {
+    let reason: string | null = null;
+    const wrapped = withLoadQueryTimeout(
+      { createQuery: (b: unknown) => b, loadQuery: async (_q: unknown) => [] },
+      20,
+      () => reason,
+    );
+    await expect(wrapped.loadQuery("q")).resolves.toEqual([]);
+    reason = "dbWorker died: later";
+    await expect(wrapped.loadQuery("q")).rejects.toThrow(/later/);
+  });
+});
+
+/**
+ * Evolu does not hand `reportDefect` an Error. It hands it a panic envelope,
+ * measured as `{ type, reason }` on 8.9.0, and the reason can itself wrap the
+ * real cause. `String(reported)` on that yields "[object Object]", which is
+ * how a diagnostic meant to explain a dead worker would have explained
+ * nothing. (TODO-317)
+ */
+describe("describeDefect", () => {
+  it("uses the message when handed a plain Error", () => {
+    expect(describeDefect(new Error("boom"))).toBe("boom");
+  });
+
+  it("digs the cause out of Evolu's panic envelope", () => {
+    const reported = { type: "AbortError", reason: new Error("table evolu_version already exists") };
+    expect(describeDefect(reported)).toMatch(/table evolu_version already exists/);
+  });
+
+  it("keeps the envelope type as context, not just the inner message", () => {
+    const reported = { type: "AbortError", reason: new Error("inner") };
+    expect(describeDefect(reported)).toMatch(/AbortError/);
+  });
+
+  it("follows a nested defect, which is where the SqliteError actually sat", () => {
+    const reported = { type: "PanicAbortReason", reason: { defect: new Error("SqliteError: disk I/O error") } };
+    expect(describeDefect(reported)).toMatch(/disk I\/O error/);
+  });
+
+  it("never answers [object Object]", () => {
+    expect(describeDefect({ type: "X", reason: { odd: { shape: 1 } } })).not.toMatch(/\[object Object\]/);
+  });
+
+  it("passes a string through", () => {
+    expect(describeDefect("plain reason")).toBe("plain reason");
+  });
+
+  it("survives null and undefined", () => {
+    expect(describeDefect(null)).toBeTruthy();
+    expect(describeDefect(undefined)).toBeTruthy();
+  });
+
+  it("does not blow up on a circular object", () => {
+    const a: Record<string, unknown> = { type: "X" };
+    a.reason = a;
+    expect(() => describeDefect(a)).not.toThrow();
   });
 });
