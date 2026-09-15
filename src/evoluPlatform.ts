@@ -55,22 +55,22 @@ import type { CreateWebSocket, ReportDefect } from "@evolu/common";
 import { describeDefect } from "./tools/pure.js";
 
 /**
- * Kdy naposledy něco skutečně odešlo a přišlo po drátě. (TODO-294)
+ * When something last actually left and arrived on the wire. (TODO-294)
  *
- * Proč zvlášť a proč tady: Evolu v8 klientovi o stavu syncu nic nehlásí — žádný
- * hook, nic v logu. `td_sync_status` proto měřil to jediné, co změřit umělo,
- * tedy že se dá otevřít WebSocket, a hlásil `ok`. To je ale odpověď na jinou
- * otázku: 7. 9. 2026 MCP hodinu neposlalo na relay ani zprávu a tenhle nástroj
- * po celou dobu tvrdil, že je vše v pořádku. Poznat se to dalo jedině zvenčí,
- * na relayi, podle `lastTimestamp` u ownera.
+ * Why separately, and why here: Evolu v8 tells the client nothing about sync
+ * state, with no hook and nothing in the log. `td_sync_status` therefore
+ * measured the one thing it could, that a WebSocket opens, and reported `ok`.
+ * That answers a different question: on 2026-09-07 the MCP sent the relay
+ * nothing for an hour while this tool insisted all was well. The only way to
+ * tell was from outside, on the relay, by the owner's `lastTimestamp`.
  *
- * `createWebSocket` je injektovatelná závislost (`CreateWebSocketDep`), kterou
- * Evolu konzumuje v `Shared.js` — takže obal kolem ní vidí každý rámec, který
- * opravdu proteče. Nic to nesimuluje a nic neodhaduje.
+ * `createWebSocket` is an injectable dependency (`CreateWebSocketDep`) that
+ * Evolu consumes in `Shared.js`, so a wrapper around it sees every frame that
+ * really passes. It simulates nothing and estimates nothing.
  *
- * Stav smí ležet v modulu, protože oba "workery" tady běží **in-process** (jsou
- * to Evoluovy memory-only fallbacky, viz hlavička souboru). Ve skutečném
- * `worker_threads` by se sem musela dostat zprávou.
+ * The state may live in the module because both "workers" here run
+ * **in-process** (they are Evolu's memory-only fallbacks, see the file header).
+ * In real `worker_threads` it would have to arrive by message.
  */
 interface SocketTraffic {
   lastOutgoingAt: number | null;
@@ -78,10 +78,10 @@ interface SocketTraffic {
   outgoingCount: number;
   incomingCount: number;
   /**
-   * Otevření a zavření spojení. Tohle rozliší dvě věci, které jinak vypadají
-   * stejně a mají jinou příčinu: spojení spadlo a nepřipojilo se znovu, versus
-   * spojení stojí otevřené a nic se po něm neposílá. Bez toho se TODO-295 nedá
-   * vyšetřit, jen hádat.
+   * Opens and closes. This separates two things that otherwise look alike and
+   * have different causes: a connection that dropped and never reconnected,
+   * versus one that stands open with nothing being sent on it. Without this,
+   * TODO-295 cannot be investigated, only guessed at.
    */
   openCount: number;
   closeCount: number;
@@ -104,7 +104,7 @@ function trafficFor(url: string): SocketTraffic {
   return t;
 }
 
-/** Obal, který zaznamená každý odeslaný i přijatý rámec. */
+/** Wrapper that records every frame sent and received. */
 const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
   const t = trafficFor(url);
   const wrappedOptions = {
@@ -126,8 +126,8 @@ const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
       options?.onClose?.(event);
     },
   };
-  // Task<T, E> je (run) => Awaitable<Result<T, E>>, takže obal je taky Task:
-  // zavolá původní, a když uspěje, podstrčí socketu vlastní `send`.
+  // Task<T, E> is (run) => Awaitable<Result<T, E>>, so the wrapper is a Task
+  // too: it calls the original and, on success, swaps in its own `send`.
   const task = createWebSocket(url, wrappedOptions);
   return async (run) => {
     const result = await task(run);
@@ -135,9 +135,9 @@ const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
     const socket = result.value;
     const originalSend = socket.send.bind(socket);
     socket.send = (data) => {
-      // Zaznamenat až po úspěchu: `send` vrací Result a na zavřeném socketu
-      // selže. Počítat pokus by vyrobilo další "ok", které nic neznamená —
-      // což je přesně vada, kterou tenhle nástroj má odstranit.
+      // Recorded only on success: `send` returns a Result and fails on a
+      // closed socket. Counting the attempt would manufacture another
+      // meaningless "ok", which is the very fault this tool exists to remove.
       const sendResult = originalSend(data);
       if (sendResult.ok) {
         t.lastOutgoingAt = Date.now();
@@ -150,18 +150,19 @@ const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
 };
 
 /**
- * Paniky ("defekty") z běhu workerů. (TODO-317)
+ * Panics ("defects") raised while the workers run. (TODO-317)
  *
- * Oba workery běží in-process a spouštějí se jako `void run(...)`, takže jejich
- * výsledek nikdo nečte. Když Run panikne, Evolu ho pošle do `deps.reportDefect`,
- * jehož výchozí implementace ho vyhodí v microtasku — tedy mimo jakýkoli `try`,
- * který by ho zachytil. Proces běží dál, ale dbWorker je mrtvý: jeho SQLite se
- * zavře a každý další `loadQuery` na té instanci se už nikdy nevyřídí.
+ * Both workers run in-process and are started as `void run(...)`, so nobody
+ * reads their result. When a Run panics, Evolu hands it to
+ * `deps.reportDefect`, whose default implementation throws it from a
+ * microtask, outside any `try` that could catch it. The process keeps running
+ * but the dbWorker is dead: its SQLite closes and every later `loadQuery` on
+ * that instance never settles.
  *
- * Přesně tenhle stav byl 11. 9. změřen na živém procesu: otevřená zůstala jen
- * sdílená databáze, osobní ne, a `td_sync_status` to ukázal jako
- * `quarantinedRows.app === null`. Příčina smrti se ale nedala zjistit, protože
- * defekt nikde nezůstal. Tohle ji uchová.
+ * Exactly this state was measured on a live process on 2026-09-11: only the
+ * shared database stayed open, not the personal one, which `td_sync_status`
+ * showed as `quarantinedRows.app === null`. The cause of death could not be
+ * recovered, because nothing kept the defect. This keeps it.
  */
 export interface WorkerDefect {
   readonly worker: "dbWorker" | "sharedWorker";
@@ -172,17 +173,17 @@ export interface WorkerDefect {
 
 const workerDefects: WorkerDefect[] = [];
 
-/** Co zabilo workery, nejstarší první. Čte `td_sync_status`. */
+/** What killed the workers, oldest first. Read by `td_sync_status`. */
 export function getWorkerDefects(): WorkerDefect[] {
   return [...workerDefects];
 }
 
 /**
- * Důvod, proč nemá cenu se ptát, nebo `null`.
+ * The reason asking is pointless, or `null`.
  *
- * `dbWorker` drží SQLite, takže jeho smrt znamená, že žádný dotaz už nikdy
- * neodpoví. Smrt `sharedWorker` bere sync, ale lokální čtení dál funguje, proto
- * se na ni dotazy neodmítají.
+ * `dbWorker` holds SQLite, so its death means no query will ever answer again.
+ * Losing `sharedWorker` costs sync, but local reads still work, so queries are
+ * not refused over it.
  */
 export function getFatalWorkerReason(): string | null {
   const fatal = workerDefects.find((d) => d.worker === "dbWorker");
@@ -216,7 +217,7 @@ function recordWorkerDefect(worker: WorkerDefect["worker"], error: unknown): voi
   console.error(`[todocko-mcp] FATAL: Evolu ${worker} defect: ${message}${stack ? `\n${stack}` : ""}`);
 }
 
-/** Naměřený provoz po URL. Čte to `td_sync_status`. */
+/** Measured traffic per URL. Read by `td_sync_status`. */
 export function getSocketTraffic(): Record<string, SocketTraffic> {
   return Object.fromEntries([...traffic.entries()].map(([url, t]) => [url, { ...t }]));
 }

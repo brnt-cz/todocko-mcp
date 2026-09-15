@@ -62,9 +62,10 @@ async function syncStatus(args: { retest?: boolean }) {
   const anyRelayReachable = Object.values(health.wsConnectivity).some((s) => s === 'ok');
   const quarantine = await getQuarantineCounts();
 
-  // Skutečný provoz na drátě, měřený obalem kolem createWebSocket. Do TODO-294
-  // se tady nic takového neměřilo a `status` se řídil tím, jestli jde otevřít
-  // socket — což hodinu hlásilo `ok`, zatímco neodešla ani zpráva.
+  // Real traffic on the wire, measured by the wrapper around createWebSocket.
+  // Before TODO-294 nothing here measured that, and `status` went by whether a
+  // socket could be opened, which reported `ok` for an hour while not one
+  // message left.
   const traffic = getSocketTraffic();
   // A worker that panicked takes its instance with it, silently. Reported
   // first because it outranks every other reading here: a dead dbWorker means
@@ -95,9 +96,10 @@ async function syncStatus(args: { retest?: boolean }) {
     // can never resolve, a `user.enableDependencyGraph` from an app version
     // that no longer declares it. A status permanently stuck on "degraded"
     // over that is a status nobody reads. (TODO-267)
-    // Pořadí je záměr: nejdřív se nesmí lhát o tom, že se nesynchronizuje.
-    // `stale` znamená, že lokální zápis čeká a nic neodchází — to je vada, i
-    // když je socket otevřený a relay dosažitelný. (TODO-294)
+    // The order is deliberate: the first duty is not to lie about sync being
+    // stuck. `stale` means a local write is waiting and nothing is leaving,
+    // which is a fault even with an open socket and a reachable relay.
+    // (TODO-294)
     status: workerDefects.some((d) => d.worker === 'dbWorker')
       ? 'worker-dead'
       : !health.evoluReady
@@ -107,7 +109,7 @@ async function syncStatus(args: { retest?: boolean }) {
         : freshness.verdict === 'stale'
           ? 'stale'
           : 'ok',
-    /** Co o synchronizaci říká skutečně změřený provoz, ne stav socketu. */
+    /** What measured traffic says about sync, rather than the socket's state. */
     sync: {
       verdict: freshness.verdict,
       reason: freshness.reason,
