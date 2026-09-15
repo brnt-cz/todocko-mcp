@@ -721,7 +721,7 @@ interface SyncHealth {
   wsConnectivity: Map<string, 'untested' | 'ok' | 'failed'>;
   evoluReady: boolean;
   onCompleteCount: number;
-  /** Kdy naposledy proběhla lokální mutace. Bez času nejde poznat, že něco čeká. */
+  /** When a local mutation last happened. Without a time, nothing can tell that a write is waiting. */
   lastLocalMutationAt: number | null;
   /** Per-table count of incoming change events observed via subscribeQuery. */
   incomingChangesByTable: Map<string, number>;
@@ -789,8 +789,9 @@ export async function getQuarantineCounts(): Promise<{ app: number | null; proje
 /** Track onComplete calls from mutations */
 export function trackOnComplete(): void {
   syncHealth.onCompleteCount++;
-  // Čas, ne jen počet: bez něj se nedá poznat "zapsáno lokálně a neodešlo",
-  // což je ta vada, kterou td_sync_status neviděl. (TODO-294)
+  // A time, not just a count: without it there is no way to tell "written
+  // locally and never sent", which is the fault td_sync_status could not see.
+  // (TODO-294)
   syncHealth.lastLocalMutationAt = Date.now();
 }
 

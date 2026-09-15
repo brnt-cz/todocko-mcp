@@ -551,29 +551,31 @@ export async function assertRowExists(
 }
 
 /**
- * Co změřený provoz říká o tom, jestli sync žije. (TODO-294)
+ * What measured traffic says about whether sync is alive. (TODO-294)
  *
- * Dosud `td_sync_status` hlásil `ok`, když se dal otevřít WebSocket. To je
- * odpověď na jinou otázku: 7. 9. 2026 MCP hodinu neposlalo na relay ani zprávu
- * a ten nástroj celou dobu tvrdil, že je vše v pořádku. Poznat se to dalo jedině
- * zvenčí, na relayi, podle `lastTimestamp` u ownera.
+ * `td_sync_status` used to report `ok` whenever a WebSocket could be opened,
+ * which answers a different question: on 2026-09-07 the MCP sent the relay
+ * nothing for an hour while that tool insisted all was well. The only way to
+ * tell was from outside, on the relay, by the owner's `lastTimestamp`.
  *
- * Rozhoduje se tedy podle jediného, co o synchronizaci něco vypovídá: kdy
- * naposledy něco odešlo a přišlo, a jestli od té doby nevznikl lokální zápis.
+ * The verdict therefore rests on the only things that say anything about sync:
+ * when a frame last left and arrived, and whether a local write has happened
+ * since.
  *
- * Ticho samo o sobě není vada — když nikdo nic nezapsal, nemá co odcházet.
- * Vadou je **lokální zápis novější než poslední odchozí rámec**, protože to
- * znamená, že něco čeká a neodchází. Přesně to se stalo.
+ * Silence on its own is not a fault: with nothing written, there is nothing to
+ * send. The fault is a **local write newer than the last outgoing frame**,
+ * because that means something is waiting and not leaving. Which is what
+ * happened.
  */
 export interface SyncFreshnessInput {
-  /** Kdy naposledy skutečně odešel rámec, přes všechny relaye. */
+  /** When a frame last actually left, across all relays. */
   readonly lastOutgoingAt: number | null;
-  /** Kdy naposledy nějaký přišel. */
+  /** When one last arrived. */
   readonly lastIncomingAt: number | null;
-  /** Kdy naposledy proběhla lokální mutace. */
+  /** When a local mutation last happened. */
   readonly lastLocalMutationAt: number | null;
   readonly now: number;
-  /** Jak dlouho smí zápis čekat, než to je vada. Default 60 s. */
+  /** How long a write may wait before it counts as a fault. Defaults to 60s. */
   readonly staleAfterMs?: number;
 }
 
@@ -582,7 +584,7 @@ export type SyncVerdict = "ok" | "stale" | "idle" | "never-synced";
 export interface SyncFreshness {
   readonly verdict: SyncVerdict;
   readonly reason: string;
-  /** Jak dlouho už nejstarší nevypravený zápis čeká, nebo null. */
+  /** How long the oldest unsent write has been waiting, or null. */
   readonly pendingForMs: number | null;
   readonly quietForMs: number | null;
 }
@@ -596,7 +598,7 @@ export function judgeSyncFreshness(input: SyncFreshnessInput): SyncFreshness {
   const lastTraffic = Math.max(lastOutgoingAt ?? 0, lastIncomingAt ?? 0) || null;
   const quietForMs = lastTraffic === null ? null : now - lastTraffic;
 
-  // Lokální zápis, který neodešel. Tohle je ta vada.
+  // A local write that never left. This is the fault.
   const pending =
     lastLocalMutationAt !== null &&
     (lastOutgoingAt === null || lastLocalMutationAt > lastOutgoingAt);
