@@ -331,6 +331,63 @@ export interface QueryableEvolu {
 }
 
 /**
+ * A shared project, as far as the guard needs to know it.
+ *
+ * Deliberately carries no `ownerSecret`: deciding whether a project is shared
+ * must not require handling the secret that decrypts it.
+ */
+export interface SharedProjectRefLite {
+  readonly projectId: string;
+  readonly code: string | null;
+  readonly name: string | null;
+}
+
+const SHARED_TOOL_BY_PERSONAL: Record<string, string> = {
+  td_create_task: "td_create_shared_task",
+  td_update_task: "td_update_shared_task",
+  td_delete_task: "td_delete_shared_task",
+  td_bulk_update_tasks: "td_bulk_update_shared_tasks",
+  td_bulk_delete_tasks: "td_bulk_delete_shared_tasks",
+  td_add_worklog: "td_add_shared_worklog",
+  td_create_task_comment: "td_create_shared_task_comment",
+  td_create_checklist_item: "td_create_shared_checklist_item",
+};
+
+/** The shared tool that should have been called instead. */
+export function sharedCounterpartTool(personalTool: string): string {
+  return SHARED_TOOL_BY_PERSONAL[personalTool] ?? "the matching td_*_shared_* tool";
+}
+
+/**
+ * Refuse a personal write aimed at a project that is shared.
+ *
+ * If a project is shared, its data belongs in the shared instance. Routing used
+ * to be decided by which tool the caller picked rather than by the project, so
+ * a personal write against a shared project was accepted and stored beside the
+ * real row - same task, two instances, free to drift. The app reads the shared
+ * side, so the two then disagreed with nothing reporting it. (TODO-318)
+ *
+ * A missing projectId is not a failure here: the caller may simply not be
+ * changing the project, and inventing an error for that would block ordinary
+ * edits.
+ */
+export function assertNotSharedProject(
+  projectId: unknown,
+  sharedRefs: readonly SharedProjectRefLite[],
+  personalTool: string,
+): void {
+  if (projectId == null || projectId === "") return;
+  const match = sharedRefs.find((r) => r.projectId === projectId);
+  if (!match) return;
+  const label = match.code ? `${match.code} (${match.name ?? "?"})` : (match.name ?? globalThis.String(projectId));
+  throw new Error(
+    `${personalTool}: project ${label} is a shared project, so its tasks live in the shared instance. ` +
+      `Writing here would create a second copy that the app never shows and that silently drifts from the real one. ` +
+      `Use ${sharedCounterpartTool(personalTool)} instead. (TODO-318)`,
+  );
+}
+
+/**
  * Turn whatever Evolu reported as a panic into one readable line.
  *
  * `reportDefect` does not receive an Error. On 8.9.0 it receives a panic

@@ -657,6 +657,20 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - Zkontrolujte konfigurační soubor
 - Zkontrolujte cestu k dist/index.js
 
+### `project ... is a shared project` při zápisu
+Sdílený projekt má svá data ve **sdílené instanci**. Osobní nástroje
+(`td_create_task`, `td_update_task`, `td_bulk_update_tasks`) proto zápis do
+takového projektu odmítnou a pošlou tě na `td_*_shared_*` protějšek.
+
+Dřív se zápis tiše uložil do osobní instance vedle skutečného řádku. Vznikly
+tím dvě kopie téhož úkolu v různých instancích, které se rozcházely: aplikace
+čte sdílenou stranu, MCP `td_list_tasks` osobní, takže každý ukazoval něco
+jiného a nic to nehlásilo. (TODO-318)
+
+**Mazání zůstává povolené i pro sdílený projekt**, jinak by staré osobní kopie
+nešlo uklidit. `td_search_tasks` s `includeShared` ukáže obě kopie vedle sebe a
+je proto nejrychlejší způsob, jak zjistit, že je úkol rozdvojený.
+
 ### Worker umřel za běhu (`status: worker-dead`)
 Proces normálně naběhl a po nějaké době přestal odpovídat. `td_sync_status`
 vrátí `status: "worker-dead"` a v `workerDefects` je panika i s časem. Dotazy
@@ -1250,6 +1264,21 @@ The database contains the owner ID from the previous mnemonic. After deletion, a
 - In Claude Code, use `/mcp` for reload
 - Check the configuration file
 - Check the path to dist/index.js
+
+### `project ... is a shared project` on a write
+A shared project keeps its data in the **shared instance**, so the personal
+tools (`td_create_task`, `td_update_task`, `td_bulk_update_tasks`) refuse a
+write aimed at one and point at the `td_*_shared_*` counterpart.
+
+Such a write used to be stored quietly in the personal instance beside the real
+row, leaving the same task in two instances, free to drift: the app reads the
+shared side and `td_list_tasks` reads the personal one, so the two disagreed
+with nothing reporting it. (TODO-318)
+
+**Deletes are still allowed** on a shared project, because otherwise old
+personal copies could never be cleaned up. `td_search_tasks` with
+`includeShared` shows both copies side by side and is the quickest way to spot
+a split task.
 
 ### Every `loadQuery` ends with a timeout (`loadQuery timed out after 15000ms`)
 

@@ -25,6 +25,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
+import { safeLoadQuery, type SharedProjectRefLite } from "./pure.js";
 import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
@@ -3543,6 +3544,38 @@ export interface SharedScope {
  * shared instance is not up), so callers can skip the shared half without
  * treating it as a failure.
  */
+/**
+ * Which projects are shared, without touching any secret.
+ *
+ * `withAllSharedOwners` opens every owner, which costs a settle delay and
+ * needs the ownerSecret. The guard only has to answer "is this project
+ * shared", so it reads the ref table and nothing else. (TODO-318)
+ */
+export async function loadSharedProjectRefs(
+  evolu: EvoluInstance,
+): Promise<SharedProjectRefLite[]> {
+  try {
+    const q = evolu.createQuery((db: any) =>
+      db
+        .selectFrom("projectRef")
+        .select(["projectId", "code", "name"])
+        .where("isDeleted", "is not", SQLITE_TRUE),
+    );
+    const rows = (await safeLoadQuery(evolu, q)) as any[];
+    return rows
+      .filter((r) => r.projectId)
+      .map((r) => ({
+        projectId: r.projectId as string,
+        code: (r.code as string) ?? null,
+        name: (r.name as string) ?? null,
+      }));
+  } catch {
+    // A guard that cannot read must not block writing. Failing open is the
+    // lesser evil: the fault it prevents is a duplicate row, not data loss.
+    return [];
+  }
+}
+
 export async function withAllSharedOwners<T>(
   evolu: EvoluInstance,
   fn: (scope: SharedScope) => Promise<T>,

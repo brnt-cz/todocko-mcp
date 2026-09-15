@@ -1,10 +1,10 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
-import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists } from "./helpers.js";
+import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
-import { withAllSharedOwners } from "./shared.js";
+import { withAllSharedOwners, loadSharedProjectRefs } from "./shared.js";
 
 export const taskTools: Tool[] = [
   {
@@ -770,6 +770,10 @@ async function createTask(
   // Lowest position in the TARGET column, so the new task lands on top like it
   // does in the app (TODO-217). This used to take the global max across every
   // status and append below it, which buried assistant-created tasks.
+  // A shared project owns its tasks in the shared instance; writing one here
+  // would create a second copy the app never shows. (TODO-318)
+  assertNotSharedProject(args.projectId, await loadSharedProjectRefs(evolu), "td_create_task");
+
   const targetStatus = args.status || "todo";
   const posQuery = evolu.createQuery((db: any) =>
     db
@@ -995,6 +999,23 @@ async function updateTask(
     // ignore — activity log just won't have diff
   }
 
+  // Guard the task's own project and any project it is being moved into:
+  // moving a personal task into a shared project is the same fault arriving
+  // from the other side. `projectId` is not in TRACKED_TASK_FIELDS, so the
+  // diff query above does not carry it and it has to be read here. (TODO-318)
+  {
+    const sharedRefs = await loadSharedProjectRefs(evolu);
+    if (sharedRefs.length > 0) {
+      const projQuery = evolu.createQuery((db: any) =>
+        db.selectFrom("task").select(["projectId"]).where("id", "=", args.id as TaskId).limit(1),
+      );
+      const projRows = await safeLoadQuery(evolu, projQuery);
+      const currentProjectId = projRows.length > 0 ? (projRows[0] as any).projectId : null;
+      assertNotSharedProject(currentProjectId, sharedRefs, "td_update_task");
+      assertNotSharedProject(updates.projectId, sharedRefs, "td_update_task");
+    }
+  }
+
   const waiter = createMutationWaiter();
   const updateResult = evolu.update("task", updates as any, { onComplete: waiter.onComplete });
 
@@ -1123,6 +1144,12 @@ async function bulkUpdateTasks(
 
   let successCount = 0;
   let skippedCount = 0;
+  // Counted and reported separately from `skipped`. The loop below swallows
+  // every throw into "skipped", so a guard error raised in there would vanish
+  // into a number that also means "id not found" - and a bulk update is
+  // exactly how a shared project would get written wholesale. (TODO-318)
+  const blockedShared: string[] = [];
+  const sharedRefs = await loadSharedProjectRefs(evolu);
 
   for (const taskId of args.taskIds) {
     try {
@@ -1159,7 +1186,7 @@ async function bulkUpdateTasks(
       // authoritative costs nothing. (TODO-285)
       const oldQuery = evolu.createQuery((db: any) =>
         db.selectFrom("task")
-          .select([...TRACKED_TASK_FIELDS])
+          .select([...TRACKED_TASK_FIELDS, "projectId"])
           .where("id", "=", taskId as TaskId)
           .where("isDeleted", "is not", SQLITE_TRUE)
           .limit(1)
@@ -1170,6 +1197,15 @@ async function bulkUpdateTasks(
         continue;
       }
       const oldTask = rows[0] as Record<string, unknown>;
+
+      if (sharedRefs.length > 0) {
+        try {
+          assertNotSharedProject(oldTask.projectId, sharedRefs, "td_bulk_update_tasks");
+        } catch {
+          blockedShared.push(taskId);
+          continue;
+        }
+      }
 
       evolu.update("task", updates as any);
       logTaskUpdate(evolu, taskId, oldTask, updates);
@@ -1185,7 +1221,13 @@ async function bulkUpdateTasks(
     success: true,
     successCount,
     skippedCount,
-    message: `Bulk update complete: ${successCount} updated, ${skippedCount} skipped`,
+    blockedSharedCount: blockedShared.length,
+    blockedSharedTaskIds: blockedShared,
+    message:
+      `Bulk update complete: ${successCount} updated, ${skippedCount} skipped` +
+      (blockedShared.length > 0
+        ? `, ${blockedShared.length} refused because they belong to a shared project - use td_bulk_update_shared_tasks for those (TODO-318)`
+        : ""),
   };
 }
 
