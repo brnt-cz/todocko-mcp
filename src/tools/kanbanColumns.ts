@@ -21,6 +21,7 @@ export const kanbanColumnTools: Tool[] = [
         icon: { type: "string", description: "Icon identifier (default: 'circle')" },
         isDefault: { type: "boolean", description: "Is this the default column for new tasks" },
         showInKanban: { type: "boolean", description: "Show in kanban board (default: true)" },
+        wipLimit: { type: "number", description: "WIP limit: max tasks in the column before the board header warns (positive integer, omit for no limit)" },
       },
       required: ["slug", "name"],
     },
@@ -38,6 +39,7 @@ export const kanbanColumnTools: Tool[] = [
         position: { type: "number" },
         isDefault: { type: "boolean" },
         showInKanban: { type: "boolean" },
+        wipLimit: { type: ["number", "null"], description: "WIP limit (positive integer); null removes the limit" },
       },
       required: ["id"],
     },
@@ -64,9 +66,9 @@ export async function handleKanbanColumnTool(
     case "td_list_kanban_columns":
       return listKanbanColumns(evolu);
     case "td_create_kanban_column":
-      return createKanbanColumn(evolu, args as { slug: string; name: string; color?: string; icon?: string; isDefault?: boolean; showInKanban?: boolean });
+      return createKanbanColumn(evolu, args as { slug: string; name: string; color?: string; icon?: string; isDefault?: boolean; showInKanban?: boolean; wipLimit?: number | null });
     case "td_update_kanban_column":
-      return updateKanbanColumn(evolu, args as { id: string; name?: string; color?: string; icon?: string; position?: number; isDefault?: boolean; showInKanban?: boolean });
+      return updateKanbanColumn(evolu, args as { id: string; name?: string; color?: string; icon?: string; position?: number; isDefault?: boolean; showInKanban?: boolean; wipLimit?: number | null });
     case "td_delete_kanban_column":
       return deleteKanbanColumn(evolu, args as { id: string });
     default:
@@ -77,7 +79,7 @@ export async function handleKanbanColumnTool(
 async function listKanbanColumns(evolu: EvoluInstance) {
   const query = evolu.createQuery((db: any) =>
     db.selectFrom("kanbanColumn")
-      .select(["id", "slug", "name", "color", "icon", "position", "isDefault", "showInKanban"])
+      .select(["id", "slug", "name", "color", "icon", "position", "isDefault", "showInKanban", "wipLimit"])
       .where("isDeleted", "is not", SQLITE_TRUE)
       .orderBy("position", "asc")
   );
@@ -87,13 +89,24 @@ async function listKanbanColumns(evolu: EvoluInstance) {
     columns: result.map((c: any) => ({
       id: c.id, slug: c.slug, name: c.name, color: c.color, icon: c.icon,
       position: c.position, isDefault: c.isDefault === SQLITE_TRUE, showInKanban: c.showInKanban === SQLITE_TRUE,
+      wipLimit: typeof c.wipLimit === "number" && c.wipLimit > 0 ? c.wipLimit : null,
     })),
   };
 }
 
+/** A WIP limit is a positive integer; null or anything else means "no limit". (TODO-338) */
+export function parseWipLimit(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error(`wipLimit must be a positive integer or null, got ${JSON.stringify(value)}`);
+  }
+  if (value <= 0) return null;
+  return Int.orThrow(value);
+}
+
 async function createKanbanColumn(
   evolu: EvoluInstance,
-  args: { slug: string; name: string; color?: string; icon?: string; isDefault?: boolean; showInKanban?: boolean }
+  args: { slug: string; name: string; color?: string; icon?: string; isDefault?: boolean; showInKanban?: boolean; wipLimit?: number | null }
 ) {
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("kanbanColumn").select(["position"]).where("isDeleted", "is not", SQLITE_TRUE).orderBy("position", "desc").limit(1)
@@ -110,6 +123,7 @@ async function createKanbanColumn(
     position: Int.orThrow(maxPos + 1),
     isDefault: args.isDefault ? SQLITE_TRUE : null,
     showInKanban: args.showInKanban !== false ? SQLITE_TRUE : null,
+    wipLimit: parseWipLimit(args.wipLimit),
   }, { onComplete: waiter.onComplete });
 
   await waiter.waitForSync();
@@ -119,7 +133,7 @@ async function createKanbanColumn(
 
 async function updateKanbanColumn(
   evolu: EvoluInstance,
-  args: { id: string; name?: string; color?: string; icon?: string; position?: number; isDefault?: boolean; showInKanban?: boolean }
+  args: { id: string; name?: string; color?: string; icon?: string; position?: number; isDefault?: boolean; showInKanban?: boolean; wipLimit?: number | null }
 ) {
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "kanbanColumn", args.id, "Column");
@@ -131,6 +145,7 @@ async function updateKanbanColumn(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   if (args.isDefault !== undefined) updates.isDefault = args.isDefault ? SQLITE_TRUE : null;
   if (args.showInKanban !== undefined) updates.showInKanban = args.showInKanban ? SQLITE_TRUE : null;
+  if (args.wipLimit !== undefined) updates.wipLimit = parseWipLimit(args.wipLimit);
 
   const waiter = createMutationWaiter();
   assertMutation("updateKanbanColumn", evolu.update("kanbanColumn", updates as any, { onComplete: waiter.onComplete }));

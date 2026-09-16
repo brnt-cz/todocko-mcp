@@ -356,6 +356,7 @@ export const Schema = {
     position: Int,
     isDefault: nullOr(SqliteBoolean),
     showInKanban: nullOr(SqliteBoolean),
+    wipLimit: nullOr(Int), // TODO-338
   },
   // Saved views
   savedView: {
