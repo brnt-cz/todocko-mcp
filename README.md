@@ -396,8 +396,8 @@ viz níž.
 | `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
-| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav) |
-| `td_update_shared_member` | Změna oprávnění / block / kick člena sdíleného projektu |
+| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav, `isPending` = čeká na schválení) |
+| `td_update_shared_member` | Změna oprávnění / block / kick člena, schválení čekajícího (`isPending: false` + `isBlocked: false`) |
 | `td_upload_shared_note_attachment` | Nahrání přílohy k poznámce sdíleného projektu |
 | `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
 | `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
@@ -1033,8 +1033,8 @@ Shared projects (TODO-235):
 | `td_create_shared_project_note` | Create a note in a shared project |
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
-| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state) |
-| `td_update_shared_member` | Change permission / block / kick a shared project member |
+| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval) |
+| `td_update_shared_member` | Change permission / block / kick a member, approve a pending join (`isPending: false` + `isBlocked: false`) |
 | `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
 | `td_list_shared_note_attachments` | List attachments of a shared project note |
 | `td_download_shared_note_attachment` | Download a shared note attachment |

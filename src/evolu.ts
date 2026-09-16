@@ -439,6 +439,7 @@ export const ProjectSchema = {
     joinedAt: String,
     isKicked: nullOr(SqliteBoolean),
     isBlocked: nullOr(SqliteBoolean),
+    isPending: nullOr(SqliteBoolean), // TODO-332: waiting for approval
   },
   task: {
     id: TaskId,

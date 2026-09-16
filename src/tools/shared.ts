@@ -706,7 +706,7 @@ export const sharedTools: Tool[] = [
   },
   {
     name: "td_list_shared_members",
-    description: "List members of a shared project (name, permission, kicked/blocked state)",
+    description: "List members of a shared project (name, permission, kicked/blocked state, isPending = waiting for approval)",
     inputSchema: {
       type: "object",
       properties: {
@@ -720,7 +720,7 @@ export const sharedTools: Tool[] = [
   },
   {
     name: "td_update_shared_member",
-    description: "Update a shared project member: change permission, block/unblock or kick.",
+    description: "Update a shared project member: change permission, block/unblock, kick, or approve a pending join (isPending: false together with isBlocked: false). Rejecting keeps isBlocked true.",
     inputSchema: {
       type: "object",
       properties: {
@@ -730,6 +730,7 @@ export const sharedTools: Tool[] = [
         permission: { type: "string", enum: ["admin", "write", "read"], description: "New permission level" },
         isBlocked: { type: "boolean", description: "Block (true) or unblock (false) the member's access" },
         isKicked: { type: "boolean", description: "Kick (true) the member from the project" },
+        isPending: { type: "boolean", description: "false resolves an approval request (TODO-332); pair with isBlocked to approve (false) or reject (true)" },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -1066,6 +1067,7 @@ export async function handleSharedTool(
         permission?: string;
         isBlocked?: boolean;
         isKicked?: boolean;
+        isPending?: boolean;
       });
     case "td_upload_shared_note_attachment":
       return uploadSharedNoteAttachment(args as {
@@ -2586,6 +2588,7 @@ async function listSharedMembers(
           "joinedAt",
           "isKicked",
           "isBlocked",
+          "isPending",
         ])
         .where("isDeleted", "is not", SQLITE_TRUE)
         .where("ownerId", "=", sharedOwner.id as string);
@@ -2619,6 +2622,7 @@ async function listSharedMembers(
         joinedAt: m.joinedAt,
         isKicked: m.isKicked === SQLITE_TRUE,
         isBlocked: m.isBlocked === SQLITE_TRUE,
+        isPending: m.isPending === SQLITE_TRUE,
       })),
     };
   } finally {
@@ -2634,6 +2638,7 @@ async function updateSharedMember(
     permission?: string;
     isBlocked?: boolean;
     isKicked?: boolean;
+    isPending?: boolean;
   }
 ) {
   const projectEvolu = getProjectEvolu();
@@ -2661,6 +2666,9 @@ async function updateSharedMember(
     }
     if (args.isKicked !== undefined) {
       updates.isKicked = args.isKicked ? SQLITE_TRUE : null;
+    }
+    if (args.isPending !== undefined) {
+      updates.isPending = args.isPending ? SQLITE_TRUE : null;
     }
 
     const waiter = createMutationWaiter();
