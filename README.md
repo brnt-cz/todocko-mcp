@@ -289,7 +289,7 @@ Sdílené projekty (TODO-235):
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_kanban_columns` | Seznam kanban sloupců |
-| `td_create_kanban_column` | Vytvoření sloupce (volitelně `wipLimit`, max. úkolů před varováním v hlavičce) |
+| `td_create_kanban_column` | Vytvoření sloupce (volitelně `wipLimit`, max. úkolů na uživatele v In progress před varováním v hlavičce) |
 | `td_update_kanban_column` | Aktualizace sloupce (`wipLimit: null` limit zruší) |
 | `td_delete_kanban_column` | Smazání sloupce (soft delete) |
 
@@ -972,7 +972,7 @@ Shared projects (TODO-235):
 | Tool | Description |
 |------|-------------|
 | `td_list_kanban_columns` | List kanban columns |
-| `td_create_kanban_column` | Create a kanban column (optional `wipLimit`, max tasks before the header warns) |
+| `td_create_kanban_column` | Create a kanban column (optional `wipLimit`, max tasks per user in In progress before the header warns) |
 | `td_update_kanban_column` | Update a kanban column (`wipLimit: null` clears the limit) |
 | `td_delete_kanban_column` | Delete a kanban column (soft delete) |
 
