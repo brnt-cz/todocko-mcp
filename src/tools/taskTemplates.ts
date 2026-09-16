@@ -48,6 +48,16 @@ export const taskTemplateTools: Tool[] = [
           type: "string",
           description: "Default project ID",
         },
+        checklistItems: {
+          type: "array",
+          items: { type: "string" },
+          description: "Checklist item titles created on every task made from this template (TODO-329)",
+        },
+        tagIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Tag IDs applied to tasks made from this template; tags of another project are skipped by the app (TODO-329)",
+        },
       },
       required: ["name"],
     },
@@ -68,6 +78,8 @@ export const taskTemplateTools: Tool[] = [
         priority: { type: "string", enum: ["low", "medium", "high", "urgent"] },
         estimate: { type: "number" },
         projectId: { type: "string" },
+        checklistItems: { type: "array", items: { type: "string" }, description: "Replaces the checklist; empty array clears it" },
+        tagIds: { type: "array", items: { type: "string" }, description: "Replaces the tag set; empty array clears it" },
       },
       required: ["id"],
     },
@@ -113,11 +125,32 @@ export async function handleTaskTemplateTool(
   }
 }
 
+/** JSON text column to string list; malformed values degrade to an empty list. (TODO-329) */
+export function parseTemplateList(json: unknown): string[] {
+  if (typeof json !== "string" || json.length === 0) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** String list to JSON text column; rejects non-string entries, empty list becomes null. (TODO-329) */
+export function serializeTemplateList(items: unknown, field: string): string | null {
+  if (items === null || items === undefined) return null;
+  if (!Array.isArray(items) || items.some((x) => typeof x !== "string")) {
+    throw new Error(`${field} must be an array of strings`);
+  }
+  const cleaned = items.map((x: string) => x.trim()).filter((x) => x.length > 0);
+  return cleaned.length > 0 ? JSON.stringify(cleaned) : null;
+}
+
 async function listTaskTemplates(evolu: EvoluInstance, args: { projectId?: string }) {
   const query = evolu.createQuery((db: any) => {
     let q = db
       .selectFrom("taskTemplate")
-      .select(["id", "name", "taskName", "description", "priority", "estimate", "projectId", "position"])
+      .select(["id", "name", "taskName", "description", "priority", "estimate", "projectId", "position", "checklistItems", "tagIds"])
       .where("isDeleted", "is not", SQLITE_TRUE)
       .orderBy("position", "asc");
     if (args.projectId) {
@@ -132,13 +165,14 @@ async function listTaskTemplates(evolu: EvoluInstance, args: { projectId?: strin
     templates: result.map((t: any) => ({
       id: t.id, name: t.name, taskName: t.taskName, description: t.description,
       priority: t.priority, estimate: t.estimate, projectId: t.projectId, position: t.position,
+      checklistItems: parseTemplateList(t.checklistItems), tagIds: parseTemplateList(t.tagIds),
     })),
   };
 }
 
 async function createTaskTemplate(
   evolu: EvoluInstance,
-  args: { name: string; taskName?: string; description?: string; priority?: string; estimate?: number; projectId?: string }
+  args: { name: string; taskName?: string; description?: string; priority?: string; estimate?: number; projectId?: string; checklistItems?: string[]; tagIds?: string[] }
 ) {
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("taskTemplate").select(["position"]).where("isDeleted", "is not", SQLITE_TRUE).orderBy("position", "desc").limit(1)
@@ -155,6 +189,8 @@ async function createTaskTemplate(
     estimate: args.estimate ? Int.orThrow(args.estimate) : null,
     projectId: args.projectId ? (args.projectId as ProjectId) : null,
     position: Int.orThrow(maxPos + 1),
+    checklistItems: serializeTemplateList(args.checklistItems, "checklistItems"),
+    tagIds: serializeTemplateList(args.tagIds, "tagIds"),
   }, { onComplete: waiter.onComplete });
 
   await waiter.waitForSync();
@@ -164,7 +200,7 @@ async function createTaskTemplate(
 
 async function updateTaskTemplate(
   evolu: EvoluInstance,
-  args: { id: string; name?: string; taskName?: string; description?: string; priority?: string; estimate?: number; projectId?: string }
+  args: { id: string; name?: string; taskName?: string; description?: string; priority?: string; estimate?: number; projectId?: string; checklistItems?: string[]; tagIds?: string[] }
 ) {
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "taskTemplate", args.id, "Task template");
@@ -176,6 +212,8 @@ async function updateTaskTemplate(
   if (args.priority !== undefined) updates.priority = EvoluString.orThrow(args.priority);
   if (args.estimate !== undefined) updates.estimate = args.estimate ? Int.orThrow(args.estimate) : null;
   if (args.projectId !== undefined) updates.projectId = args.projectId ? (args.projectId as ProjectId) : null;
+  if (args.checklistItems !== undefined) updates.checklistItems = serializeTemplateList(args.checklistItems, "checklistItems");
+  if (args.tagIds !== undefined) updates.tagIds = serializeTemplateList(args.tagIds, "tagIds");
 
   const waiter = createMutationWaiter();
   assertMutation("updateTaskTemplate", evolu.update("taskTemplate", updates as any, { onComplete: waiter.onComplete }));

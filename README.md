@@ -280,8 +280,8 @@ Sdílené projekty (TODO-235):
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_task_templates` | Seznam šablon úkolů |
-| `td_create_task_template` | Vytvoření šablony |
-| `td_update_task_template` | Aktualizace šablony |
+| `td_create_task_template` | Vytvoření šablony (volitelně `checklistItems` a `tagIds`) |
+| `td_update_task_template` | Aktualizace šablony (`checklistItems`, `tagIds`; prázdné pole maže) |
 | `td_delete_task_template` | Smazání šablony (soft delete) |
 
 ### Kanban sloupce
@@ -963,8 +963,8 @@ Shared projects (TODO-235):
 | Tool | Description |
 |------|-------------|
 | `td_list_task_templates` | List task templates |
-| `td_create_task_template` | Create a task template |
-| `td_update_task_template` | Update a task template |
+| `td_create_task_template` | Create a task template (optional `checklistItems` and `tagIds`) |
+| `td_update_task_template` | Update a task template (`checklistItems`, `tagIds`; empty array clears) |
 | `td_delete_task_template` | Delete a task template (soft delete) |
 
 ### Kanban Columns

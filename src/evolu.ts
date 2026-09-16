@@ -345,6 +345,8 @@ export const Schema = {
     estimate: nullOr(Int),
     projectId: nullOr(ProjectId),
     position: Int,
+    checklistItems: nullOr(String), // TODO-329: JSON array of item titles
+    tagIds: nullOr(String), // TODO-329: JSON array of tag ids
   },
   // Kanban columns
   kanbanColumn: {
