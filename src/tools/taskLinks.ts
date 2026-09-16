@@ -40,8 +40,8 @@ export const taskLinkTools: Tool[] = [
           // (useDashboardTaskOperations.ts:620 and :641). Harmless while the
           // enum was only documentation; with the values now enforced it would
           // have refused legitimate links. (TODO-297)
-          enum: ["blocks", "explicit", "mention"],
-          description: "Link type: 'blocks' for a dependency, 'explicit' for a manual link, 'mention' for one detected in a description (default: 'blocks')",
+          enum: ["blocks", "explicit", "mention", "relates", "duplicate"],
+          description: "Link type: 'blocks' for a dependency, 'explicit' for a manual link, 'mention' for one detected in a description, 'relates' for a neutral relation, 'duplicate' when the source task duplicates the target (default: 'blocks'). relates and duplicate never appear in the dependency graph (TODO-330)",
         },
       },
       required: ["sourceTaskId", "targetTaskId"],

@@ -226,7 +226,7 @@ Instalátor:
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_task_links` | Seznam linků úkolu |
-| `td_create_task_link` | Vytvoření linku mezi úkoly |
+| `td_create_task_link` | Vytvoření linku mezi úkoly (`blocks`, `explicit`, `mention`, `relates`, `duplicate`) |
 | `td_delete_task_link` | Smazání linku (soft delete) |
 
 ### Tagy
@@ -909,7 +909,7 @@ The installer will:
 | Tool | Description |
 |------|-------------|
 | `td_list_task_links` | List links for a task |
-| `td_create_task_link` | Create a link between tasks |
+| `td_create_task_link` | Create a link between tasks (`blocks`, `explicit`, `mention`, `relates`, `duplicate`) |
 | `td_delete_task_link` | Delete a task link (soft delete) |
 
 ### Tags
