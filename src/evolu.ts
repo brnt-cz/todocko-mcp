@@ -127,6 +127,7 @@ import {
   Mnemonic,
 } from "@evolu/common";
 import { createAppOwner, mnemonicToOwnerSecret, OwnerSecret as OwnerSecretType, type AppOwner } from "@evolu/common/local-first";
+import { acquireInstanceLock, lockConflictMessage, type HeldLock } from "./instanceLock.js";
 import { createIdFromString } from "@evolu/common";
 
 // Re-create schema for MCP server (mirrors main app)
@@ -700,7 +701,16 @@ function deriveProjectInstanceOwner(mnemonic: typeof Mnemonic.Output) {
 }
 
 // Database name - must match main app (src/db/appEvolu.ts)
-const DB_NAME = "todocko";
+/**
+ * A separate database for a second process (TODO-341).
+ *
+ * One database belongs to one process; when a CLI call has to run beside the
+ * server, TODOCKO_INSTANCE gives it its own file and the two meet on the relay,
+ * which is how two Evolu clients are meant to share an owner anyway.
+ */
+const INSTANCE_SUFFIX = (process.env.TODOCKO_INSTANCE ?? "").trim().toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 20);
+
+const DB_NAME = INSTANCE_SUFFIX ? `todocko-${INSTANCE_SUFFIX}` : "todocko";
 
 // Evolu relay servers (same as main app)
 /**
@@ -1017,6 +1027,15 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
   // v8 will actually open. (TODO-285)
   const appOwnerForChecks = createAppOwner(mnemonicToOwnerSecret(mnemonicResult.value));
 
+  // One process per database, or the second one takes the first one's dbWorker
+  // down with it. (TODO-341)
+  const dbPath = getDbPath(appOwnerForChecks);
+  const lockResult = acquireInstanceLock(dbPath.replace(/\.db$/, ".lock"));
+  if (!lockResult.ok) {
+    return failInit(lockConflictMessage(lockResult.holder, dbPath));
+  }
+  registerLockRelease(lockResult.lock);
+
   // Ensure missing columns exist in DB before Evolu starts
   // Evolu's ensureSchema doesn't always add new columns to existing tables
   ensureMissingColumns(appOwnerForChecks);
@@ -1139,6 +1158,27 @@ export function getEvolu(): EvoluInstance | null {
  * would never settle. The MCP client saw a server that had started and then
  * answered nothing at all, with no error anywhere. (TODO-285)
  */
+/**
+ * Give the lock back on every way out of the process, so the next start does
+ * not have to reason about a stale file. A crash still leaves one behind; that
+ * is what the liveness check is for.
+ */
+let heldLock: HeldLock | null = null;
+function registerLockRelease(lock: HeldLock): void {
+  heldLock = lock;
+  const release = () => {
+    heldLock?.release();
+    heldLock = null;
+  };
+  process.once("exit", release);
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(signal, () => {
+      release();
+      process.exit(0);
+    });
+  }
+}
+
 function failInit(message: string): null {
   console.error(message);
   if (evoluReadyReject) evoluReadyReject(new Error(message));
@@ -1173,7 +1213,7 @@ export const SQLITE_FALSE = null;
 import { createSharedOwner, type SharedOwner, type OwnerSecret, type OwnerId } from "@evolu/common";
 
 let projectEvoluInstance: EvoluInstance | null = null;
-const PROJECT_DB_NAME = "todocko-shared";
+const PROJECT_DB_NAME = INSTANCE_SUFFIX ? `todocko-shared-${INSTANCE_SUFFIX}` : "todocko-shared";
 
 // Cache for SharedOwners
 const sharedOwnersCache = new Map<string, SharedOwner>();

@@ -671,11 +671,34 @@ jiného a nic to nehlásilo. (TODO-318)
 nešlo uklidit. `td_search_tasks` s `includeShared` ukáže obě kopie vedle sebe a
 je proto nejrychlejší způsob, jak zjistit, že je úkol rozdvojený.
 
+### `Todocko MCP už nad touto databází běží` (TODO-341)
+Druhá instance nad stejnou zálohovací frází se odmítne nastartovat. Není to
+opatrnost navíc: klientská databáze jede v režimu `journal_mode=delete`
+s nulovým `busy_timeout`, takže druhý proces dostane SQLITE_BUSY okamžitě,
+Evolu z toho udělá `PanicAbortReason: database is locked` a **prvnímu** procesu
+umře dbWorker. Do TODO-341 tak nové okno tiše shodilo to, ve kterém jsi pracoval
+(projevilo se jako `status: worker-dead`, viz níž).
+
+Zámek je soubor `~/.todocko/todocko-<owner>.lock` vedle databáze. Drží pid,
+který ho vzal; po pádu procesu se pozná jako neaktuální (`process.kill(pid, 0)`)
+a další start si ho vezme.
+
+Když potřebuješ druhou instanci doopravdy (třeba CLI `todo` vedle MCP), spusť ji
+s vlastním jménem databáze:
+```bash
+TODOCKO_INSTANCE=cli todo ...
+```
+Dostane `~/.todocko/todocko-cli-<owner>.db`, tedy vlastní lokální kopii, která
+se s tou první srovná přes relay. Povolené znaky jsou `a-z0-9-`, zbytek se
+zahodí; prázdná hodnota znamená výchozí databázi.
+
 ### Worker umřel za běhu (`status: worker-dead`)
 Proces normálně naběhl a po nějaké době přestal odpovídat. `td_sync_status`
 vrátí `status: "worker-dead"` a v `workerDefects` je panika i s časem. Dotazy
 v tomhle stavu selžou **hned**, ne až po 15 s. Řešení je `/mcp` reconnect.
-Příčina, proč worker za běhu umírá, je otevřená (TODO-317).
+Nejčastější příčina je druhý MCP proces nad stejnou databází; od TODO-341 se
+druhá instance nenastartuje, takže tuhle cestu k mrtvému workeru už nemá jak
+způsobit.
 
 ### Každý `loadQuery` skončí timeoutem (`loadQuery timed out after 15000ms`)
 
@@ -1280,6 +1303,28 @@ personal copies could never be cleaned up. `td_search_tasks` with
 `includeShared` shows both copies side by side and is the quickest way to spot
 a split task.
 
+### `Todocko MCP už nad touto databází běží` (TODO-341)
+A second instance over the same backup phrase refuses to start. The client
+database runs with `journal_mode=delete` and a zero `busy_timeout`, so the
+second process gets SQLITE_BUSY immediately, Evolu turns it into
+`PanicAbortReason: database is locked`, and the **first** process loses its
+dbWorker. Until TODO-341 a new window silently killed the one you were working
+in.
+
+The lock is `~/.todocko/todocko-<owner>.lock` next to the database. It holds the
+owning pid; after a crash the next start detects it as stale
+(`process.kill(pid, 0)`) and takes it over.
+
+If you really need a second instance (the `todo` CLI next to the MCP, say), give
+it its own database name:
+```bash
+TODOCKO_INSTANCE=cli todo ...
+```
+It gets `~/.todocko/todocko-cli-<owner>.db`, a separate local copy that
+reconciles with the first one through the relay. Allowed characters are
+`a-z0-9-`; anything else is dropped and an empty value means the default
+database.
+
 ### Every `loadQuery` ends with a timeout (`loadQuery timed out after 15000ms`)
 
 There are two causes, told apart by what the server says.
@@ -1332,7 +1377,7 @@ TODOCKO_MNEMONIC="your phrase" npm start
 
 ### Testy
 
-Vitest, 24 testů ve dvou souborech. **Běží v CI** (`ci.yml`, push i PR na `main`)
+Vitest, 164 testů ve dvanácti souborech. **Běží v CI** (`ci.yml`, push i PR na `main`)
 od TODO-229 — do té doby CI spouštěla jen build, takže se nikdo nedozvěděl, že
 `helpers.test.ts` na Node 18/20 **ani neprojde importem**: přes `helpers.ts`
 tahal `../evolu.js`, jehož inicializace při načtení modulu spadne na
