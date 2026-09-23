@@ -2,6 +2,8 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getQuarantineCounts, getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
 import { getSocketTraffic, getWorkerDefects } from "../evoluPlatform.js";
 import { judgeSyncFreshness } from "./pure.js";
+import { classifyFreshness, localMessageCount, fetchRelayMessageCount, missingMessages } from "../utils/syncFreshness.js";
+import { getEvolu, getAppOwnerId } from "../evolu.js";
 
 export const diagnosticTools: Tool[] = [
   {
@@ -109,6 +111,15 @@ async function syncStatus(args: { retest?: boolean }) {
         : freshness.verdict === 'stale'
           ? 'stale'
           : 'ok',
+    /**
+     * Whether this process holds the whole account (TODO-373).
+     *
+     * `behind` is not cosmetic: a task code is derived from the highest one
+     * visible here, so numbering while behind hands out a code the relay
+     * already uses. `unknown` means the relay could not be asked, which is a
+     * different thing from being complete.
+     */
+    copy: await copyFreshness(),
     /** What measured traffic says about sync, rather than the socket's state. */
     sync: {
       verdict: freshness.verdict,
@@ -148,5 +159,34 @@ async function syncStatus(args: { retest?: boolean }) {
       "sync.verdict is the one to read: 'stale' means a local write is waiting and nothing is leaving, which an open socket does not tell you",
       "'idle' is not a fault — nothing was written, so nothing had to go out",
     ],
+  };
+}
+
+/**
+ * Local versus relay message counts.
+ *
+ * Evolu keeps one row per applied message in `evolu_timestamp` and the relay
+ * reports the same figure for the owner, so the pair answers "do I have
+ * everything" directly instead of by waiting a fixed number of milliseconds.
+ * Measured on real data the two matched exactly (TODO-343).
+ */
+async function copyFreshness(): Promise<{
+  state: string;
+  localMessages: number | null;
+  relayMessages: number | null;
+  missing: number | null;
+}> {
+  const evolu = getEvolu();
+  const ownerId = getAppOwnerId();
+  const mnemonic = process.env.TODOCKO_MNEMONIC;
+  const local = evolu
+    ? await localMessageCount(evolu as unknown as Parameters<typeof localMessageCount>[0])
+    : null;
+  const remote = ownerId && mnemonic ? await fetchRelayMessageCount(ownerId, mnemonic) : null;
+  return {
+    state: classifyFreshness({ local, remote }),
+    localMessages: local,
+    relayMessages: remote,
+    missing: missingMessages({ local, remote }),
   };
 }

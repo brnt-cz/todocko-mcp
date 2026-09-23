@@ -671,6 +671,26 @@ jiného a nic to nehlásilo. (TODO-318)
 nešlo uklidit. `td_search_tasks` s `includeShared` ukáže obě kopie vedle sebe a
 je proto nejrychlejší způsob, jak zjistit, že je úkol rozdvojený.
 
+### Kód úkolu se teď přidělit nedá (TODO-373)
+`td_create_task` odvozuje kód z nejvyššího, který v téhle kopii vidí. Když část
+účtu ještě nedorazila, je maximum nižší než skutečné a vznikne kód, který na
+relayi už existuje. Stalo se to 2026-09-23: v 07:01 kopie neměla TODO-360 až
+367 a server vyrobil TODO-353 a dál, v 09:33 už je nad stejným souborem měla
+a navázal správně na 368. Nic se nerozbilo jen proto, že 353 až 359 byla shodou
+okolností volná.
+
+Před přidělením kódu se proto porovná počet zpráv: Evolu jich drží po jedné
+v `evolu_timestamp`, relay hlásí stejné číslo pro ownera. Naměřeno 81 130 na
+obou stranách. Když je kopie pozadu, zápis se odmítne a řekne, kolik zpráv
+chybí; až se sync dotáhne, projde. Když se relay zeptat nedá, zápis projde:
+odmítat i tam by z lokálně prvního nástroje udělalo nástroj závislý na síti.
+
+Aktuální stav ukáže `td_sync_status` v poli `copy`.
+
+**Sdílené projekty tenhle strážce nemají.** Jejich úkoly patří jinému ownerovi
+s vlastním počtem zpráv a zeptat se na něj chce jeho klíč, ne ten odvozený
+z mnemoniky. Měřit tam app ownera by vypadalo jako pokrytí a nebylo by.
+
 ### `Todocko MCP už nad touto databází běží` (TODO-341)
 Druhá instance nad stejnou zálohovací frází se odmítne nastartovat. Není to
 opatrnost navíc: klientská databáze jede v režimu `journal_mode=delete`

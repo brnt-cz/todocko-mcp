@@ -1585,6 +1585,14 @@ async function createSharedTask(
     } else {
       let maxNum = 0;
       const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
+      // The same hazard lives here and is NOT guarded (TODO-373).
+      //
+      // The personal branch checks the app owner's message count against the
+      // relay before deriving a code. These tasks belong to a shared owner, a
+      // different account with its own count, and asking about it needs that
+      // owner's key rather than the mnemonic-derived one. Using the app owner's
+      // freshness here would measure the wrong account and read as covered,
+      // which is worse than an honest gap.
       for (const t of projectTasks) {
         const match = (t.title as string | undefined)?.match(codeRegex);
         if (match) {
