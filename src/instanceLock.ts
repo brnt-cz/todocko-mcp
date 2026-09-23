@@ -81,14 +81,63 @@ export interface HeldLock {
   release: () => void;
 }
 
+/**
+ * The process state character out of a `/proc/<pid>/stat` line.
+ *
+ * Parsed from the LAST `)`, not the first: the second field is the executable
+ * name in parentheses and it may itself contain spaces and parentheses, so
+ * splitting on whitespace or on the first bracket reads the wrong field for
+ * anything called `(node) (x)`. The state is the first token after that field.
+ *
+ * Exported for tests; `null` means the line was not in the expected shape.
+ */
+export function parseProcState(stat: string): string | null {
+  const close = stat.lastIndexOf(")");
+  if (close === -1) return null;
+  const state = stat.slice(close + 1).trim().charAt(0);
+  return state === "" ? null : state;
+}
+
+/**
+ * Whether a process that exists is actually still running (TODO-372).
+ *
+ * A zombie passes every liveness test the kernel offers through signals: it is
+ * still in the process table, so `kill(pid, 0)` succeeds, and the old code
+ * therefore reported it as the live holder of the lock. Nothing then ever
+ * released that lock, because the process it named could not run again and its
+ * parent was not reaping it, so every new instance refused to start until the
+ * file was deleted by hand. Seen on 2026-09-22: holder in state `Z`, parent a
+ * stopped `claude` in state `Tl`, and SIGCONT to the parent did not move it.
+ *
+ * `state` is null wherever `/proc` is not readable, which includes every
+ * non-Linux host. There the answer stays what it always was, because guessing
+ * would trade a rare stuck lock for a common wrong one.
+ *
+ * Exported for tests: pure, so the decision can be checked without a zombie.
+ */
+export function isRunning(exists: boolean, state: string | null): boolean {
+  if (!exists) return false;
+  return state !== "Z";
+}
+
+function procState(pid: number): string | null {
+  try {
+    return parseProcState(readFileSync(`/proc/${pid}/stat`, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
 function processIsAlive(pid: number): boolean {
+  let exists: boolean;
   try {
     process.kill(pid, 0);
-    return true;
+    exists = true;
   } catch (e) {
     // EPERM means the process exists but belongs to someone else.
-    return (e as NodeJS.ErrnoException).code === "EPERM";
+    exists = (e as NodeJS.ErrnoException).code === "EPERM";
   }
+  return isRunning(exists, procState(pid));
 }
 
 /**
