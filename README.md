@@ -680,8 +680,16 @@ umře dbWorker. Do TODO-341 tak nové okno tiše shodilo to, ve kterém jsi prac
 (projevilo se jako `status: worker-dead`, viz níž).
 
 Zámek je soubor `~/.todocko/todocko-<owner>.lock` vedle databáze. Drží pid,
-který ho vzal; po pádu procesu se pozná jako neaktuální (`process.kill(pid, 0)`)
-a další start si ho vezme.
+který ho vzal; po pádu procesu se pozná jako neaktuální a další start si ho
+vezme.
+
+Samotné `process.kill(pid, 0)` na to nestačí (TODO-372). **Zombie procesem ten
+test projde**: proces, který skončil, ale rodič ho nesklidil, je pořád
+v tabulce procesů a signál 0 na něm uspěje. Zámek pak vypadá jako věčně držený
+a žádná nová instance se nespustí. Stalo se to 2026-09-22, kdy byl držitel ve
+stavu `Z` a jeho rodič zastavený `claude` ve stavu `Tl`, takže neměl kdo
+sklízet. Na Linuxu se proto čte stav z `/proc/<pid>/stat` a `Z` se bere jako
+mrtvý. Kde `/proc` není, zůstává původní chování.
 
 Když potřebuješ druhou instanci doopravdy (třeba CLI `todo` vedle MCP), spusť ji
 s vlastním jménem databáze:
