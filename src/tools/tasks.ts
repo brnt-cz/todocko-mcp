@@ -1,9 +1,10 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
-import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth } from "../evolu.js";
+import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
 import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
+import { assertCopyCanNumberTasks } from "../utils/syncFreshness.js";
 import { withAllSharedOwners, loadSharedProjectRefs } from "./shared.js";
 
 export const taskTools: Tool[] = [
@@ -755,6 +756,13 @@ async function createTask(
     }
     taskCode = args.code;
   } else {
+    // A code is derived from the highest one visible here, so a copy that has
+    // not caught up hands out one the relay already uses. (TODO-373)
+    await assertCopyCanNumberTasks({
+      evolu: evolu as unknown as Parameters<typeof assertCopyCanNumberTasks>[0]["evolu"],
+      ownerId: getAppOwnerId(),
+      mnemonic: process.env.TODOCKO_MNEMONIC,
+    });
     let maxNum = 0;
     const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
     for (const t of existingTasks) {
