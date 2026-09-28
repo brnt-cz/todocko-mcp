@@ -4,6 +4,7 @@ import { SQLITE_TRUE, type TaskId, type AttachmentId, type EvoluInstance } from 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
+import { joinChunks, splitIntoChunks } from "./attachmentChunks.js";
 import { createMutationWaiter, resolveDownloadPath, resolveUploadPath, assertAttachmentSize } from "./helpers.js";
 
 export const attachmentTools: Tool[] = [
@@ -174,14 +175,29 @@ async function uploadAttachment(
     throw new Error("Task not found");
   }
 
+  // Obsah jde binárně a po kusech (TODO-396), stejně jako v aplikaci: Evolu
+  // 8.12 odmítá mutaci nad 640 000 bajtů a base64 k obsahu přidávalo třetinu.
+  const content = Buffer.from(fileContent, "base64");
+  const chunks = splitIntoChunks(new Uint8Array(content));
+
   const waiter = createMutationWaiter();
   const result = evolu.insert("attachment", {
     taskId: args.taskId as TaskId,
     filename: NonEmptyTrimmedString100.orThrow(filename),
     mimeType: mimeType,
-    data: fileContent,
+    // Prázdné: obsah je v kusech. Sloupec zůstává kvůli starým přílohám.
+    data: null,
     size: Int.orThrow(size),
   }, { onComplete: waiter.onComplete });
+
+  const attachmentId = result.id as AttachmentId;
+  chunks.forEach((bytes, index) => {
+    evolu.insert("attachmentChunk", {
+      attachmentId,
+      index: Int.orThrow(index),
+      bytes,
+    });
+  });
 
   await waiter.waitForSync();
 
@@ -205,7 +221,9 @@ async function listAttachments(
       .select(["id", "filename", "mimeType", "size"])
       .where("taskId", "=", args.taskId as TaskId)
       .where("isDeleted", "is not", SQLITE_TRUE)
-      .where("data", "is not", null)
+      // Bez filtru na `data`: obsah nové přílohy leží v kusech a sloupec je
+      // u ní prázdný, takže by z výpisu zmizela. Přišlo se na to sondou,
+      // upload i download fungovaly a výpis vracel nulu. (TODO-396)
   );
 
   const result = await evolu.loadQuery(query);
@@ -224,12 +242,31 @@ async function deleteAttachment(
   evolu: EvoluInstance,
   args: { id: string }
 ) {
+  // Kusy musí odejít s přílohou, jinak zůstane obsah ležet v datech a
+  // tombstone uvolní jen hlavičku (TODO-396).
+  const chunkQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("attachmentChunk")
+      .select(["id"])
+      .where("attachmentId", "=", args.id as AttachmentId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+  );
+  const chunkRows = (await evolu.loadQuery(chunkQuery)) as unknown as Array<{ id: string }>;
+
   const waiter = createMutationWaiter();
   const result = evolu.update("attachment", {
     id: args.id as AttachmentId,
     data: null,
     isDeleted: SQLITE_TRUE,
   } as any, { onComplete: waiter.onComplete });
+
+  for (const chunk of chunkRows) {
+    evolu.update("attachmentChunk", {
+      id: chunk.id,
+      bytes: new Uint8Array(0),
+      isDeleted: SQLITE_TRUE,
+    } as any);
+  }
 
   await waiter.waitForSync();
 
@@ -258,7 +295,28 @@ async function downloadAttachment(
   }
 
   const a = result[0] as any;
-  if (!a.data) {
+
+  // Nové přílohy mají obsah v kusech, staré v `data`. Obojí se čte, protože
+  // schéma je append-only a staré řádky nikam nezmizí. (TODO-396)
+  const chunkQuery = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("attachmentChunk")
+      .select(["index", "bytes"])
+      .where("attachmentId", "=", args.id as AttachmentId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .orderBy("index", "asc")
+  );
+  const chunkRows = (await evolu.loadQuery(chunkQuery)) as unknown as Array<{ index: number; bytes: Uint8Array }>;
+  const joined = chunkRows.length > 0 ? joinChunks(chunkRows.map((r) => ({ index: r.index, bytes: r.bytes }))) : null;
+
+  if (chunkRows.length > 0 && !joined) {
+    // Kus chybí: příloha se ještě nesynchronizovala celá. Půlka souboru by se
+    // poznala až při otevření, a to je pozdě.
+    return { error: "Attachment content is incomplete (some chunks have not synced yet)" };
+  }
+
+  const base64 = joined ? Buffer.from(joined).toString("base64") : (a.data as string | null);
+  if (!base64) {
     return { error: "Attachment data is empty (may have been deleted)" };
   }
 
@@ -268,7 +326,7 @@ async function downloadAttachment(
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
-    writeFileSync(target, Buffer.from(a.data, "base64"));
+    writeFileSync(target, Buffer.from(base64, "base64"));
     return {
       success: true,
       filePath: target,
@@ -282,7 +340,7 @@ async function downloadAttachment(
     id: a.id,
     filename: a.filename,
     mimeType: a.mimeType,
-    data: a.data,
+    data: base64,
     size: a.size,
   };
 }

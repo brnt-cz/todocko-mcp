@@ -122,6 +122,7 @@ import {
   SqliteBoolean,
   Int,
   String,
+  Uint8Array as EvoluUint8Array,
   createRun,
   AppName,
   Mnemonic,
@@ -141,6 +142,8 @@ export const UserId = id("User");
 export type UserId = typeof UserId.Output;
 
 export const AttachmentId = id("Attachment");
+/** Kus přílohy: obsah se ukládá po částech, viz appEvolu.ts v aplikaci. (TODO-396) */
+export const AttachmentChunkId = id("AttachmentChunk");
 export type AttachmentId = typeof AttachmentId.Output;
 
 export const WorklogId = id("Worklog");
@@ -273,6 +276,19 @@ export const Schema = {
     mimeType: String,
     data: nullOr(String),
     size: Int,
+  },
+  /**
+   * Obsah přílohy po kusech, binárně (TODO-396).
+   *
+   * Musí sedět se schématem aplikace: příloha nahraná tady se otevírá tam
+   * a naopak. Evolu 8.12 navíc odmítá mutaci nad 640 000 bajtů, takže velký
+   * soubor jedním zápisem projít nemůže.
+   */
+  attachmentChunk: {
+    id: AttachmentChunkId,
+    attachmentId: AttachmentId,
+    index: Int,
+    bytes: EvoluUint8Array,
   },
   worklog: {
     id: WorklogId,
@@ -494,6 +510,19 @@ export const ProjectSchema = {
     mimeType: String,
     data: nullOr(String),
     size: Int,
+  },
+  /**
+   * Obsah přílohy po kusech, binárně (TODO-396).
+   *
+   * Musí sedět se schématem aplikace: příloha nahraná tady se otevírá tam
+   * a naopak. Evolu 8.12 navíc odmítá mutaci nad 640 000 bajtů, takže velký
+   * soubor jedním zápisem projít nemůže.
+   */
+  attachmentChunk: {
+    id: AttachmentChunkId,
+    attachmentId: AttachmentId,
+    index: Int,
+    bytes: EvoluUint8Array,
   },
   worklog: {
     id: WorklogId,
