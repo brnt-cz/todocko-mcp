@@ -37,6 +37,7 @@ import {
   createRun,
   createSharedWorker,
   createWebSocket,
+  type WebSocketCloseEvent,
   createWorker,
   waitForAbort,
 } from "@evolu/common";
@@ -119,7 +120,9 @@ const createInstrumentedWebSocket: CreateWebSocket = (url, options) => {
       t.openCount++;
       options?.onOpen?.();
     },
-    onClose: (event: CloseEvent) => {
+    // `WebSocketCloseEvent` je od Evolu 8.12 vlastní, užší typ než DOM
+    // `CloseEvent`: nese jen to, co Evolu opravdu předává. (TODO-397)
+    onClose: (event: WebSocketCloseEvent) => {
       t.lastCloseAt = Date.now();
       t.lastCloseCode = event.code;
       t.closeCount++;
