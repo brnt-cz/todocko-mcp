@@ -18,7 +18,7 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Evolu v8 (TODO-88)
 
-MCP běží na `@evolu/common` 8.9.0 a `@evolu/nodejs` 3.2.0.
+MCP běží na `@evolu/common` 8.12.0 a `@evolu/nodejs` 4.1.0.
 
 v7 dodával `createDbWorkerForPlatform`, což bylo vše, co headless klient v Node
 potřeboval. v8 to zrušil: `@evolu/nodejs` v3 nabízí relay a pár primitiv, a
@@ -30,7 +30,15 @@ Vyšel krátce, protože Node 24 má potřebná web API nativně. Oba workery b�
 fallbacky Evolu „pro platformy bez podpory workerů"; `worker_threads` by přinesly
 izolaci, kterou jednoprocesový CLI nepotřebuje.
 
-Pět věcí, na kterých se to dá snadno rozbít:
+Šest věcí, na kterých se to dá snadno rozbít:
+
+- **Mutace má strop 640 000 bajtů** (od 8.12). Větší zápis vyhodí výjimku ještě
+  před uložením, takže se ani nenasynchronizuje. Přílohy se proto ukládají
+  binárně a po kusech po 480 KiB (`src/tools/attachmentChunks.ts`), stejně jako
+  v aplikaci; velikost kusu musí sedět s ní, jinak se příloha nahraná tady
+  otevře jinde useknutá. Čtení umí i starý tvar, base64 v `attachment.data`,
+  protože schéma je append-only.
+
 
 - **`installPolyfills()` je povinné** a musí proběhnout dřív než cokoli
   z `@evolu/common`. v8 volá `Map.prototype.getOrInsert(Computed)`, které nemá
