@@ -1,4 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { joinChunks, splitIntoChunks } from "./attachmentChunks.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import {
   SQLITE_TRUE,
@@ -2960,14 +2961,26 @@ async function uploadSharedAttachment(
     const tasks = ((await projectEvolu.loadQuery(taskQuery)) as any[]).filter((t) => (t.ownerId as string) === (sharedOwner.id as string));
     if (tasks.length === 0) throw new Error("Task not found in this shared project");
 
+    // Obsah binárně a po kusech (TODO-396). Každý kus nese `ownerId`, jinak by
+    // spadl pod throwaway ownera a nikdo by ho nenašel.
+    const chunks = splitIntoChunks(new Uint8Array(Buffer.from(fileContent, "base64")));
+
     const waiter = createMutationWaiter();
     const result = projectEvolu.insert("attachment", {
       taskId: args.taskId as TaskId,
       filename: NonEmptyTrimmedString100.orThrow(filename),
       mimeType,
-      data: fileContent,
+      data: null,
       size: Int.orThrow(size),
     }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+
+    chunks.forEach((bytes, index) => {
+      projectEvolu.insert("attachmentChunk", {
+        attachmentId: result.id as AttachmentId,
+        index: Int.orThrow(index),
+        bytes,
+      }, { ownerId: sharedOwner.id });
+    });
 
     await waiter.waitForSync();
 
@@ -2992,7 +3005,8 @@ async function listSharedAttachments(
         .select(["id", "ownerId", "taskId", "filename", "mimeType", "size"])
         .where("taskId", "=", args.taskId as TaskId)
         .where("isDeleted", "is not", SQLITE_TRUE)
-        .where("data", "is not", null)
+        // Bez filtru na `data`: obsah nové přílohy leží v kusech a sloupec je
+        // u ní prázdný, takže by z výpisu zmizela. (TODO-396)
     );
     const rows = ((await projectEvolu.loadQuery(query)) as any[]).filter((a) => (a.ownerId as string) === (sharedOwner.id as string));
     return {
@@ -3027,16 +3041,34 @@ async function downloadSharedAttachment(
     const result = await projectEvolu.loadQuery(query);
     if (result.length === 0) return { error: "Shared attachment not found" };
     const a = result[0] as any;
-    if (!a.data) return { error: "Attachment data is empty (may have been deleted)" };
+
+    // Nové přílohy mají obsah v kusech, staré v `data`; čte se obojí. Kusy se
+    // stejně jako řádek výš omezují na tohohle ownera. (TODO-396)
+    const chunkQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("attachmentChunk")
+        .select(["index", "bytes"])
+        .where("attachmentId", "=", args.id as AttachmentId)
+        .where("ownerId", "=", sharedOwner.id as string)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("index", "asc")
+    );
+    const chunkRows = (await projectEvolu.loadQuery(chunkQuery)) as unknown as Array<{ index: number; bytes: Uint8Array }>;
+    const joined = chunkRows.length > 0 ? joinChunks(chunkRows.map((r) => ({ index: r.index, bytes: r.bytes }))) : null;
+    if (chunkRows.length > 0 && !joined) {
+      return { error: "Attachment content is incomplete (some chunks have not synced yet)" };
+    }
+    const base64 = joined ? Buffer.from(joined).toString("base64") : (a.data as string | null);
+    if (!base64) return { error: "Attachment data is empty (may have been deleted)" };
 
     if (args.savePath) {
       const target = resolveDownloadPath(args.savePath);
       const dir = dirname(target);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(target, Buffer.from(a.data, "base64"));
+      writeFileSync(target, Buffer.from(base64, "base64"));
       return { success: true, filePath: target, filename: a.filename, mimeType: a.mimeType, size: a.size };
     }
-    return { id: a.id, filename: a.filename, mimeType: a.mimeType, data: a.data, size: a.size };
+    return { id: a.id, filename: a.filename, mimeType: a.mimeType, data: base64, size: a.size };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
