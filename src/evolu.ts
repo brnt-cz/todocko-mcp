@@ -326,6 +326,10 @@ export const Schema = {
     isArchived: nullOr(SqliteBoolean),
     isHiddenFromFilters: nullOr(SqliteBoolean),
     autoApproveMembers: nullOr(SqliteBoolean),
+    // Rotated write key of the shared project, base64url (TODO-268). Null is
+    // every project until its first rotation, and means the key derived from
+    // ownerSecret. Written by the app; this process only reads it.
+    writeKey: nullOr(String),
   },
   // Task comments
   taskComment: {
@@ -1317,7 +1321,14 @@ export function getSharedOwner(ownerId: string, ownerSecretBase64: string): Shar
   // at the secret. Deriving is cheap next to the query that follows.
   // (TODO-285)
   const ownerSecret = decodeOwnerSecret(ownerSecretBase64);
-  const sharedOwner = createSharedOwner(ownerSecret);
+  const derived = createSharedOwner(ownerSecret);
+  // A project whose write key has been rotated no longer accepts the derived
+  // one, so writing with it would be refused by the relay on every message
+  // while every local mutation still reported success. (TODO-268)
+  const rotated = sharedWriteKeys.get(ownerId);
+  const sharedOwner = rotated
+    ? ({ ...derived, writeKey: rotated } as SharedOwner)
+    : derived;
 
   // The owner id is derived from the secret, so a mismatch means the caller
   // paired the wrong secret with this ownerId. Without this check the write
@@ -1336,6 +1347,117 @@ export function getSharedOwner(ownerId: string, ownerSecretBase64: string): Shar
   if (cached) return cached;
   sharedOwnersCache.set(ownerId, sharedOwner);
   return sharedOwner;
+}
+
+/**
+ * Rotated write keys of shared projects, by owner id (TODO-268).
+ *
+ * The app can ask the relay to accept a different write key than the one
+ * derived from `ownerSecret`, which is how it takes writing away from a member
+ * it removed. Everyone still in the project stores the new key in
+ * `projectRef.writeKey`, and that column reaches this process through the same
+ * AppOwner sync as the rest of the references.
+ *
+ * Without this the MCP would keep sending the derived key after a rotation.
+ * Every mutation would still report success, the relay would refuse every one
+ * of them, and nothing would say so.
+ */
+const sharedWriteKeys = new Map<string, Uint8Array>();
+
+function decodeWriteKey(encoded: string): Uint8Array | null {
+  const bytes = new Uint8Array(Buffer.from(encoded, "base64url"));
+  // Evolu's key is sixteen bytes. Anything else would be accepted here and
+  // refused by the relay on every write, which reads as a sync outage.
+  return bytes.length === 16 ? bytes : null;
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
+/**
+ * Re-read the rotated keys and apply any that changed.
+ *
+ * An owner already registered for sync is re-registered rather than left
+ * alone: Evolu keeps one registration per call and picks between duplicates by
+ * map iteration order, so the old one has to go first.
+ *
+ * Returns how many keys changed.
+ */
+export async function refreshSharedWriteKeys(): Promise<number> {
+  const evolu = getEvolu();
+  if (!evolu) return 0;
+  let rows: Array<Record<string, unknown>>;
+  try {
+    const query = evolu.createQuery((db: any) =>
+      db
+        .selectFrom("projectRef")
+        .select(["sharedOwnerId", "ownerSecret", "writeKey"])
+        .where("isDeleted", "is not", SQLITE_TRUE),
+    );
+    rows = (await evolu.loadQuery(query)) as Array<Record<string, unknown>>;
+  } catch (error) {
+    console.error("Could not read rotated write keys:", error);
+    return 0;
+  }
+
+  let changed = 0;
+  for (const row of rows) {
+    const ownerId = row.sharedOwnerId as string | null;
+    const ownerSecret = row.ownerSecret as string | null;
+    const encoded = row.writeKey as string | null;
+    if (!ownerId || !ownerSecret) continue;
+    const key = encoded ? decodeWriteKey(encoded) : null;
+    const current = sharedWriteKeys.get(ownerId) ?? null;
+    if (key && current && sameBytes(key, current)) continue;
+    if (!key && !current) continue;
+
+    if (key) sharedWriteKeys.set(ownerId, key);
+    else sharedWriteKeys.delete(ownerId);
+    changed++;
+
+    // The cached owner froze the old key into a plain object when it was
+    // derived, and a running registration holds that object.
+    const wasRegistered = unuseByOwnerId.has(ownerId);
+    const stale = sharedOwnersCache.get(ownerId);
+    if (stale) stopUsingSharedOwner(stale);
+    sharedOwnersCache.delete(ownerId);
+    if (wasRegistered) useSharedOwner(getSharedOwner(ownerId, ownerSecret));
+  }
+  if (changed > 0) console.error(`Applied ${changed} rotated write keys`);
+  return changed;
+}
+
+/**
+ * How often to look for a rotation the app has made since this process started.
+ *
+ * A rotation is rare and never urgent: until the key is picked up, writes to
+ * that one shared project are refused and the local rows wait. A minute keeps
+ * the query off the hot path while bounding how long that lasts.
+ */
+const WRITE_KEY_REFRESH_MS = 60_000;
+let writeKeyRefreshTimer: NodeJS.Timeout | null = null;
+
+export function startWriteKeyRefresh(): void {
+  if (writeKeyRefreshTimer) return;
+  void refreshSharedWriteKeys();
+  writeKeyRefreshTimer = setInterval(() => {
+    void refreshSharedWriteKeys();
+  }, WRITE_KEY_REFRESH_MS);
+  writeKeyRefreshTimer.unref?.();
+}
+
+export function stopWriteKeyRefresh(): void {
+  if (!writeKeyRefreshTimer) return;
+  clearInterval(writeKeyRefreshTimer);
+  writeKeyRefreshTimer = null;
+}
+
+/** Tests only. */
+export function __setSharedWriteKeyForTests(ownerId: string, key: Uint8Array | null): void {
+  if (key) sharedWriteKeys.set(ownerId, key);
+  else sharedWriteKeys.delete(ownerId);
+  sharedOwnersCache.delete(ownerId);
 }
 
 /**

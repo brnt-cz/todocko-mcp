@@ -608,6 +608,17 @@ todo add "X" --json
 
 MCP server při WebSocket připojení k relay posílá hlavičku `Origin: https://todocko-mcp`. Sdílený relay (`relay.todocko.cz`) má tuto hodnotu povolenou ve whitelistu Access Control. Pokud používáš vlastní relay, musíš ji přidat do `tiers.json.allowedDomains`, jinak relay odmítne připojení s `403 Forbidden` na WS upgrade.
 
+### Rotace zapisovacího klíče sdílených projektů (TODO-268)
+
+Když vlastník sdíleného projektu někoho vyhodí, aplikace vymění zapisovací klíč
+projektu na relayi. Klíč odvozený z `ownerSecret` tím přestane platit a relay
+s ním odmítne každý zápis.
+
+MCP server si nový klíč načte ze sloupce `projectRef.writeKey`, který do jeho
+databáze přiteče běžným syncem AppOwnera. Kontrola běží při startu a pak každou
+minutu, takže po rotaci může být zhruba minuta, kdy zápisy do toho jednoho
+projektu relay odmítá a řádky čekají lokálně. Čtení rotace neovlivňuje.
+
 ## Umístění dat
 
 Databáze jsou uloženy v adresáři `~/.todocko/`:
@@ -1266,6 +1277,17 @@ What recurring tasks do I have?
 - Never share it directly in conversation with AI
 - In the MCP server configuration, the phrase is safe (AI has no access to it)
 - Anyone with your phrase has full access to your data
+
+### Shared project write key rotation (TODO-268)
+
+When the owner of a shared project removes a member, the app swaps the
+project's write key on the relay. The key derived from `ownerSecret` stops
+being valid and the relay refuses every write made with it.
+
+This server picks the new key up from the `projectRef.writeKey` column, which
+reaches its database through the ordinary AppOwner sync. It checks at start and
+then once a minute, so a rotation can leave about a minute in which writes to
+that one project are refused and the rows wait locally. Reading is unaffected.
 
 ## Data Location
 
