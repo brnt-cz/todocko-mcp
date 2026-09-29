@@ -22,7 +22,7 @@ import {
 import { homedir } from "os";
 import { mkdirSync } from "fs";
 import { join } from "path";
-import { initEvolu, getEvolu, initProjectEvolu, waitForEvolu } from "./evolu.js";
+import { initEvolu, getEvolu, initProjectEvolu, startWriteKeyRefresh, waitForEvolu } from "./evolu.js";
 import { tools, handleToolCall } from "./tools/index.js";
 
 // Set working directory to ~/.todocko for database storage (cross-platform)
@@ -141,6 +141,12 @@ async function main() {
 
     await initProjectEvolu();
     console.error("Project Evolu created for shared projects.");
+
+    // Pick up write keys the app has rotated, and keep looking (TODO-268).
+    // Without it this process would go on sending the key derived from
+    // ownerSecret, the relay would refuse every write to that project, and
+    // every mutation would still report success.
+    startWriteKeyRefresh();
   } catch (error) {
     console.error("Failed to initialize Evolu:", error);
     process.exit(1);

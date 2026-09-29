@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createOwnerSecret, createRandomBytes, createSharedOwner } from "@evolu/common";
 
-import { getSharedOwner } from "./evolu.js";
+import { getSharedOwner, __setSharedWriteKeyForTests } from "./evolu.js";
 
 /**
  * getSharedOwner is the one place that checks a caller paired the right secret
@@ -51,3 +51,54 @@ describe("getSharedOwner", () => {
     expect(() => getSharedOwner(a.id, "")).toThrow(/ownerSecret is required/);
   });
 });
+
+/**
+ * A shared project whose write key has been rotated no longer accepts the key
+ * derived from its secret. The MCP has to use the rotated one or the relay
+ * refuses every write while every mutation still reports success. (TODO-268)
+ */
+describe("getSharedOwner with a rotated write key", () => {
+  it("uses the derived key while nothing has been rotated", () => {
+    const a = makeOwner();
+    const derived = createSharedOwner(
+      new Uint8Array(Buffer.from(a.secretBase64, "base64")) as never,
+    ).writeKey;
+    expect(getSharedOwner(a.id, a.secretBase64).writeKey).toEqual(derived);
+  });
+
+  it("uses the rotated key once one is known", () => {
+    const a = makeOwner();
+    const rotated = new Uint8Array(16).fill(9);
+    __setSharedWriteKeyForTests(a.id, rotated);
+    try {
+      const owner = getSharedOwner(a.id, a.secretBase64);
+      expect(owner.writeKey as unknown as Uint8Array).toEqual(rotated);
+      // Everything else has to survive, the id above all: it is derived from
+      // the secret and is what partitions the data.
+      expect(owner.id as unknown as string).toBe(a.id);
+    } finally {
+      __setSharedWriteKeyForTests(a.id, null);
+    }
+  });
+
+  it("goes back to the derived key when the rotated one is dropped", () => {
+    const a = makeOwner();
+    __setSharedWriteKeyForTests(a.id, new Uint8Array(16).fill(9));
+    __setSharedWriteKeyForTests(a.id, null);
+    const derived = createSharedOwner(
+      new Uint8Array(Buffer.from(a.secretBase64, "base64")) as never,
+    ).writeKey;
+    expect(getSharedOwner(a.id, a.secretBase64).writeKey).toEqual(derived);
+  });
+
+  it("still rejects a secret belonging to another owner", () => {
+    const a = makeOwner();
+    const b = makeOwner();
+    __setSharedWriteKeyForTests(a.id, new Uint8Array(16).fill(9));
+    try {
+      expect(() => getSharedOwner(a.id, b.secretBase64)).toThrow(/does not match/);
+    } finally {
+      __setSharedWriteKeyForTests(a.id, null);
+    }
+  });
+})
