@@ -143,7 +143,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (152)
+## Dostupné nástroje (157)
 
 ### Projekty
 
@@ -233,6 +233,8 @@ Instalátor:
 
 | Nástroj | Popis |
 |---------|-------|
+| `td_list_app_settings` | Nastavení účtu, která se přenášejí mezi zařízeními |
+| `td_set_app_setting` | Nastavení jedné hodnoty na účtu |
 | `td_list_task_links` | Seznam linků úkolu |
 | `td_create_task_link` | Vytvoření linku mezi úkoly (`blocks`, `explicit`, `mention`, `relates`, `duplicate`) |
 | `td_delete_task_link` | Smazání linku (soft delete) |
@@ -384,6 +386,9 @@ viz níž.
 | `td_create_shared_checklist_item` | Přidání položky checklistu ve sdíleném projektu |
 | `td_update_shared_checklist_item` | Aktualizace položky checklistu ve sdíleném projektu |
 | `td_delete_shared_checklist_item` | Smazání položky checklistu ve sdíleném projektu |
+| `td_list_shared_task_links` | Seznam vazeb úkolu ve sdíleném projektu |
+| `td_create_shared_task_link` | Vytvoření vazby mezi úkoly ve sdíleném projektu |
+| `td_delete_shared_task_link` | Smazání vazby ve sdíleném projektu (soft delete) |
 | `td_list_shared_task_comments` | Seznam komentářů úkolu ve sdíleném projektu |
 | `td_create_shared_task_comment` | Přidání komentáře k úkolu ve sdíleném projektu |
 | `td_update_shared_task_comment` | Aktualizace komentáře ve sdíleném projektu |
@@ -888,7 +893,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (152)
+## Available Tools (157)
 
 ### Projects
 
@@ -978,6 +983,8 @@ The installer will:
 
 | Tool | Description |
 |------|-------------|
+| `td_list_app_settings` | Account settings that follow the user across devices |
+| `td_set_app_setting` | Set one account setting |
 | `td_list_task_links` | List links for a task |
 | `td_create_task_link` | Create a link between tasks (`blocks`, `explicit`, `mention`, `relates`, `duplicate`) |
 | `td_delete_task_link` | Delete a task link (soft delete) |
@@ -1122,6 +1129,9 @@ Shared projects (TODO-235):
 | `td_create_shared_checklist_item` | Create a checklist item on a task in a shared project. |
 | `td_update_shared_checklist_item` | Update a checklist item in a shared project (toggle done, rename, reorder). |
 | `td_delete_shared_checklist_item` | Soft-delete a checklist item in a shared project. |
+| `td_list_shared_task_links` | List dependency links for a task in a shared project. |
+| `td_create_shared_task_link` | Create a dependency link between tasks in a shared project. |
+| `td_delete_shared_task_link` | Delete a dependency link in a shared project (soft delete). |
 | `td_list_shared_task_comments` | List comments for a task in a shared project. |
 | `td_create_shared_task_comment` | Add a comment to a task in a shared project. |
 | `td_update_shared_task_comment` | Update a comment in a shared project. |

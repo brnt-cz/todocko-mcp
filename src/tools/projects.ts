@@ -91,6 +91,12 @@ export const projectTools: Tool[] = [
           type: "boolean",
           description: "Auto-approve new members joining the project",
         },
+        isDeleted: {
+          type: "boolean",
+          description:
+            "Set false to restore a project from the Trash. Tasks already support this; " +
+            "projects did not, so a project deleted through MCP could not be brought back through MCP.",
+        },
       },
       required: ["id"],
     },
@@ -124,7 +130,7 @@ export async function handleProjectTool(
     case "td_create_project":
       return createProject(evolu, args as { name: string; code?: string; color?: string });
     case "td_update_project":
-      return updateProject(evolu, args as { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean });
+      return updateProject(evolu, args as { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean; isDeleted?: boolean });
     case "td_delete_project":
       return deleteProject(evolu, args as { id: string });
     default:
@@ -235,7 +241,7 @@ async function createProject(
 
 async function updateProject(
   evolu: EvoluInstance,
-  args: { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean }
+  args: { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean; isDeleted?: boolean }
 ) {
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "project", args.id, "Project");
@@ -261,6 +267,14 @@ async function updateProject(
   }
   if (args.autoApproveMembers !== undefined) {
     updates.autoApproveMembers = args.autoApproveMembers ? SQLITE_TRUE : null;
+  }
+  if (args.isDeleted !== undefined) {
+    // `deletedAt` must move with it, not just `isDeleted`: the app's Trash
+    // filters on the timestamp (`isInTrashWindow`), so clearing one without the
+    // other leaves a project that is neither listed nor in the bin. Deleting
+    // sets both, restoring clears both. (TODO-415)
+    updates.isDeleted = args.isDeleted ? SQLITE_TRUE : null;
+    updates.deletedAt = args.isDeleted ? new Date().toISOString() : null;
   }
 
   const waiter = createMutationWaiter();

@@ -8,6 +8,7 @@ import {
   type UserId,
   type DeploymentStageId,
   type RepositoryLinkId,
+  type TaskLinkId,
   type ProjectMemberId,
   type ProjectNoteId,
   type NoteAttachmentId,
@@ -27,7 +28,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
 import { safeLoadQuery, type SharedProjectRefLite } from "./pure.js";
-import { createMutationWaiter, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -644,6 +645,12 @@ export const sharedTools: Tool[] = [
         isArchived: { type: "boolean", description: "Archive / unarchive the project" },
         isHiddenFromFilters: { type: "boolean", description: "Hide the project from filters" },
         autoApproveMembers: { type: "boolean", description: "Approve joining members automatically" },
+        isDeleted: {
+          type: "boolean",
+          description:
+            "Set false to restore the shared project from the Trash. Mirrors td_update_project; " +
+            "the parity test caught this missing when the personal side gained it.",
+        },
       },
       required: ["sharedOwnerId", "ownerSecret"],
     },
@@ -886,6 +893,56 @@ export const sharedTools: Tool[] = [
       required: ["sharedOwnerId", "ownerSecret"],
     },
   },
+  /*
+   * Vazby mezi úkoly ve sdílených projektech. (TODO-415)
+   *
+   * `ProjectSchema.taskLink` existovalo od začátku, nástroje ne, takže vazby
+   * blokuje a souvisí ve sdíleném projektu nešly z MCP ani přečíst, ani
+   * založit. Byla to jediná skupina funkcí, kde sdílená strana chyběla celá.
+   */
+  {
+    name: "td_list_shared_task_links",
+    description:
+      "List dependency/blocking links for a task in a shared project. Returns both outgoing " +
+      "(this task blocks) and incoming (blocked by) links. Requires sharedOwnerId from td_list_shared_projects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        taskId: { type: "string", description: "Task ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "taskId"],
+    },
+  },
+  {
+    name: "td_create_shared_task_link",
+    description: "Create a dependency link between two tasks in a shared project (source blocks target)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        sourceTaskId: { type: "string", description: "Source task ID, the blocker (required)" },
+        targetTaskId: { type: "string", description: "Target task ID, the blocked one (required)" },
+        linkType: { type: "string", description: "Link type, defaults to 'blocks'" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "sourceTaskId", "targetTaskId"],
+    },
+  },
+  {
+    name: "td_delete_shared_task_link",
+    description: "Delete a dependency link in a shared project (soft delete)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID from projectRef (required)" },
+        ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
+        id: { type: "string", description: "Task link ID (required)" },
+      },
+      required: ["sharedOwnerId", "ownerSecret", "id"],
+    },
+  },
 ];
 
 export async function handleSharedTool(
@@ -986,6 +1043,12 @@ export async function handleSharedTool(
       return deleteSharedChecklistItem(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_list_shared_task_comments":
       return listSharedTaskComments(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
+    case "td_list_shared_task_links":
+      return listSharedTaskLinks(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
+    case "td_create_shared_task_link":
+      return createSharedTaskLink(args as { sharedOwnerId: string; ownerSecret: string; sourceTaskId: string; targetTaskId: string; linkType?: string });
+    case "td_delete_shared_task_link":
+      return deleteSharedTaskLink(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_create_shared_task_comment":
       return createSharedTaskComment(args as { sharedOwnerId: string; ownerSecret: string; taskId: string; content: string; userId?: string });
     case "td_update_shared_task_comment":
@@ -1036,7 +1099,7 @@ export async function handleSharedTool(
     case "td_delete_shared_deployment_stage":
       return deleteSharedDeploymentStage(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_update_shared_project":
-      return updateSharedProject(args as { sharedOwnerId: string; ownerSecret: string; name?: string; code?: string | null; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean });
+      return updateSharedProject(args as { sharedOwnerId: string; ownerSecret: string; name?: string; code?: string | null; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean; isDeleted?: boolean });
     case "td_upload_shared_attachment":
       return uploadSharedAttachment(args as {
         sharedOwnerId: string;
@@ -2528,6 +2591,7 @@ async function updateSharedProject(
     isArchived?: boolean;
     isHiddenFromFilters?: boolean;
     autoApproveMembers?: boolean;
+    isDeleted?: boolean;
   }
 ) {
   const projectEvolu = getProjectEvolu();
@@ -2554,6 +2618,13 @@ async function updateSharedProject(
     if (args.isArchived !== undefined) updates.isArchived = args.isArchived ? SQLITE_TRUE : null;
     if (args.isHiddenFromFilters !== undefined) updates.isHiddenFromFilters = args.isHiddenFromFilters ? SQLITE_TRUE : null;
     if (args.autoApproveMembers !== undefined) updates.autoApproveMembers = args.autoApproveMembers ? SQLITE_TRUE : null;
+    if (args.isDeleted !== undefined) {
+      // `deletedAt` moves with it; the app's Trash filters on the timestamp, so
+      // one without the other leaves a project neither listed nor in the bin.
+      // (TODO-415)
+      updates.isDeleted = args.isDeleted ? SQLITE_TRUE : null;
+      updates.deletedAt = args.isDeleted ? new Date().toISOString() : null;
+    }
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("project", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
@@ -3723,6 +3794,13 @@ export interface SharedAnalyticsTask {
 export interface SharedAnalyticsData {
   tasks: SharedAnalyticsTask[];
   worklogs: { taskId: string | null; userId: string | null; durationMinutes: number; loggedAt: string | null; sharedOwnerId: string }[];
+  /**
+   * Links too, so dependency analysis can answer for shared projects. (TODO-415)
+   *
+   * The owners are already open here; a third query costs one more read, while
+   * a separate loader would mean opening them again.
+   */
+  links: { id: string; sourceTaskId: string | null; targetTaskId: string | null; linkType: string | null; sharedOwnerId: string }[];
 }
 
 /**
@@ -3772,9 +3850,18 @@ export async function loadSharedAnalyticsData(
         .where("ownerId", "in", ownerIds)
     );
 
-    const [taskRows, worklogRows] = await Promise.all([
+    const linkQuery = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskLink")
+        .select(["id", "ownerId", "sourceTaskId", "targetTaskId", "linkType"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "in", ownerIds)
+    );
+
+    const [taskRows, worklogRows, linkRows] = await Promise.all([
       projectEvolu.loadQuery(taskQuery),
       projectEvolu.loadQuery(worklogQuery),
+      projectEvolu.loadQuery(linkQuery),
     ]);
 
     const tasks = (taskRows as any[])
@@ -3818,7 +3905,17 @@ export async function loadSharedAnalyticsData(
         sharedOwnerId: w.ownerId as string,
       }));
 
-    return { tasks, worklogs };
+    const links = (linkRows as any[])
+      .filter((l) => byOwnerId.has(l.ownerId as string))
+      .map((l) => ({
+        id: l.id as string,
+        sourceTaskId: (l.sourceTaskId as string) ?? null,
+        targetTaskId: (l.targetTaskId as string) ?? null,
+        linkType: (l.linkType as string) ?? null,
+        sharedOwnerId: l.ownerId as string,
+      }));
+
+    return { tasks, worklogs, links };
   });
 }
 
@@ -3877,6 +3974,105 @@ async function updateSharedWorklog(
     await waiter.waitForSync();
 
     return { success: true, message: "Shared worklog updated successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function listSharedTaskLinks(
+  args: { sharedOwnerId: string; ownerSecret: string; taskId: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  try {
+    // Scoped by owner: the shared instance holds every project's rows, so a
+    // task id alone would also match a link in somebody else's project.
+    const query = projectEvolu.createQuery((db: any) =>
+      db
+        .selectFrom("taskLink")
+        .select(["id", "sourceTaskId", "targetTaskId", "linkType"])
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", sharedOwner.id)
+        .where((eb: any) =>
+          eb.or([
+            eb("sourceTaskId", "=", args.taskId as TaskId),
+            eb("targetTaskId", "=", args.taskId as TaskId),
+          ])
+        )
+    );
+    const rows = (await projectEvolu.loadQuery(query)) ?? [];
+    return {
+      count: rows.length,
+      outgoing: rows
+        .filter((l: any) => l.sourceTaskId === args.taskId)
+        .map((l: any) => ({ id: l.id, linkType: l.linkType, targetTaskId: l.targetTaskId })),
+      incoming: rows
+        .filter((l: any) => l.targetTaskId === args.taskId)
+        .map((l: any) => ({ id: l.id, linkType: l.linkType, sourceTaskId: l.sourceTaskId })),
+    };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function createSharedTaskLink(
+  args: { sharedOwnerId: string; ownerSecret: string; sourceTaskId: string; targetTaskId: string; linkType?: string }
+) {
+  if (args.sourceTaskId === args.targetTaskId) {
+    throw new Error("Cannot link a task to itself");
+  }
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  // Both ends must exist in THIS project, not merely somewhere in the shared
+  // instance; otherwise a link could point out of the project it belongs to.
+  await assertRowExists(projectEvolu, "task", args.sourceTaskId, "Source task", sharedOwner.id as string, true);
+  await assertRowExists(projectEvolu, "task", args.targetTaskId, "Target task", sharedOwner.id as string, true);
+  try {
+    const waiter = createMutationWaiter();
+    const result = projectEvolu.insert(
+      "taskLink",
+      {
+        sourceTaskId: args.sourceTaskId as TaskId,
+        targetTaskId: args.targetTaskId as TaskId,
+        linkType: EvoluString.orThrow(args.linkType || "blocks"),
+      },
+      // Without ownerId the row falls under a throwaway owner, never syncs, and
+      // the write still reports success. (TODO-299)
+      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+    );
+    await waiter.waitForSync();
+    return { success: true, linkId: result.id, message: "Shared task link created successfully" };
+  } finally {
+    stopUsingSharedOwner(sharedOwner);
+  }
+}
+
+async function deleteSharedTaskLink(
+  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) throw new Error("Project Evolu not initialized");
+  const sharedOwner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  useSharedOwner(sharedOwner);
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await assertRowExists(projectEvolu, "taskLink", args.id, "Task link", sharedOwner.id as string, true);
+  try {
+    const waiter = createMutationWaiter();
+    assertMutation("deleteSharedTaskLink",
+      projectEvolu.update(
+        "taskLink",
+        { id: args.id as TaskLinkId, isDeleted: SQLITE_TRUE } as any,
+        { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      )
+    );
+    await waiter.waitForSync();
+    return { success: true, message: "Shared task link deleted successfully" };
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
