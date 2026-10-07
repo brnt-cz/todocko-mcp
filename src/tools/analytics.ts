@@ -147,6 +147,11 @@ export const analyticsTools: Tool[] = [
           type: "string",
           description: "Project ID (optional — analyzes all tasks if omitted)",
         },
+        includeShared: {
+          type: "boolean",
+          description:
+            "Include tasks and links from joined shared projects (default: true). Pass false to answer from personal data only, which is faster.",
+        },
       },
     },
   },
@@ -187,7 +192,7 @@ export async function handleAnalyticsTool(
         includeShared?: boolean;
       });
     case "td_analyze_dependencies":
-      return analyzeDependencies(evolu, args as { projectId?: string });
+      return analyzeDependencies(evolu, args as { projectId?: string; includeShared?: boolean });
     default:
       return undefined;
   }
@@ -985,7 +990,7 @@ async function listTasksByDateRange(
  */
 async function analyzeDependencies(
   evolu: EvoluInstance,
-  args: { projectId?: string }
+  args: { projectId?: string; includeShared?: boolean }
 ) {
   // Get all active tasks
   const taskQuery = evolu.createQuery((db: any) => {
@@ -1025,15 +1030,52 @@ async function analyzeDependencies(
       .where("taskLink.linkType", "=", "blocks")
   );
 
-  const [taskResult, linkResult] = await Promise.all([
+  const [taskResult, linkResult, shared] = await Promise.all([
     evolu.loadQuery(taskQuery),
     evolu.loadQuery(linkQuery),
+    loadShared(evolu, args.includeShared),
   ]);
 
   const tasks = rowsOf(taskResult).filter((r: any) => r.id && r.title);
   const links = rowsOf(linkResult).filter(
     (r: any) => r.sourceTaskId && r.targetTaskId
   );
+
+  /*
+   * Sdílené projekty taky. (TODO-415)
+   *
+   * Tenhle nástroj byl jediný analytický bez `includeShared`, takže kritická
+   * cesta ve sdíleném projektu vycházela vždy prázdná, a vypadalo to jako
+   * odpověď, ne jako chybějící funkce.
+   *
+   * `isNotDone` a `hasCode` dělají totéž, co předchozí dva dotazy dělají v SQL:
+   * `status != "done"` v SQLite zahodí i řádky s NULL, kdežto `!==` v JS by je
+   * nechal, takže by sdílená polovina ukazovala úkoly, které ta osobní skrývá.
+   */
+  if (shared) {
+    for (const t of shared.tasks) {
+      if (!hasCode(t) || !isNotDone(t.status)) continue;
+      if (args.projectId && t.project.id !== args.projectId) continue;
+      tasks.push({
+        id: t.id,
+        title: t.code,
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        isBlocked: t.isBlocked,
+        projectName: t.project.name,
+      } as any);
+    }
+    for (const l of shared.links) {
+      if (l.linkType !== "blocks" || !l.sourceTaskId || !l.targetTaskId) continue;
+      links.push({
+        id: l.id,
+        sourceTaskId: l.sourceTaskId,
+        targetTaskId: l.targetTaskId,
+        linkType: l.linkType,
+      } as any);
+    }
+  }
 
   const taskMap = new Map<string, any>();
   for (const t of tasks) {

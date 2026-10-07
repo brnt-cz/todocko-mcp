@@ -21,6 +21,7 @@ import { tagTools, handleTagTool } from "./tags.js";
 import { taskTemplateTools, handleTaskTemplateTool } from "./taskTemplates.js";
 import { kanbanColumnTools, handleKanbanColumnTool } from "./kanbanColumns.js";
 import { savedViewTools, handleSavedViewTool } from "./savedViews.js";
+import { appSettingTools, handleAppSettingTool } from "./appSettings.js";
 import { activityLogTools, handleActivityLogTool } from "./activityLog.js";
 import { projectNoteTools, handleProjectNoteTool } from "./projectNotes.js";
 import { projectDocTools, handleProjectDocTool } from "./projectDocs.js";
@@ -47,6 +48,7 @@ export const tools: Tool[] = [
   ...taskTemplateTools,
   ...kanbanColumnTools,
   ...savedViewTools,
+  ...appSettingTools,
   ...activityLogTools,
   ...projectNoteTools,
   ...projectDocTools,
@@ -76,6 +78,7 @@ const handlers: Array<(name: string, args: Record<string, unknown>, evolu: Evolu
   handleTaskTemplateTool,
   handleKanbanColumnTool,
   handleSavedViewTool,
+  handleAppSettingTool,
   handleActivityLogTool,
   handleProjectNoteTool,
   handleProjectDocTool,

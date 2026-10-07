@@ -182,6 +182,20 @@ export type TaskTemplateId = typeof TaskTemplateId.Output;
 export const KanbanColumnId = id("KanbanColumn");
 export type KanbanColumnId = typeof KanbanColumnId.Output;
 
+export const AppSettingId = id("AppSetting");
+export type AppSettingId = typeof AppSettingId.Output;
+
+/**
+ * The row id of an account setting, derived from its key.
+ *
+ * Must match the app's `src/db/appSettings.ts:62` exactly. A random id would
+ * mean two rows for one key and an account with two answers and no rule for
+ * picking between them. (TODO-415)
+ */
+export function appSettingRowId(key: string): AppSettingId {
+  return createIdFromString(key) as unknown as AppSettingId;
+}
+
 export const SavedViewId = id("SavedView");
 export type SavedViewId = typeof SavedViewId.Output;
 
@@ -217,6 +231,21 @@ export const Schema = {
     role: nullOr(String),
     theme: nullOr(String),
   },
+  /*
+   * Nastavení účtu (TODO-401/402), v MCP doplněno v TODO-415.
+   *
+   * Bez téhle tabulky MCP nevidělo, co má uživatel nastavené, a počítalo
+   * například workload nad jiným předpokladem kapacity než aplikace.
+   *
+   * Id řádku se odvozuje z klíče, viz `appSettingRowId`. Náhodné id by
+   * znamenalo dva řádky na jeden klíč a účet se dvěma odpověďmi bez pravidla,
+   * kterou vybrat.
+   */
+  appSetting: {
+    id: AppSettingId,
+    key: String,
+    value: String,
+  },
   project: {
     id: ProjectId,
     name: NonEmptyTrimmedString100,
@@ -226,6 +255,12 @@ export const Schema = {
     isHiddenFromFilters: nullOr(SqliteBoolean),
     autoApproveMembers: nullOr(SqliteBoolean),
     position: Int,
+    // Trash timestamp, mirrors the app. `deleteProject` has been writing it
+    // through `as any` since TODO-179, which works because Evolu creates
+    // columns on demand, but MCP could not read it back: no trash listing, and
+    // a project deleted from MCP could not be restored from MCP, while a task
+    // could. (TODO-415)
+    deletedAt: nullOr(String),
   },
   task: {
     id: TaskId,
@@ -451,6 +486,12 @@ export const ProjectSchema = {
     isHiddenFromFilters: nullOr(SqliteBoolean),
     autoApproveMembers: nullOr(SqliteBoolean),
     position: Int,
+    // Trash timestamp, mirrors the app. `deleteProject` has been writing it
+    // through `as any` since TODO-179, which works because Evolu creates
+    // columns on demand, but MCP could not read it back: no trash listing, and
+    // a project deleted from MCP could not be restored from MCP, while a task
+    // could. (TODO-415)
+    deletedAt: nullOr(String),
   },
   projectMember: {
     id: ProjectMemberId,
