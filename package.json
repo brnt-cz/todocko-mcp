@@ -33,7 +33,7 @@
   "author": "brnt.cz",
   "license": "MIT",
   "dependencies": {
-    "@evolu/common": "^8.12.0",
+    "@evolu/common": "^8.14.0",
     "@evolu/nodejs": "^4.1.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "commander": "^12.1.0",

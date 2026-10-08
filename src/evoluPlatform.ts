@@ -278,6 +278,18 @@ function buildNodeEvoluDeps(): EvoluDeps {
       createWebSocket: createInstrumentedWebSocket,
       lockManager: navigator.locks,
       reportDefect: reportSharedWorkerDefect,
+      /*
+       * Required since Evolu 8.14, which replaced the optional
+       * `isPersistentStorageAvailable` with this. (TODO-419)
+       *
+       * "Persisted" is a claim Evolu asks platforms to make only when it is
+       * certain, and here it is: the database is a file on disk opened through
+       * better-sqlite3, with no browser in between that might evict it, no
+       * private window and no memory-only mode. That is exactly the case the
+       * Evolu docs give for "Persisted" ("the database is the app's own file,
+       * as in React Native").
+       */
+      getDevicePersistence: () => Promise.resolve("Persisted" as const),
     });
     void run(async (run) => {
       // The shared worker owns sync for the whole process; keep it alive until
