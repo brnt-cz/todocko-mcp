@@ -1,5 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { joinChunks, splitIntoChunks } from "./attachmentChunks.js";
+import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import {
   SQLITE_TRUE,
@@ -1556,13 +1557,24 @@ async function updateSharedTask(
       updates.isDeleted = args.isDeleted ? SQLITE_TRUE : (0 as unknown as typeof SQLITE_TRUE);
     }
 
+    // Same as td_update_task: a recurring task marked done comes back. Shared
+    // tasks had the same hole. (TODO-420)
+    let recurrenceNote: string | null = null;
+    if (args.status === "done") {
+      const outcome = await recurrenceOutcomeFor(projectEvolu, args.id, sharedOwner.id as string, updates);
+      applyDoneOutcome(updates, outcome, { personal: false });
+      if (outcome.kind === "reset") recurrenceNote = `Recurring task reset to ${outcome.nextDeadline}`;
+      if (outcome.kind === "expired") recurrenceNote = "Recurrence has ended, the task stays done";
+    }
+
     const waiter = createMutationWaiter();
     const result = projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
     return {
       success: true,
-      message: "Shared task updated successfully",
+      ...(recurrenceNote ? { recurrence: recurrenceNote } : {}),
+      message: recurrenceNote ? `Shared task updated successfully. ${recurrenceNote}.` : "Shared task updated successfully",
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
@@ -3441,6 +3453,12 @@ async function bulkUpdateSharedTasks(
           updates.sprintNumber = args.sprintNumber ? Int.orThrow(args.sprintNumber) : null;
         }
 
+        // The last way past the fix: bulk-closing shared tasks. (TODO-420)
+        if (args.status === "done") {
+          const outcome = await recurrenceOutcomeFor(projectEvolu, taskId, ownerId, updates);
+          applyDoneOutcome(updates, outcome, { personal: false });
+        }
+
         pending.push(updates);
       } catch {
         skipped.push(taskId);
@@ -4076,4 +4094,36 @@ async function deleteSharedTaskLink(
   } finally {
     stopUsingSharedOwner(sharedOwner);
   }
+}
+
+/**
+ * The recurrence outcome of marking a shared task done. (TODO-420)
+ *
+ * Scoped by owner: the shared instance holds every project's rows, so an id
+ * alone could read another project's task. Fields being set in the same call
+ * win over the stored ones.
+ */
+async function recurrenceOutcomeFor(
+  projectEvolu: any,
+  taskId: string,
+  ownerId: string,
+  updates: Record<string, unknown>,
+) {
+  const query = projectEvolu.createQuery((db: any) =>
+    db.selectFrom("task")
+      .select(["recurrenceType", "recurrenceInterval", "recurrenceEndDate", "recurrenceDay", "deadline"])
+      .where("id", "=", taskId as TaskId)
+      .where("ownerId", "=", ownerId)
+      .limit(1)
+  );
+  const rows = ((await projectEvolu.loadQuery(query)) ?? []) as Record<string, unknown>[];
+  const row = rows[0] ?? {};
+  const pick = <T>(key: string): T | null => (key in updates ? updates[key] : row[key]) as T | null;
+  return onMarkedDone({
+    recurrenceType: pick<string>("recurrenceType"),
+    recurrenceInterval: pick<number>("recurrenceInterval"),
+    recurrenceEndDate: pick<string>("recurrenceEndDate"),
+    recurrenceDay: pick<number>("recurrenceDay"),
+    deadline: pick<string>("deadline"),
+  });
 }

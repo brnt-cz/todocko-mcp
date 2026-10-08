@@ -1,6 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
+import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
 import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
@@ -1024,6 +1025,37 @@ async function updateTask(
     }
   }
 
+  /*
+   * A recurring task marked done comes back, as it does in the app. (TODO-420)
+   *
+   * The recurrence fields are read from the row, overridden by any this same
+   * call is setting, so "set weekly and mark done" in one call recurs on the
+   * new rule rather than the stored one.
+   */
+  let recurrenceNote: string | null = null;
+  if (args.status === "done") {
+    const recQuery = evolu.createQuery((db: any) =>
+      db.selectFrom("task")
+        .select(["recurrenceType", "recurrenceInterval", "recurrenceEndDate", "recurrenceDay", "deadline"])
+        .where("id", "=", args.id as TaskId)
+        .limit(1)
+    );
+    const recRows = await safeLoadQuery(evolu, recQuery);
+    const row = (recRows[0] ?? {}) as Record<string, unknown>;
+    const pick = <T>(key: string): T | null =>
+      (key in updates ? updates[key] : row[key]) as T | null;
+    const outcome = onMarkedDone({
+      recurrenceType: pick<string>("recurrenceType"),
+      recurrenceInterval: pick<number>("recurrenceInterval"),
+      recurrenceEndDate: pick<string>("recurrenceEndDate"),
+      recurrenceDay: pick<number>("recurrenceDay"),
+      deadline: pick<string>("deadline"),
+    });
+    applyDoneOutcome(updates, outcome, { personal: true });
+    if (outcome.kind === "reset") recurrenceNote = `Recurring task reset to ${outcome.nextDeadline}`;
+    if (outcome.kind === "expired") recurrenceNote = "Recurrence has ended, the task stays done";
+  }
+
   const waiter = createMutationWaiter();
   const updateResult = evolu.update("task", updates as any, { onComplete: waiter.onComplete });
 
@@ -1034,7 +1066,8 @@ async function updateTask(
 
   return {
     success: true,
-    message: `Task updated successfully`,
+    message: recurrenceNote ? `Task updated successfully. ${recurrenceNote}.` : `Task updated successfully`,
+    ...(recurrenceNote ? { recurrence: recurrenceNote } : {}),
   };
 }
 
@@ -1159,6 +1192,7 @@ async function bulkUpdateTasks(
   const blockedShared: string[] = [];
   const sharedRefs = await loadSharedProjectRefs(evolu);
 
+  let recurringReset = 0;
   for (const taskId of args.taskIds) {
     try {
       const updates: Record<string, unknown> = {
@@ -1215,6 +1249,27 @@ async function bulkUpdateTasks(
         }
       }
 
+      // Bulk was the other way past the fix: mark twenty tasks done and every
+      // recurring one among them stopped recurring. (TODO-420)
+      if (args.status === "done") {
+        const recQuery = evolu.createQuery((db: any) =>
+          db.selectFrom("task")
+            .select(["recurrenceType", "recurrenceInterval", "recurrenceEndDate", "recurrenceDay", "deadline"])
+            .where("id", "=", taskId as TaskId)
+            .limit(1)
+        );
+        const rec = ((await safeLoadQuery(evolu, recQuery))[0] ?? {}) as Record<string, unknown>;
+        const outcome = onMarkedDone({
+          recurrenceType: (rec.recurrenceType as string) ?? null,
+          recurrenceInterval: (rec.recurrenceInterval as number) ?? null,
+          recurrenceEndDate: (rec.recurrenceEndDate as string) ?? null,
+          recurrenceDay: (rec.recurrenceDay as number) ?? null,
+          deadline: (rec.deadline as string) ?? null,
+        });
+        applyDoneOutcome(updates, outcome, { personal: true });
+        if (outcome.kind === "reset") recurringReset++;
+      }
+
       evolu.update("task", updates as any);
       logTaskUpdate(evolu, taskId, oldTask, updates);
       successCount++;
@@ -1231,6 +1286,9 @@ async function bulkUpdateTasks(
     skippedCount,
     blockedSharedCount: blockedShared.length,
     blockedSharedTaskIds: blockedShared,
+    // How many of the "done" ones were recurring and came back, so the caller
+    // is not surprised to find them in the recurring column. (TODO-420)
+    ...(recurringReset > 0 ? { recurringResetCount: recurringReset } : {}),
     message:
       `Bulk update complete: ${successCount} updated, ${skippedCount} skipped` +
       (blockedShared.length > 0
