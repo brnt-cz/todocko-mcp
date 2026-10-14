@@ -18,7 +18,15 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Evolu v8 (TODO-88)
 
-MCP běží na `@evolu/common` 8.12.0 a `@evolu/nodejs` 4.1.0.
+MCP běží na `@evolu/common` 8.22.3 a `@evolu/nodejs` 4.3.3.
+
+Od Evolu 8.20.3 nese zápis do sdílené instance celého ownera,
+`{ owner: sharedOwner }`, ne `{ ownerId }`. Zapomenuté `ownerId` Evolu ignoruje
+a řádek zapíše pod jiného ownera, odkud se nenasynchronizuje. Hlídá to
+`src/tools/sharedWrites.test.ts`. Databázi, jejíž worker spadl, Evolu nově
+odmítne přes `evoluError`; `td_sync_status` ji ukáže v poli `evoluError`
+a nástroje na ni nečekají do timeoutu, hned řeknou, že je potřeba reconnect.
+(TODO-427)
 
 v7 dodával `createDbWorkerForPlatform`, což bylo vše, co headless klient v Node
 potřeboval. v8 to zrušil: `@evolu/nodejs` v3 nabízí relay a pár primitiv, a

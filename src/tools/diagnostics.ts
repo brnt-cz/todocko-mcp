@@ -1,6 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getQuarantineCounts, getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
-import { getSocketTraffic, getWorkerDefects } from "../evoluPlatform.js";
+import { getEvoluError, getFatalWorkerReason, getSocketTraffic, getWorkerDefects } from "../evoluPlatform.js";
 import { judgeSyncFreshness } from "./pure.js";
 import { classifyFreshness, localMessageCount, fetchRelayMessageCount, missingMessages } from "../utils/syncFreshness.js";
 import { getEvolu, getAppOwnerId } from "../evolu.js";
@@ -102,7 +102,7 @@ async function syncStatus(args: { retest?: boolean }) {
     // stuck. `stale` means a local write is waiting and nothing is leaving,
     // which is a fault even with an open socket and a reachable relay.
     // (TODO-294)
-    status: workerDefects.some((d) => d.worker === 'dbWorker')
+    status: getFatalWorkerReason() !== null
       ? 'worker-dead'
       : !health.evoluReady
       ? 'not-ready'
@@ -143,6 +143,12 @@ async function syncStatus(args: { retest?: boolean }) {
       at: new Date(d.at).toISOString(),
       message: d.message,
     })),
+    /**
+     * Evolu's own `evoluError`, `null` when healthy. Since Evolu 8.20.3 a
+     * failed dbWorker refuses its database here with an `UnknownError`, which
+     * also marks the status `worker-dead`. (TODO-427)
+     */
+    evoluError: getEvoluError()?.type ?? null,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
     // Messages Evolu received and could not apply, per instance. Nothing logs

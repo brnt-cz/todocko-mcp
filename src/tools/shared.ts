@@ -1568,7 +1568,7 @@ async function updateSharedTask(
     }
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("task", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("task", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
     return {
@@ -1716,11 +1716,11 @@ async function createSharedTask(
         sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
         ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
       } as any,
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
 
     // Touch with an update so Evolu sets updatedAt (only set on update, not insert).
-    projectEvolu.update("task", { id: result.id, status: args.status || "todo" } as any, { ownerId: sharedOwner.id });
+    projectEvolu.update("task", { id: result.id, status: args.status || "todo" } as any, { owner: sharedOwner });
 
     // The project's default tags, same as the app pre-ticks them in its form and
     // as td_create_task applies them for own projects (TODO-239). Non-fatal: the
@@ -1739,7 +1739,7 @@ async function createSharedTask(
         const inserted = projectEvolu.insert(
           "taskTag",
           { taskId: result.id as TaskId, tagId: tagId as TagId } as any,
-          { ownerId: sharedOwner.id }
+          { owner: sharedOwner }
         );
         // v8 raises on an invalid change rather than returning a Result, so
         // reaching this line means the tag was queued. Gating on `inserted.ok`
@@ -1797,7 +1797,7 @@ async function deleteSharedTask(
       (c) => (c.ownerId as string) === (sharedOwner.id as string)
     );
     for (const it of items) {
-      projectEvolu.update("checklistItem", { id: it.id, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id });
+      projectEvolu.update("checklistItem", { id: it.id, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner });
     }
 
     // Cascade: soft-delete the task's comments (matches the app).
@@ -1812,14 +1812,14 @@ async function deleteSharedTask(
       (c) => (c.ownerId as string) === (sharedOwner.id as string)
     );
     for (const c of comments) {
-      projectEvolu.update("taskComment", { id: c.id, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id });
+      projectEvolu.update("taskComment", { id: c.id, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner });
     }
 
     const waiter = createMutationWaiter();
     const result = projectEvolu.update(
       "task",
       { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any,
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
 
     await waiter.waitForSync();
@@ -1902,7 +1902,7 @@ async function addSharedWorklog(
         description: args.description ? NonEmptyTrimmedString1000.orThrow(args.description) : null,
         loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
       },
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
     await waiter.waitForSync();
     return { success: true, worklogId: result.id, message: "Shared worklog added successfully" };
@@ -1921,7 +1921,7 @@ async function deleteSharedWorklog(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("worklog", { id: args.id as WorklogId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("worklog", { id: args.id as WorklogId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared worklog deleted successfully" };
   } finally {
@@ -2001,7 +2001,7 @@ async function createSharedChecklistItem(
         isChecked: args.isChecked ? SQLITE_TRUE : null,
         position: Int.orThrow(position),
       },
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
     await waiter.waitForSync();
     return { success: true, checklistItemId: result.id, message: "Shared checklist item created successfully" };
@@ -2028,7 +2028,7 @@ async function updateSharedChecklistItem(
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("checklistItem", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("checklistItem", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared checklist item updated successfully" };
   } finally {
@@ -2046,7 +2046,7 @@ async function deleteSharedChecklistItem(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("checklistItem", { id: args.id as ChecklistItemId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("checklistItem", { id: args.id as ChecklistItemId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared checklist item deleted successfully" };
   } finally {
@@ -2112,7 +2112,7 @@ async function createSharedTaskComment(
         userId: (args.userId ?? null) as UserId | null,
         content: EvoluString.orThrow(args.content),
       },
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
     await waiter.waitForSync();
     return { success: true, commentId: result.id, message: "Shared comment created successfully" };
@@ -2137,7 +2137,7 @@ async function updateSharedTaskComment(
     const result = projectEvolu.update(
       "taskComment",
       { id: args.id as TaskCommentId, content: EvoluString.orThrow(args.content) } as any,
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
     await waiter.waitForSync();
     return { success: true, message: "Shared comment updated successfully" };
@@ -2156,7 +2156,7 @@ async function deleteSharedTaskComment(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("taskComment", { id: args.id as TaskCommentId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("taskComment", { id: args.id as TaskCommentId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared comment deleted successfully" };
   } finally {
@@ -2190,7 +2190,7 @@ async function createSharedDeploymentStage(
       name: NonEmptyTrimmedString100.orThrow(args.name),
       color: args.color || "#22c55e",
       position: Int.orThrow(args.position ?? 0),
-    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    }, { owner: sharedOwner, onComplete: waiter.onComplete });
 
     await waiter.waitForSync();
 
@@ -2309,7 +2309,7 @@ async function createSharedRepositoryLink(
       url: NonEmptyTrimmedString1000.orThrow(args.url),
       label: args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null,
       position: Int.orThrow(maxPosition + 1),
-    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    }, { owner: sharedOwner, onComplete: waiter.onComplete });
 
     await waiter.waitForSync();
 
@@ -2341,7 +2341,7 @@ async function updateSharedRepositoryLink(
     if (args.label !== undefined) updates.label = args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("repositoryLink", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("repositoryLink", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared repository link updated successfully" };
   } finally {
@@ -2359,7 +2359,7 @@ async function deleteSharedRepositoryLink(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("repositoryLink", { id: args.id as RepositoryLinkId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("repositoryLink", { id: args.id as RepositoryLinkId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared repository link deleted successfully" };
   } finally {
@@ -2384,7 +2384,7 @@ async function updateSharedDeploymentStage(
     if (args.color !== undefined) updates.color = args.color;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("deploymentStage", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("deploymentStage", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage updated successfully" };
   } finally {
@@ -2450,7 +2450,7 @@ async function createSharedTag(
       name: NonEmptyTrimmedString100.orThrow(args.name),
       color: args.color || "#6b7280",
       isDefault: args.isDefault ? SQLITE_TRUE : null,
-    } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, tagId: result.id, message: `Tag "${args.name}" created successfully` };
   } finally {
@@ -2475,7 +2475,7 @@ async function updateSharedTag(
     if (args.color !== undefined) updates.color = args.color;
     if (args.isDefault !== undefined) updates.isDefault = args.isDefault ? SQLITE_TRUE : null;
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("tag", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("tag", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared tag updated successfully" };
   } finally {
@@ -2491,7 +2491,7 @@ async function deleteSharedTag(args: { sharedOwnerId: string; ownerSecret: strin
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("tag", { id: args.id as TagId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("tag", { id: args.id as TagId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared tag deleted successfully" };
   } finally {
@@ -2529,7 +2529,7 @@ async function addSharedTagToTask(
     const result = projectEvolu.insert("taskTag", {
       taskId: args.taskId as TaskId,
       tagId: args.tagId as TagId,
-    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    }, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, taskTagId: result.id, message: "Tag assigned successfully" };
   } finally {
@@ -2566,7 +2566,7 @@ async function removeSharedTagFromTask(
     // otherwise survive an apparent removal.
     const waiter = createMutationWaiter();
     for (const row of mine) {
-      const result = projectEvolu.update("taskTag", { id: row.id as TaskTagId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+      const result = projectEvolu.update("taskTag", { id: row.id as TaskTagId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     }
     await waiter.waitForSync();
     return { success: true, removed: mine.length, message: "Tag removed successfully" };
@@ -2585,7 +2585,7 @@ async function deleteSharedDeploymentStage(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage deleted successfully" };
   } finally {
@@ -2639,7 +2639,7 @@ async function updateSharedProject(
     }
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("project", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("project", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared project updated successfully" };
   } finally {
@@ -2764,7 +2764,7 @@ async function updateSharedMember(
     }
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("projectMember", updates as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("projectMember", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
     return {
@@ -2841,7 +2841,7 @@ async function uploadSharedNoteAttachment(
       mimeType,
       data: fileContent,
       size: Int.orThrow(size),
-    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    }, { owner: sharedOwner, onComplete: waiter.onComplete });
 
     await waiter.waitForSync();
 
@@ -2979,7 +2979,7 @@ async function deleteSharedNoteAttachment(
       id: args.id as NoteAttachmentId,
       data: null,
       isDeleted: SQLITE_TRUE,
-    } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
     return {
@@ -3055,14 +3055,14 @@ async function uploadSharedAttachment(
       mimeType,
       data: null,
       size: Int.orThrow(size),
-    }, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    }, { owner: sharedOwner, onComplete: waiter.onComplete });
 
     chunks.forEach((bytes, index) => {
       projectEvolu.insert("attachmentChunk", {
         attachmentId: result.id as AttachmentId,
         index: Int.orThrow(index),
         bytes,
-      }, { ownerId: sharedOwner.id });
+      }, { owner: sharedOwner });
     });
 
     await waiter.waitForSync();
@@ -3167,7 +3167,7 @@ async function deleteSharedAttachment(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { ownerId: sharedOwner.id, onComplete: waiter.onComplete });
+    const result = projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared attachment deleted successfully" };
   } finally {
@@ -3476,7 +3476,7 @@ async function bulkUpdateSharedTasks(
           projectEvolu.update(
             "task",
             updates as any,
-            { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+            { owner: sharedOwner, onComplete: waiter.onComplete }
           );
           updatedCount++;
         } catch {
@@ -3986,7 +3986,7 @@ async function updateSharedWorklog(
 
     const waiter = createMutationWaiter();
     projectEvolu.update("worklog", updates as any, {
-      ownerId: sharedOwner.id,
+      owner: sharedOwner,
       onComplete: waiter.onComplete,
     });
     await waiter.waitForSync();
@@ -4062,7 +4062,7 @@ async function createSharedTaskLink(
       },
       // Without ownerId the row falls under a throwaway owner, never syncs, and
       // the write still reports success. (TODO-299)
-      { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+      { owner: sharedOwner, onComplete: waiter.onComplete }
     );
     await waiter.waitForSync();
     return { success: true, linkId: result.id, message: "Shared task link created successfully" };
@@ -4086,7 +4086,7 @@ async function deleteSharedTaskLink(
       projectEvolu.update(
         "taskLink",
         { id: args.id as TaskLinkId, isDeleted: SQLITE_TRUE } as any,
-        { ownerId: sharedOwner.id, onComplete: waiter.onComplete }
+        { owner: sharedOwner, onComplete: waiter.onComplete }
       )
     );
     await waiter.waitForSync();
