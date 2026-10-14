@@ -6,7 +6,11 @@ import { fileURLToPath } from "url";
 /**
  * Every write to the shared instance must name the owner (TODO-299).
  *
- * `projectEvolu.insert/update` without `{ ownerId }` does not fail. The row
+ * Since Evolu 8.20.3 the option is `{ owner }`, the whole SharedOwner with its
+ * write key (TODO-427). A leftover `{ ownerId }` is ignored the same way a
+ * missing one is, so the old shape counts as missing here.
+ *
+ * `projectEvolu.insert/update` without `{ owner }` does not fail. The row
  * lands under the shared instance's own throwaway owner, where no relay
  * subscription reaches it and every list query filters it out, and the tool
  * still answers `success`. That is how shared project notes and documents were
@@ -19,12 +23,12 @@ import { fileURLToPath } from "url";
 
 const toolsDir = dirname(fileURLToPath(import.meta.url));
 
-interface Site { line: number; text: string; hasOwnerId: boolean }
+interface Site { line: number; text: string; hasOwner: boolean }
 
 /**
  * Read to the end of the call by balancing parentheses rather than scanning a
  * fixed number of lines. A window is what made the first version of this test
- * flag createSharedTask, whose `ownerId` sits 26 lines below the call.
+ * flag createSharedTask, whose `owner` sits 26 lines below the call.
  */
 function sharedWriteSites(source: string): Site[] {
   const lines = source.split("\n");
@@ -47,7 +51,7 @@ function sharedWriteSites(source: string): Site[] {
     sites.push({
       line: i + 1,
       text: lines[i]!.trim(),
-      hasOwnerId: /ownerId:\s*(shared)?[Oo]wner\.id/.test(body),
+      hasOwner: /\bowner:\s*(shared)?[Oo]wner\b(?!\.)/.test(body),
     });
   }
   return sites;
@@ -70,7 +74,7 @@ describe.skipIf(sourceFiles.length === 0)("writes to the shared instance", () =>
     const missing: string[] = [];
     for (const file of sourceFiles) {
       for (const s of sharedWriteSites(readFileSync(join(toolsDir, file), "utf8"))) {
-        if (!s.hasOwnerId) missing.push(`${file}:${s.line} ${s.text}`);
+        if (!s.hasOwner) missing.push(`${file}:${s.line} ${s.text}`);
       }
     }
     expect(missing).toEqual([]);
@@ -78,19 +82,24 @@ describe.skipIf(sourceFiles.length === 0)("writes to the shared instance", () =>
 });
 
 describe("the detector itself", () => {
-  it("flags a write with no ownerId", () => {
+  it("flags a write with no owner", () => {
     const bad = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { onComplete: waiter.onComplete });`;
-    expect(sharedWriteSites(bad)[0]!.hasOwnerId).toBe(false);
+    expect(sharedWriteSites(bad)[0]!.hasOwner).toBe(false);
+  });
+
+  it("flags the pre-8.20.3 ownerId, which Evolu now ignores", () => {
+    const old = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { ownerId: owner.id, onComplete: waiter.onComplete });`;
+    expect(sharedWriteSites(old)[0]!.hasOwner).toBe(false);
   });
 
   it("accepts a write that has one", () => {
-    const good = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { ownerId: owner.id, onComplete: waiter.onComplete });`;
-    expect(sharedWriteSites(good)[0]!.hasOwnerId).toBe(true);
+    const good = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { owner: owner, onComplete: waiter.onComplete });`;
+    expect(sharedWriteSites(good)[0]!.hasOwner).toBe(true);
   });
 
   it("reads past a long argument list, which a fixed window cannot", () => {
-    const long = `projectEvolu.insert(\n  "task",\n  {\n${"    f: 1,\n".repeat(40)}  },\n  { ownerId: sharedOwner.id }\n);`;
-    expect(sharedWriteSites(long)[0]!.hasOwnerId).toBe(true);
+    const long = `projectEvolu.insert(\n  "task",\n  {\n${"    f: 1,\n".repeat(40)}  },\n  { owner: sharedOwner }\n);`;
+    expect(sharedWriteSites(long)[0]!.hasOwner).toBe(true);
   });
 });
 

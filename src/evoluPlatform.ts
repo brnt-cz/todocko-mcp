@@ -190,10 +190,39 @@ export function getWorkerDefects(): WorkerDefect[] {
  */
 export function getFatalWorkerReason(): string | null {
   const fatal = workerDefects.find((d) => d.worker === "dbWorker");
-  if (!fatal) return null;
+  if (fatal) {
+    return (
+      `Evolu dbWorker died at ${new Date(fatal.at).toISOString()} and every query would hang: ` +
+      `${fatal.message}. Reconnect the MCP server to get a working one. (TODO-317)`
+    );
+  }
+  return describeRefusal(getEvoluError());
+}
+
+/**
+ * The latest error in Evolu's `evoluError` store, or `null`.
+ *
+ * Since Evolu 8.20.3 a database whose worker throws is refused through this
+ * store with an `UnknownError`, and its queries then stay pending until the
+ * instance is disposed. Whether the defect is still reported as well is not
+ * something to rely on, so this reads the refusal itself. (TODO-427)
+ */
+export function getEvoluError(): { readonly type: string } | null {
+  return cachedDeps?.evoluError.get() ?? null;
+}
+
+/**
+ * Why an `evoluError` means no query will answer, or `null` when it does not.
+ *
+ * `OtherBuildRunningError` is a wait that clears on its own, and in one Node
+ * process there is no other build to wait for, so it is not treated as fatal.
+ * The rest leave Evolu, in its own words, unusable until restarted.
+ */
+export function describeRefusal(error: { readonly type: string } | null): string | null {
+  if (!error || error.type === "OtherBuildRunningError") return null;
   return (
-    `Evolu dbWorker died at ${new Date(fatal.at).toISOString()} and every query would hang: ` +
-    `${fatal.message}. Reconnect the MCP server to get a working one. (TODO-317)`
+    `Evolu refused the database with ${error.type} and every query would hang. ` +
+    `Reconnect the MCP server to get a working one. (TODO-427)`
   );
 }
 

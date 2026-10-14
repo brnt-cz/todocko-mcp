@@ -299,7 +299,7 @@ async function createSharedProjectNote(
       content: args.content ? EvoluString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
-    }, { ownerId: owner.id, onComplete: waiter.onComplete });
+    }, { owner: owner, onComplete: waiter.onComplete });
 
     await waiter.waitForSync();
 
@@ -337,7 +337,7 @@ async function updateSharedProjectNote(
     // iXO1duq-onrYm9n19nT-eA instead of the project's. Every write in
     // shared.ts already passes it. (TODO-299)
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", updates as any, { ownerId: owner.id, onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", updates as any, { owner: owner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
 
     return { success: true, message: "Shared note updated" };
@@ -362,7 +362,7 @@ async function deleteSharedProjectNote(
   await assertRowExists(projectEvolu, "projectNote", args.id, "Note", owner.id as string);
   try {
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { ownerId: owner.id, onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { owner: owner, onComplete: waiter.onComplete });
     await waiter.waitForSync();
     return { success: true, message: "Shared note deleted" };
   } finally {
