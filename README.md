@@ -18,7 +18,9 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Evolu v8 (TODO-88)
 
-MCP běží na `@evolu/common` 8.22.3 a `@evolu/nodejs` 4.3.3.
+MCP běží na `@evolu/common` 8.23.2 a `@evolu/nodejs` 4.3.4. Upgrade z 8.22
+(TODO-431) nevyžadoval změnu kódu; sync přes relay ověřen v obou směrech
+proti verzi 8.22.
 
 Od Evolu 8.20.3 nese zápis do sdílené instance celého ownera,
 `{ owner: sharedOwner }`, ne `{ ownerId }`. Zapomenuté `ownerId` Evolu ignoruje
