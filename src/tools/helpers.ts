@@ -24,6 +24,11 @@ export {
   safeLoadQuery,
   assertRowExists,
   assertNotSharedProject,
+  assertValidProjectCode,
+  nextTaskCode,
+  assertTaskCodeForProject,
+  withTaskCodeLock,
+  pickSharedProjectRow,
 } from "./pure.js";
 
 /**
@@ -38,7 +43,11 @@ export const NonEmptyString10000 = maxLength(10000)(NonEmptyTrimmedString);
  * Wait for a mutation to complete locally (via onComplete), then wait for network sync.
  * Returns a promise that resolves after the mutation is locally applied + network delay.
  */
-export function createMutationWaiter(): { onComplete: () => void; waitForSync: () => Promise<void> } {
+export function createMutationWaiter(): {
+  onComplete: () => void;
+  waitForSync: () => Promise<void>;
+  waitForLocal: () => Promise<void>;
+} {
   let resolveComplete: (() => void) | null = null;
   const completePromise = new Promise<void>((resolve) => {
     resolveComplete = resolve;
@@ -48,6 +57,17 @@ export function createMutationWaiter(): { onComplete: () => void; waitForSync: (
     onComplete: () => {
       trackOnComplete();
       if (resolveComplete) resolveComplete();
+    },
+    /**
+     * Only the local half: the mutation is applied and a following read sees
+     * it. What a lock around read-then-insert has to wait for, without holding
+     * every other caller through the network delay. (TODO-434)
+     */
+    waitForLocal: async () => {
+      await Promise.race([
+        completePromise,
+        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+      ]);
     },
     waitForSync: async () => {
       // Wait for onComplete (max 3s safety net)

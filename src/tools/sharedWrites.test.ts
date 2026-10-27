@@ -152,3 +152,110 @@ describe("tools that write a child of a task", () => {
     expect(/assertRowExists\([^)]*"task"/.test(unguarded)).toBe(false);
   });
 });
+
+/**
+ * Every shared write goes through the permission gate (TODO-434).
+ *
+ * The shared tools used to open the owner with `getSharedOwner` directly, which
+ * checks only that the secret fits the id. A member with read-only access
+ * could then edit tasks, delete the project or change members through this
+ * server while the app refused the same. `resolveSharedOwner(args, access)`
+ * reads the user's projectRef and applies the app's rules; this keeps a new
+ * tool from going round it, the same way the owner check above keeps a new
+ * write from forgetting `{ owner }`.
+ */
+describe("shared writes pass the permission gate", () => {
+  const GATED_FILES = ["shared.ts", "projectNotes.ts", "projectDocs.ts"];
+
+  /** Every top-level `async function`, with its body. */
+  function functionsOf(file: string): { name: string; body: string }[] {
+    const source = readFileSync(join(toolsDir, file), "utf8");
+    const found: { name: string; body: string }[] = [];
+    const re = /^(?:export )?async function (\w+)\(/gm;
+    for (let m = re.exec(source); m; m = re.exec(source)) {
+      const end = source.indexOf("\n}\n", m.index);
+      found.push({ name: m[1]!, body: source.slice(m.index, end === -1 ? undefined : end) });
+    }
+    return found;
+  }
+
+  const WRITES = /projectEvolu\.(insert|update)\(/;
+  // bulkDeleteSharedTasks writes through deleteSharedTask.
+  const DELEGATES = /\bdeleteSharedTask\(\{/;
+  const GATE = /resolveSharedOwner\(args, "(read|write|admin)"\)/;
+
+  const writers = GATED_FILES.flatMap((file) =>
+    functionsOf(file)
+      .filter((f) => WRITES.test(f.body) || DELEGATES.test(f.body))
+      .map((f) => ({ file, ...f })),
+  );
+
+  it("finds the write functions at all", () => {
+    // 39 when this was written: 32 in shared.ts, three each for notes and docs.
+    expect(writers.length).toBeGreaterThanOrEqual(39);
+  });
+
+  it("every one of them asks for write or admin access", () => {
+    const ungated = writers
+      .filter((w) => {
+        const access = GATE.exec(w.body)?.[1];
+        return access !== "write" && access !== "admin";
+      })
+      .map((w) => `${w.file}:${w.name}`);
+    expect(ungated).toEqual([]);
+  });
+
+  /**
+   * What the app reserves for the owner or an admin: project settings and its
+   * deletion, the deployment tab (stages and repository links), tag
+   * management and members (Modal.vue's tab gates, ProjectsView's handlers).
+   * Assigning a tag to a task only needs write, as in the app's context menu.
+   */
+  const ADMIN_ONLY = [
+    "updateSharedProject",
+    "updateSharedMember",
+    "createSharedDeploymentStage",
+    "updateSharedDeploymentStage",
+    "deleteSharedDeploymentStage",
+    "createSharedRepositoryLink",
+    "updateSharedRepositoryLink",
+    "deleteSharedRepositoryLink",
+    "createSharedTag",
+    "updateSharedTag",
+    "deleteSharedTag",
+  ];
+
+  for (const name of ADMIN_ONLY) {
+    it(`${name} requires admin`, () => {
+      const w = writers.find((x) => x.name === name);
+      expect(w, `${name} is a shared write`).toBeDefined();
+      expect(GATE.exec(w!.body)?.[1]).toBe("admin");
+    });
+  }
+
+  it("no tool opens a shared owner without the gate", () => {
+    // withAllSharedOwners opens every joined project for the read-only
+    // analytics; it never writes, so it may derive owners itself.
+    const allowed = new Set(["shared.ts:withAllSharedOwners"]);
+    const direct: string[] = [];
+    for (const file of sourceFiles.filter((f) => f !== "sharedAccess.ts")) {
+      for (const f of functionsOf(file)) {
+        if (/\bgetSharedOwner\(/.test(f.body) && !allowed.has(`${file}:${f.name}`)) direct.push(`${file}:${f.name}`);
+      }
+    }
+    expect(direct).toEqual([]);
+  });
+
+  it("every shared delete checks the row exists first (S18)", () => {
+    const deletes = writers.filter((w) => /^deleteShared/.test(w.name));
+    expect(deletes.length).toBeGreaterThanOrEqual(11);
+    const unchecked = deletes.filter((w) => !/assertRowExists\(/.test(w.body)).map((w) => `${w.file}:${w.name}`);
+    expect(unchecked).toEqual([]);
+  });
+
+  it("the detector notices a write that skips the gate", () => {
+    const bad = `async function sneaky(args) {\n  const o = getSharedOwner(args.sharedOwnerId, args.ownerSecret);\n  projectEvolu.update("task", {}, { owner: o });\n}`;
+    expect(WRITES.test(bad)).toBe(true);
+    expect(GATE.test(bad)).toBe(false);
+  });
+});

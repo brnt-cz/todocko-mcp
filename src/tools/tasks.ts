@@ -2,7 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
 import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
-import { createMutationWaiter, waitForSync, safeLoadQuery, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
+import { createMutationWaiter, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 import { assertCopyCanNumberTasks } from "../utils/syncFreshness.js";
@@ -731,99 +731,94 @@ async function createTask(
   }
   const project = projectResult[0] as any;
 
-  // Get next task number for this project. Exclude soft-deleted tasks so the
-  // counter matches the app (max of VISIBLE codes + 1). Counting tombstones
-  // made codes jump past deleted duplicates (e.g. straight to 350). (TODO-181)
-  const tasksQuery = evolu.createQuery((db: any) =>
-    db
-      .selectFrom("task")
-      .select(["title"])
-      .where("projectId", "=", project.id)
-      .where("isDeleted", "is not", SQLITE_TRUE)
-  );
-  const existingTasks = await safeLoadQuery(evolu,tasksQuery);
-
-  const projectCode = project.code || "TASK";
-  let taskCode: string;
-  if (args.code) {
-    // Validate format and uniqueness
-    const codeRegex = new RegExp(`^${projectCode}-\\d+$`);
-    if (!codeRegex.test(args.code)) {
-      throw new Error(`Code "${args.code}" does not match project format "${projectCode}-NNN"`);
-    }
-    const conflict = existingTasks.some((t: any) => t.title === args.code);
-    if (conflict) {
-      throw new Error(`Code "${args.code}" is already used by another task`);
-    }
-    taskCode = args.code;
-  } else {
-    // A code is derived from the highest one visible here, so a copy that has
-    // not caught up hands out one the relay already uses. (TODO-373)
-    await assertCopyCanNumberTasks({
-      evolu: evolu as unknown as Parameters<typeof assertCopyCanNumberTasks>[0]["evolu"],
-      ownerId: getAppOwnerId(),
-      mnemonic: process.env.TODOCKO_MNEMONIC,
-    });
-    let maxNum = 0;
-    const codeRegex = new RegExp(`^${projectCode}-(\\d+)$`);
-    for (const t of existingTasks) {
-      const match = (t as any).title?.match(codeRegex);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
-      }
-    }
-    taskCode = `${projectCode}-${maxNum + 1}`;
-  }
-
-  // Lowest position in the TARGET column, so the new task lands on top like it
-  // does in the app (TODO-217). This used to take the global max across every
-  // status and append below it, which buried assistant-created tasks.
-  // A shared project owns its tasks in the shared instance; writing one here
-  // would create a second copy the app never shows. (TODO-318)
-  assertNotSharedProject(args.projectId, await loadSharedProjectRefs(evolu), "td_create_task");
-
-  const targetStatus = args.status || "todo";
-  const posQuery = evolu.createQuery((db: any) =>
-    db
-      .selectFrom("task")
-      .select(["position"])
-      .where("status", "=", targetStatus)
-      .where("isDeleted", "is not", SQLITE_TRUE)
-      .orderBy("position", "asc")
-      .limit(1)
-  );
-  const posResult = await safeLoadQuery(evolu, posQuery);
-  const minPosition = posResult.length > 0 ? ((posResult[0] as any).position ?? 0) : 0;
-
-  // Create task with onComplete tracking
+  // Code derivation and the insert run under one lock per project, or two
+  // calls arriving together read the same highest code and both hand out the
+  // next one. Released once the insert is applied locally, so the next
+  // caller's read already sees it. (TODO-434)
   const waiter = createMutationWaiter();
-  const result = evolu.insert("task", {
-    projectId: args.projectId as ProjectId,
-    title: NonEmptyTrimmedString100.orThrow(taskCode),
-    name: args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null,
-    description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
-    status: args.status || "todo",
-    priority: args.priority || "medium",
-    deadline: args.deadline || null,
-    scheduledDate: args.scheduledDate || null,
-    assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
-    estimate: args.estimate ? Int.orThrow(args.estimate) : null,
-    position: Int.orThrow(topPositionForNewTask(minPosition)),
-    completedAt: args.completedAt || null,
-    isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
-    isBlocked: null,
-    blockedReason: null,
-    recurrenceType: args.recurrenceType || null,
-    recurrenceInterval: args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null,
-    recurrenceEndDate: args.recurrenceEndDate || null,
-    recurrenceDay: args.recurrenceDay || null,
-    sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
-    ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
-  } as any, { onComplete: waiter.onComplete });
+  const { result, taskCode } = await withTaskCodeLock(`personal:${project.id as string}`, async () => {
+    // Get next task number for this project. Exclude soft-deleted tasks so the
+    // counter matches the app (max of VISIBLE codes + 1). Counting tombstones
+    // made codes jump past deleted duplicates (e.g. straight to 350). (TODO-181)
+    const tasksQuery = evolu.createQuery((db: any) =>
+      db
+        .selectFrom("task")
+        .select(["title"])
+        .where("projectId", "=", project.id)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+    );
+    const existingTasks = await safeLoadQuery(evolu,tasksQuery);
 
-  // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
-  evolu.update("task", { id: result.id, status: args.status || "todo" } as any);
+    const projectCode = project.code || "TASK";
+    let taskCode: string;
+    const titles = existingTasks.map((t: any) => t.title as string | undefined);
+    if (args.code) {
+      // Format and uniqueness; the project code is escaped inside, since a code
+      // stored before validation may hold regex metacharacters. (TODO-434)
+      assertTaskCodeForProject(args.code, projectCode, titles);
+      taskCode = args.code;
+    } else {
+      // A code is derived from the highest one visible here, so a copy that has
+      // not caught up hands out one the relay already uses. (TODO-373)
+      await assertCopyCanNumberTasks({
+        evolu: evolu as unknown as Parameters<typeof assertCopyCanNumberTasks>[0]["evolu"],
+        ownerId: getAppOwnerId(),
+        mnemonic: process.env.TODOCKO_MNEMONIC,
+      });
+      taskCode = nextTaskCode(projectCode, titles);
+    }
+
+    // Lowest position in the TARGET column, so the new task lands on top like it
+    // does in the app (TODO-217). This used to take the global max across every
+    // status and append below it, which buried assistant-created tasks.
+    // A shared project owns its tasks in the shared instance; writing one here
+    // would create a second copy the app never shows. (TODO-318)
+    assertNotSharedProject(args.projectId, await loadSharedProjectRefs(evolu), "td_create_task");
+
+    const targetStatus = args.status || "todo";
+    const posQuery = evolu.createQuery((db: any) =>
+      db
+        .selectFrom("task")
+        .select(["position"])
+        .where("status", "=", targetStatus)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .orderBy("position", "asc")
+        .limit(1)
+    );
+    const posResult = await safeLoadQuery(evolu, posQuery);
+    const minPosition = posResult.length > 0 ? ((posResult[0] as any).position ?? 0) : 0;
+
+    // Create task with onComplete tracking
+    const result = evolu.insert("task", {
+      projectId: args.projectId as ProjectId,
+      title: NonEmptyTrimmedString100.orThrow(taskCode),
+      name: args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null,
+      description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
+      status: args.status || "todo",
+      priority: args.priority || "medium",
+      deadline: args.deadline || null,
+      scheduledDate: args.scheduledDate || null,
+      assigneeId: args.assigneeId ? (args.assigneeId as UserId) : null,
+      estimate: args.estimate ? Int.orThrow(args.estimate) : null,
+      position: Int.orThrow(topPositionForNewTask(minPosition)),
+      completedAt: args.completedAt || null,
+      isOnProduction: args.isOnProduction ? SQLITE_TRUE : null,
+      isBlocked: null,
+      blockedReason: null,
+      recurrenceType: args.recurrenceType || null,
+      recurrenceInterval: args.recurrenceInterval ? Int.orThrow(args.recurrenceInterval) : null,
+      recurrenceEndDate: args.recurrenceEndDate || null,
+      recurrenceDay: args.recurrenceDay || null,
+      sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
+      ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
+    } as any, { onComplete: waiter.onComplete });
+
+    // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
+    evolu.update("task", { id: result.id, status: args.status || "todo" } as any);
+
+    await waiter.waitForLocal();
+    return { result, taskCode };
+  });
 
   logTaskCreate(evolu, result.id);
 

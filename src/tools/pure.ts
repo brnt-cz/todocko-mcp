@@ -657,3 +657,140 @@ export function isSocketUnanswered(
   if (now < lastPongAt) return false;
   return now - lastPongAt > timeoutMs;
 }
+
+// --- Project and task codes (TODO-434) ---
+
+/**
+ * The app's rule for a project code (`Modal.vue`): upper-case letters and
+ * digits, nothing else. The MCP stored whatever it was given, and a code is
+ * the prefix of every task code in the project, so a space or a dot there
+ * produced task codes the app's own `^([A-Z0-9]+)-\d+$` never recognises.
+ */
+export const PROJECT_CODE_PATTERN = /^[A-Z0-9]+$/;
+
+/** Refuse a project code the app would not accept. Null/undefined pass: no code. */
+export function assertValidProjectCode(code: string | null | undefined): void {
+  if (code === null || code === undefined || code === "") return;
+  if (!PROJECT_CODE_PATTERN.test(code)) {
+    throw new Error(
+      `Invalid project code "${code}": use only upper-case letters A-Z and digits 0-9 (e.g. "${
+        code.toUpperCase().replace(/[^A-Z0-9]/g, "") || "PROJ"
+      }").`,
+    );
+  }
+}
+
+/** Escape a string for literal use inside a RegExp. */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The next task code for `projectCode`: one past the highest number in use.
+ *
+ * The code goes into a regular expression, so it is escaped first, as the
+ * app's `getNextTaskNumber` does. Codes stored before validation existed can
+ * still hold metacharacters, and `A.B` unescaped matches `AXB-7` and hands out
+ * a number belonging to another prefix.
+ */
+export function nextTaskCode(projectCode: string, titles: readonly (string | null | undefined)[]): string {
+  const regex = new RegExp(`^${escapeRegExp(projectCode)}-(\\d+)$`);
+  let max = 0;
+  for (const title of titles) {
+    const match = title?.match(regex);
+    if (match) max = Math.max(max, parseInt(match[1]!, 10));
+  }
+  return `${projectCode}-${max + 1}`;
+}
+
+/** Refuse an explicit task code that does not fit the project or is taken. */
+export function assertTaskCodeForProject(
+  code: string,
+  projectCode: string,
+  titles: readonly (string | null | undefined)[],
+): void {
+  if (!new RegExp(`^${escapeRegExp(projectCode)}-\\d+$`).test(code)) {
+    throw new Error(`Code "${code}" does not match project format "${projectCode}-NNN"`);
+  }
+  if (titles.includes(code)) {
+    throw new Error(`Code "${code}" is already used by another task`);
+  }
+}
+
+/**
+ * Run `fn` with no other call for the same key in flight. (TODO-434)
+ *
+ * td_create_task derives the code from the highest one it can see, then
+ * inserts. Two calls for one project arriving together both read the same
+ * maximum and both hand out `PROJ-12`. Each call waits for the previous one
+ * for its key; different keys do not wait for each other. A rejection is
+ * passed to its own caller and does not stall the queue.
+ */
+export function createKeyedMutex() {
+  const tails = new Map<string, Promise<unknown>>();
+  return async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const previous = tails.get(key) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(fn);
+    const tail = run.catch(() => undefined);
+    tails.set(key, tail);
+    try {
+      return await run;
+    } finally {
+      // Only the last caller in line clears the entry, so the map does not grow.
+      if (tails.get(key) === tail) tails.delete(key);
+    }
+  };
+}
+
+/** One lock for every task-code allocation in this process. */
+export const withTaskCodeLock = createKeyedMutex();
+
+// --- Picking a shared owner's project row (TODO-434) ---
+
+/** The columns pickSharedProjectRow reads. */
+export interface SharedProjectRowLike {
+  readonly id?: unknown;
+  readonly ownerId?: unknown;
+  readonly isDeleted?: unknown;
+  readonly createdAt?: unknown;
+}
+
+function rowIsDeleted(row: SharedProjectRowLike): boolean {
+  // Evolu spells true as 1 and false as null, and an un-delete writes 0.
+  return row.isDeleted === 1 || row.isDeleted === true;
+}
+
+function olderFirst(a: SharedProjectRowLike, b: SharedProjectRowLike): number {
+  const aAt = typeof a.createdAt === "string" ? a.createdAt : "";
+  const bAt = typeof b.createdAt === "string" ? b.createdAt : "";
+  if (aAt !== bAt) {
+    // A row without createdAt sorts last rather than winning by accident.
+    if (!aAt) return 1;
+    if (!bAt) return -1;
+    return aAt < bAt ? -1 : 1;
+  }
+  return String(a.id) < String(b.id) ? -1 : 1;
+}
+
+/**
+ * The one `project` row to use for a shared owner, ported from the app's
+ * `src/db/sharedProjectRow.ts` (TODO-401).
+ *
+ * A restore can leave a shared owner with two project rows. td_update_shared_project
+ * took `projects[0]`, whatever order SQLite returned, so the MCP could edit one
+ * row while the app read the other. The app's rule: the oldest live row by
+ * `createdAt`, ties broken by id, so every client picks the same one.
+ *
+ * `includeDeleted` is for restoring from the Trash, where every row is
+ * deleted and the one to bring back is chosen by the same order.
+ */
+export function pickSharedProjectRow<T extends SharedProjectRowLike>(
+  rows: readonly T[] | null | undefined,
+  sharedOwnerId: string,
+  options: { includeDeleted?: boolean } = {},
+): T | null {
+  const owned = (rows ?? []).filter((row) => (row.ownerId as string | undefined) === sharedOwnerId);
+  const alive = owned.filter((row) => !rowIsDeleted(row));
+  const pool = alive.length > 0 ? alive : options.includeDeleted ? owned : [];
+  return [...pool].sort(olderFirst)[0] ?? null;
+}

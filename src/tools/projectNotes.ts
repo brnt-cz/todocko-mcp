@@ -7,11 +7,11 @@ import {
   type ProjectNoteId,
   type EvoluInstance,
   getProjectEvolu,
-  getSharedOwner,
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
 import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
+import { resolveSharedOwner, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 
 export const projectNoteTools: Tool[] = [
   // Local project notes (not synced)
@@ -71,10 +71,10 @@ export const projectNoteTools: Tool[] = [
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
-        ownerSecret: { type: "string", description: "Owner secret (required)" },
+        ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
         projectId: { type: "string", description: "Filter by project ID" },
       },
-      required: ["sharedOwnerId", "ownerSecret"],
+      required: ["sharedOwnerId"],
     },
   },
   {
@@ -84,12 +84,12 @@ export const projectNoteTools: Tool[] = [
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
-        ownerSecret: { type: "string", description: "Owner secret (required)" },
+        ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
         projectId: { type: "string", description: "Project ID (required)" },
         title: { type: "string", description: "Note title (required)" },
         content: { type: "string", description: "Note content (HTML)" },
       },
-      required: ["sharedOwnerId", "ownerSecret", "projectId", "title"],
+      required: ["sharedOwnerId", "projectId", "title"],
     },
   },
   {
@@ -99,13 +99,13 @@ export const projectNoteTools: Tool[] = [
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
-        ownerSecret: { type: "string", description: "Owner secret (required)" },
+        ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
         id: { type: "string", description: "Note ID (required)" },
         title: { type: "string" },
         content: { type: "string" },
         position: { type: "number" },
       },
-      required: ["sharedOwnerId", "ownerSecret", "id"],
+      required: ["sharedOwnerId", "id"],
     },
   },
   {
@@ -115,10 +115,10 @@ export const projectNoteTools: Tool[] = [
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
-        ownerSecret: { type: "string", description: "Owner secret (required)" },
+        ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
         id: { type: "string", description: "Note ID (required)" },
       },
-      required: ["sharedOwnerId", "ownerSecret", "id"],
+      required: ["sharedOwnerId", "id"],
     },
   },
 ];
@@ -138,13 +138,13 @@ export async function handleProjectNoteTool(
     case "td_delete_project_note":
       return deleteProjectNote(evolu, args as { id: string });
     case "td_list_shared_project_notes":
-      return listSharedProjectNotes(args as { sharedOwnerId: string; ownerSecret: string; projectId?: string });
+      return listSharedProjectNotes(args as { sharedOwnerId: string; ownerSecret?: string; projectId?: string });
     case "td_create_shared_project_note":
-      return createSharedProjectNote(args as { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string });
+      return createSharedProjectNote(args as { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string });
     case "td_update_shared_project_note":
-      return updateSharedProjectNote(args as { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number });
+      return updateSharedProjectNote(args as { sharedOwnerId: string; ownerSecret?: string; id: string; title?: string; content?: string; position?: number });
     case "td_delete_shared_project_note":
-      return deleteSharedProjectNote(args as { sharedOwnerId: string; ownerSecret: string; id: string });
+      return deleteSharedProjectNote(args as { sharedOwnerId: string; ownerSecret?: string; id: string });
     default:
       return undefined;
   }
@@ -228,12 +228,12 @@ async function deleteProjectNote(evolu: EvoluInstance, args: { id: string }) {
 
 // --- Shared project notes ---
 
-async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret: string; projectId?: string }) {
+async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret?: string; projectId?: string }) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
   }
-  const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  const owner = await resolveSharedOwner(args, "read");
   useSharedOwner(owner);
   try {
     const query = projectEvolu.createQuery((db: any) => {
@@ -270,13 +270,13 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
 }
 
 async function createSharedProjectNote(
-  args: { sharedOwnerId: string; ownerSecret: string; projectId: string; title: string; content?: string }
+  args: { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
   }
-  const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  const owner = await resolveSharedOwner(args, "write");
   useSharedOwner(owner);
   try {
     const posQuery = projectEvolu.createQuery((db: any) =>
@@ -310,13 +310,13 @@ async function createSharedProjectNote(
 }
 
 async function updateSharedProjectNote(
-  args: { sharedOwnerId: string; ownerSecret: string; id: string; title?: string; content?: string; position?: number }
+  args: { sharedOwnerId: string; ownerSecret?: string; id: string; title?: string; content?: string; position?: number }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
   }
-  const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  const owner = await resolveSharedOwner(args, "write");
   useSharedOwner(owner);
   // Scoped by owner, and checked before the write. v8's update() writes with
   // `on conflict do update`, so an id from another project would not fail, it
@@ -347,13 +347,13 @@ async function updateSharedProjectNote(
 }
 
 async function deleteSharedProjectNote(
-  args: { sharedOwnerId: string; ownerSecret: string; id: string }
+  args: { sharedOwnerId: string; ownerSecret?: string; id: string }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
   }
-  const owner = getSharedOwner(args.sharedOwnerId, args.ownerSecret);
+  const owner = await resolveSharedOwner(args, "write");
   useSharedOwner(owner);
   // Scoped by owner, and checked before the write. v8's update() writes with
   // `on conflict do update`, so an id from another project would not fail, it
