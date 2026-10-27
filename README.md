@@ -161,8 +161,8 @@ Instalátor:
 |---------|-------|
 | `td_list_projects` | Seznam všech projektů |
 | `td_get_project` | Detail projektu podle ID nebo kódu |
-| `td_create_project` | Vytvoření nového projektu |
-| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters) |
+| `td_create_project` | Vytvoření nového projektu (kód jen `A-Z` a `0-9`, jako v appce) |
+| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters; kód jen `A-Z` a `0-9`) |
 | `td_delete_project` | Smazání projektu (soft delete) |
 
 ### Úkoly
@@ -383,7 +383,7 @@ viz níž.
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_shared_projects` | Seznam sdílených projektů |
+| `td_list_shared_projects` | Seznam sdílených projektů s vaším oprávněním (`ownerSecret` už nevrací) |
 | `td_list_shared_tasks` | Seznam úkolů ze sdíleného projektu |
 | `td_create_shared_task` | Vytvoření úkolu ve sdíleném projektu (auto-generovaný kód) |
 | `td_update_shared_task` | Aktualizace úkolu ve sdíleném projektu (všechna pole včetně recurrence, estimate, blocking) |
@@ -420,7 +420,7 @@ viz níž.
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
 | `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav, `isPending` = čeká na schválení) |
-| `td_update_shared_member` | Změna oprávnění / block / kick člena, schválení čekajícího (`isPending: false` + `isBlocked: false`) |
+| `td_update_shared_member` | Jen admin. Změna oprávnění mezi `write` a `admin`, schválení čekajícího nebo odblokování (jen dokud projekt nemá rotovaný klíč); block, kick, zamítnutí a snížení na `read` odmítne, ty patří do appky |
 | `td_upload_shared_note_attachment` | Nahrání přílohy k poznámce sdíleného projektu |
 | `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
 | `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
@@ -435,6 +435,36 @@ viz níž.
 | `td_bulk_delete_shared_tasks` | Hromadné smazání úkolů ve sdíleném projektu (kaskáda na checklist a komentáře) |
 | `td_update_shared_worklog` | Úprava worklogu ve sdíleném projektu |
 | `td_list_shared_activity_log` | Aktivita ve sdíleném projektu (stejné filtry jako u osobní) |
+
+> **Oprávnění, `ownerSecret` a historie ve sdílených projektech (TODO-434).**
+>
+> - **`ownerSecret` je nepovinný a nemá se posílat.** Každý sdílený nástroj si ho
+>   najde ve vašem `projectRef` podle `sharedOwnerId` a `td_list_shared_projects`
+>   ho už nevrací. Secret je klíč k celému projektu, takže dřív ležel v kontextu
+>   modelu i v každém přepisu konverzace. Kdo ho pošle, tomu to dál funguje
+>   (a kontroluje se proti `sharedOwnerId`).
+> - **Zápisy hlídají oprávnění stejně jako appka** (`src/permissions.ts`, port
+>   appkového `permissions.ts`). Úkoly, worklogy, checklist, komentáře, přílohy,
+>   vazby, přiřazení štítků, poznámky a dokumenty chtějí `write` nebo `admin`.
+>   Nastavení projektu (`td_update_shared_project` včetně mazání a obnovy),
+>   deployment stages, repozitářové linky, správa štítků a členové chtějí
+>   vlastníka nebo `admin`. Bez `projectRef` se zápis odmítne, čtení jde dál.
+>   Odmítnutí přijde jako chyba a nic se nezapíše.
+> - **Členy MCP spravuje jen napůl.** Appka po každé změně člena rotuje
+>   zapisovací klíč nebo předá ten současný, jinak zablokovaný člen zapisuje dál.
+>   MCP rotovat neumí, takže změny, po kterých člen nesmí zapisovat (block,
+>   kick, zamítnutí, snížení na `read`), odmítne s odkazem na appku. Schválení,
+>   odblokování a povýšení projdou, jen dokud projekt nemá rotovaný klíč.
+> - **Sdílené zápisy píšou historii** do sdílené instance, stejné záznamy jako
+>   appka (úkol vytvořen/upraven po polích/smazán, worklog, checklist, komentář,
+>   příloha, štítek, stage, repozitář, projekt, člen), s `actorId` vašeho účtu
+>   a `source: "mcp"` v metadatech.
+> - **Mazání neexistujícího id** vrací chybu místo `success` a hromadné mazání ho
+>   počítá mezi přeskočené. `td_update_shared_project` vybírá řádek projektu
+>   stejně jako appka (nejstarší živý) a umí ho obnovit z koše.
+> - **Kód projektu** smí obsahovat jen `A-Z` a `0-9` a souběžná volání
+>   `td_create_task` / `td_create_shared_task` do jednoho projektu už nedostanou
+>   stejný kód.
 
 > **Stavy úkolů a validace argumentů (TODO-296, TODO-297).** Stav
 > `recurring` je plnohodnotný, appka ho používá pro opakované úkoly a MCP ho
@@ -911,8 +941,8 @@ The installer will:
 |------|-------------|
 | `td_list_projects` | List all projects |
 | `td_get_project` | Get project details by ID or code |
-| `td_create_project` | Create a new project |
-| `td_update_project` | Update a project (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters) |
+| `td_create_project` | Create a new project (code: `A-Z` and `0-9` only, as in the app) |
+| `td_update_project` | Update a project (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters; code `A-Z` and `0-9` only) |
 | `td_delete_project` | Delete a project (soft delete) |
 
 ### Tasks
@@ -1109,7 +1139,7 @@ Shared projects (TODO-235):
 
 | Tool | Description |
 |------|-------------|
-| `td_list_shared_projects` | List shared projects |
+| `td_list_shared_projects` | List shared projects with your permission (no longer returns `ownerSecret`) |
 | `td_list_shared_tasks` | List tasks from a shared project |
 | `td_update_shared_task` | Update a task in a shared project |
 | `td_list_shared_deployment_stages` | List deployment stages for a shared project |
@@ -1121,7 +1151,7 @@ Shared projects (TODO-235):
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
 | `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval) |
-| `td_update_shared_member` | Change permission / block / kick a member, approve a pending join (`isPending: false` + `isBlocked: false`) |
+| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app |
 | `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
 | `td_list_shared_note_attachments` | List attachments of a shared project note |
 | `td_download_shared_note_attachment` | Download a shared note attachment |
@@ -1161,6 +1191,37 @@ Shared projects (TODO-235):
 | `td_bulk_delete_shared_tasks` | Soft-delete several tasks in a shared project at once, cascading their checklist items and comments. |
 | `td_update_shared_worklog` | Update a worklog in a shared project. |
 | `td_list_shared_activity_log` | List activity log entries for a shared project. |
+
+> **Permissions, `ownerSecret` and history in shared projects (TODO-434).**
+>
+> - **`ownerSecret` is optional; leave it out.** Every shared tool looks it up
+>   from your `projectRef` by `sharedOwnerId`, and `td_list_shared_projects` no
+>   longer returns it. The secret is the key to the whole project, so it used
+>   to sit in the model's context and every transcript. Passing it still works
+>   and is checked against `sharedOwnerId`.
+> - **Writes are gated by permission, as in the app** (`src/permissions.ts`, a
+>   port of the app's `permissions.ts`). Tasks, worklogs, checklist items,
+>   comments, attachments, links, tag assignment, notes and documents need
+>   `write` or `admin`. Project settings (`td_update_shared_project`, delete and
+>   restore included), deployment stages, repository links, tag management and
+>   members need the owner or `admin`. Without a `projectRef` writes are
+>   refused, reads still work. A refusal is an error and nothing is written.
+> - **Member management is partial.** After every member change the app rotates
+>   the write key or hands the current one over, otherwise a blocked member keeps
+>   writing. The MCP cannot rotate, so changes that leave the member unable to
+>   write (block, kick, reject, downgrade to `read`) are refused with a pointer
+>   to the app. Approving, unblocking and upgrading pass only while the project
+>   has no rotated write key.
+> - **Shared writes record history** in the shared instance, the same entries
+>   the app writes (task created / updated per field / deleted, worklog,
+>   checklist, comment, attachment, tag, stage, repository link, project,
+>   member), with your account as `actorId` and `source: "mcp"` in metadata.
+> - **Deleting an unknown id** is an error instead of `success`, and bulk delete
+>   counts it as skipped. `td_update_shared_project` picks the project row the
+>   way the app does (oldest live row) and can restore it from the Trash.
+> - **Project codes** may contain only `A-Z` and `0-9`, and concurrent
+>   `td_create_task` / `td_create_shared_task` calls for one project no longer
+>   get the same code.
 
 ### Project Documentation
 
