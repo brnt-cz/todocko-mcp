@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool } from "./pure.js";
+import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -603,5 +603,108 @@ describe("assertNotSharedProject", () => {
 
   it("falls back to a generic hint for a tool with no mapping", () => {
     expect(sharedCounterpartTool("td_something_else")).toMatch(/shared/i);
+  });
+});
+
+describe("assertArgTypes (TODO-441)", () => {
+  const schema = {
+    properties: {
+      id: { type: "string", description: "Task ID" },
+      isBlocked: { type: "boolean", description: "Blocked flag" },
+      durationMinutes: { type: "number", description: "Minutes" },
+      taskIds: { type: "array", items: { type: "string" }, description: "IDs" },
+      wipLimit: { type: ["number", "null"], description: "WIP limit" },
+      deadline: { type: "string", description: "Deadline in ISO format (e.g., '2024-12-31')" },
+      scheduledDate: { type: "string", description: "Scheduled date (YYYY-MM-DD)" },
+      completedAt: { type: "string", description: "ISO timestamp for when the task was completed" },
+      from: { type: "string", description: "Only entries on/after this ISO date/datetime" },
+      name: { type: "string", description: "Task name" },
+    },
+  };
+
+  it("rejects the string that started this: isBlocked: \"false\"", () => {
+    // A non-empty string is truthy, so this used to store TRUE - the call that
+    // was meant to unblock the task blocked it, and reported success.
+    expect(() => assertArgTypes("td_update_task", { isBlocked: "false" }, schema))
+      .toThrow(/isBlocked must be boolean/);
+    expect(() => assertArgTypes("td_update_task", { isBlocked: false }, schema)).not.toThrow();
+  });
+
+  it("checks numbers and arrays against what the schema declares", () => {
+    expect(() => assertArgTypes("td_add_worklog", { durationMinutes: "30" }, schema))
+      .toThrow(/durationMinutes must be number/);
+    expect(() => assertArgTypes("td_bulk_update_tasks", { taskIds: "a,b" }, schema))
+      .toThrow(/taskIds must be array/);
+    expect(() => assertArgTypes("td_bulk_update_tasks", { taskIds: ["a", 2] }, schema))
+      .toThrow(/taskIds\[1\] must be string/);
+    expect(() => assertArgTypes("t", { taskIds: ["a", "b"], durationMinutes: 30 }, schema)).not.toThrow();
+  });
+
+  it("honours a union type and does not reject NaN as a number by accident", () => {
+    expect(() => assertArgTypes("td_update_kanban_column", { wipLimit: 3 }, schema)).not.toThrow();
+    expect(() => assertArgTypes("td_update_kanban_column", { wipLimit: null }, schema)).not.toThrow();
+    expect(() => assertArgTypes("td_update_kanban_column", { wipLimit: "3" }, schema))
+      .toThrow(/wipLimit must be number or null/);
+  });
+
+  it("accepts null for any argument, which is how updates clear a field", () => {
+    expect(() => assertArgTypes("td_update_task", { deadline: null, isBlocked: null }, schema)).not.toThrow();
+  });
+
+  it("rejects the other half of it: deadline: \"zitra\"", () => {
+    // Stored verbatim before, where no view can read it and nothing reports it.
+    expect(() => assertArgTypes("td_update_task", { deadline: "zitra" }, schema))
+      .toThrow(/deadline.*not a valid date.*YYYY-MM-DD/);
+    expect(() => assertArgTypes("td_update_task", { deadline: "2026-10-08" }, schema)).not.toThrow();
+  });
+
+  it("rejects a date that has the right shape but does not exist", () => {
+    expect(() => assertArgTypes("t", { scheduledDate: "2026-02-31" }, schema)).toThrow(/not a valid date/);
+    expect(() => assertArgTypes("t", { scheduledDate: "2026-13-01" }, schema)).toThrow(/not a valid date/);
+  });
+
+  it("takes a time only where the schema says datetime", () => {
+    expect(() => assertArgTypes("t", { completedAt: "2026-10-08T11:30:00Z" }, schema)).not.toThrow();
+    expect(() => assertArgTypes("t", { completedAt: "2026-10-08" }, schema)).not.toThrow();
+    expect(() => assertArgTypes("t", { from: "2026-10-08T11:30:00Z" }, schema)).not.toThrow();
+    // A date-only field keeps its format, so the column holds one shape.
+    expect(() => assertArgTypes("t", { scheduledDate: "2026-10-08T11:30:00Z" }, schema)).toThrow(/not a valid date/);
+  });
+
+  it("leaves ordinary strings alone, dates are decided by the schema", () => {
+    expect(() => assertArgTypes("t", { name: "zitra", id: "abc" }, schema)).not.toThrow();
+  });
+
+  it("ignores arguments the schema does not declare, which is the other guard's job", () => {
+    expect(() => assertArgTypes("t", { somethingElse: 1 }, schema)).not.toThrow();
+    expect(() => assertArgTypes("t", { id: "x" }, undefined)).not.toThrow();
+  });
+
+  it("reports every problem at once", () => {
+    let message = "";
+    try {
+      assertArgTypes("td_update_task", { isBlocked: "false", deadline: "zitra" }, schema);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toContain("isBlocked");
+    expect(message).toContain("deadline");
+  });
+});
+
+describe("real tool schemas are validated by it (TODO-441)", () => {
+  it("rejects isBlocked and deadline on the real td_update_task", async () => {
+    const { tools } = await import("./index.js");
+    const schema = tools.find((t) => t.name === "td_update_task")?.inputSchema as never;
+    expect(() => assertArgTypes("td_update_task", { isBlocked: "false" }, schema)).toThrow(/isBlocked/);
+    expect(() => assertArgTypes("td_update_task", { deadline: "zitra" }, schema)).toThrow(/deadline/);
+    expect(() => assertArgTypes("td_update_task", { id: "x", deadline: "2026-10-08", isBlocked: true }, schema))
+      .not.toThrow();
+  });
+
+  it("rejects a bad loggedAt on the shared worklog tool too", async () => {
+    const { tools } = await import("./index.js");
+    const schema = tools.find((t) => t.name === "td_add_shared_worklog")?.inputSchema as never;
+    expect(() => assertArgTypes("td_add_shared_worklog", { loggedAt: "vcera" }, schema)).toThrow(/loggedAt/);
   });
 });

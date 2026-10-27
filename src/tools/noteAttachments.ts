@@ -50,6 +50,7 @@ export const noteAttachmentTools: Tool[] = [
       properties: {
         id: { type: "string", description: "Note attachment ID (required)" },
         savePath: { type: "string", description: "Optional path to save the file to disk, RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); escapes are rejected" },
+        overwrite: { type: "boolean", description: "Replace the file if savePath already exists. Default false: a download never destroys a file unasked (TODO-441)." },
       },
       required: ["id"],
     },
@@ -78,7 +79,7 @@ export async function handleNoteAttachmentTool(
     case "td_list_note_attachments":
       return listNoteAttachments(evolu, args as { noteId: string });
     case "td_download_note_attachment":
-      return downloadNoteAttachment(evolu, args as { id: string; savePath?: string });
+      return downloadNoteAttachment(evolu, args as { id: string; savePath?: string; overwrite?: boolean });
     case "td_delete_note_attachment":
       return deleteNoteAttachment(evolu, args as { id: string });
     default:
@@ -190,7 +191,7 @@ async function listNoteAttachments(
 
 async function downloadNoteAttachment(
   evolu: EvoluInstance,
-  args: { id: string; savePath?: string }
+  args: { id: string; savePath?: string; overwrite?: boolean }
 ) {
   const query = evolu.createQuery((db: any) =>
     db
@@ -212,7 +213,7 @@ async function downloadNoteAttachment(
   }
 
   if (args.savePath) {
-    const target = resolveDownloadPath(args.savePath);
+    const target = resolveDownloadPath(args.savePath, { overwrite: args.overwrite === true });
     const dir = dirname(target);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });

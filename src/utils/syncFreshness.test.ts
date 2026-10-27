@@ -5,6 +5,8 @@ import {
   incompleteCopyMessage,
   assertCopyCanNumberTasks,
   __resetCopyFreshnessForTests,
+  fetchRelayMessageCount,
+  RELAY_USAGE_TIMEOUT_MS,
 } from "./syncFreshness.js";
 
 /**
@@ -111,5 +113,46 @@ describe("assertCopyCanNumberTasks", () => {
     await expect(
       assertCopyCanNumberTasks({ evolu, ownerId: null, mnemonic: "x", fetchRemote: async () => 100 }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("fetchRelayMessageCount has a bound (TODO-441)", () => {
+  // A 24-word mnemonic is not needed: signOwnerRequest is reached only after
+  // the fetch is built, and the fake fetch below answers before that matters.
+  const MNEMONIC = "abandon ".repeat(23) + "art";
+
+  it("passes an abort signal, so a relay that never answers cannot hang a create", async () => {
+    // This fetch had no timeout and sits in front of every td_create_task: a
+    // relay that accepts the connection and stays silent held task creation
+    // for as long as the MCP client waits, which is 1800s.
+    let seen: RequestInit | undefined;
+    const fetchSpy = (async (_url: string, init?: RequestInit) => {
+      seen = init;
+      return { ok: true, json: async () => ({ messageCount: 7 }) } as unknown as Response;
+    }) as unknown as typeof globalThis.fetch;
+
+    const count = await fetchRelayMessageCount("owner-1", MNEMONIC, {
+      fetch: fetchSpy,
+      baseUrl: "https://relay.example",
+    });
+    expect(count).toBe(7);
+    expect(seen?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("reads an aborted request as unknown, not as zero", async () => {
+    // Null is "do not know": a caller treating it as zero would conclude the
+    // copy is complete on every hiccup, which is what this guard prevents.
+    const fetchSpy = (async () => {
+      throw new DOMException("The operation was aborted", "TimeoutError");
+    }) as unknown as typeof globalThis.fetch;
+
+    await expect(
+      fetchRelayMessageCount("owner-1", MNEMONIC, { fetch: fetchSpy, baseUrl: "https://relay.example" }),
+    ).resolves.toBeNull();
+  });
+
+  it("keeps the bound in step with the tier check", () => {
+    expect(RELAY_USAGE_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(RELAY_USAGE_TIMEOUT_MS).toBeLessThanOrEqual(5000);
   });
 });

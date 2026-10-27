@@ -80,6 +80,10 @@ export const attachmentTools: Tool[] = [
           type: "string",
           description: "Optional path to save the attachment to disk, RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); paths escaping that directory are rejected. If provided, writes the file and returns the path instead of base64 content.",
         },
+        overwrite: {
+          type: "boolean",
+          description: "Replace the file if savePath already exists. Default false: a download never destroys a file unasked (TODO-441).",
+        },
       },
       required: ["id"],
     },
@@ -105,7 +109,7 @@ export async function handleAttachmentTool(
     case "td_delete_attachment":
       return deleteAttachment(evolu, args as { id: string });
     case "td_download_attachment":
-      return downloadAttachment(evolu, args as { id: string; savePath?: string });
+      return downloadAttachment(evolu, args as { id: string; savePath?: string; overwrite?: boolean });
     default:
       return undefined;
   }
@@ -278,7 +282,7 @@ async function deleteAttachment(
 
 async function downloadAttachment(
   evolu: EvoluInstance,
-  args: { id: string; savePath?: string }
+  args: { id: string; savePath?: string; overwrite?: boolean }
 ) {
   const query = evolu.createQuery((db: any) =>
     db
@@ -321,7 +325,7 @@ async function downloadAttachment(
   }
 
   if (args.savePath) {
-    const target = resolveDownloadPath(args.savePath);
+    const target = resolveDownloadPath(args.savePath, { overwrite: args.overwrite === true });
     const dir = dirname(target);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });

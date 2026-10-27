@@ -53,6 +53,17 @@ export function missingMessages({ local, remote }: MessageCounts): number | null
 const USAGE_PATH = "/api/owner-usage";
 
 /**
+ * Bound on the usage request, matching the tier check in tierWarning.ts.
+ *
+ * This fetch had none, and it sits in front of every `td_create_task`: a relay
+ * that accepts the connection and never answers would hang task creation for as
+ * long as the client waits, which is 1800s. The timeout turns that into the
+ * `null` this function already treats as "unknown", which lets the write
+ * through. (TODO-441)
+ */
+export const RELAY_USAGE_TIMEOUT_MS = 3000;
+
+/**
  * Messages the relay holds for this owner, or null when it cannot be asked.
  *
  * Null is "unknown", never "none". A caller that treats it as zero would
@@ -68,7 +79,11 @@ export async function fetchRelayMessageCount(
   const base = deps.baseUrl ?? relayHttpBase(process.env.TODOCKO_RELAY_URL);
   try {
     const headers = await signOwnerRequest(ownerId, mnemonic, "GET", USAGE_PATH);
-    const response = await doFetch(`${base}${USAGE_PATH}`, { method: "GET", headers: { ...headers } });
+    const response = await doFetch(`${base}${USAGE_PATH}`, {
+      method: "GET",
+      headers: { ...headers },
+      signal: AbortSignal.timeout(RELAY_USAGE_TIMEOUT_MS),
+    });
     if (!response.ok) return null;
     const raw: unknown = await response.json();
     if (!raw || typeof raw !== "object") return null;

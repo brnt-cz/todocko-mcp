@@ -1,6 +1,6 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { EvoluInstance } from "../evolu.js";
-import { assertRequiredArgs } from "./pure.js";
+import { assertRequiredArgs, assertArgTypes } from "./pure.js";
 
 // Feature modules
 import { projectTools, handleProjectTool } from "./projects.js";
@@ -25,7 +25,7 @@ import { appSettingTools, handleAppSettingTool } from "./appSettings.js";
 import { activityLogTools, handleActivityLogTool } from "./activityLog.js";
 import { projectNoteTools, handleProjectNoteTool } from "./projectNotes.js";
 import { projectDocTools, handleProjectDocTool } from "./projectDocs.js";
-import { systemNotificationTools, handleSystemNotificationTool } from "./systemNotifications.js";
+import { systemNotificationTools, adminOnlySystemNotificationTools, handleSystemNotificationTool } from "./systemNotifications.js";
 import { userMessageTools, handleUserMessageTool } from "./userMessages.js";
 import { analyticsTools, handleAnalyticsTool } from "./analytics.js";
 import { gitEventTools, handleGitEventTool } from "./gitEvents.js";
@@ -58,6 +58,19 @@ export const tools: Tool[] = [
   ...analyticsTools,
   ...gitEventTools,
   ...diagnosticTools,
+];
+
+/**
+ * Every tool this server knows, whether or not this installation registers it.
+ *
+ * `tools` is what the client is offered and now depends on the environment: the
+ * two admin notification tools are left out without TODOCKO_RELAY_ADMIN_KEY
+ * (TODO-441). Documentation and the catalogue tests describe the server, not one
+ * machine's configuration, so they read this instead.
+ */
+export const allTools: Tool[] = [
+  ...tools,
+  ...adminOnlySystemNotificationTools.filter((t) => !tools.some((x) => x.name === t.name)),
 ];
 
 // Handlers in priority order (most common first)
@@ -101,6 +114,10 @@ export async function handleToolCall(
   // a missing id actually did. (TODO-292)
   const schema = tools.find((t) => t.name === name)?.inputSchema;
   assertRequiredArgs(name, args, schema as { required?: string[]; properties?: Record<string, unknown> } | undefined);
+  // The same choke point for the values themselves: the declared types and the
+  // date formats were never checked, so `isBlocked: "false"` was stored as true
+  // and `deadline: "zitra"` went into the column as written. (TODO-441)
+  assertArgTypes(name, args, schema as { properties?: Record<string, unknown> } | undefined);
 
   for (const handler of handlers) {
     const result = await handler(name, args, evolu);
