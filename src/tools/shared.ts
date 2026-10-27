@@ -696,6 +696,7 @@ export const sharedTools: Tool[] = [
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         id: { type: "string", description: "Attachment ID (required)" },
         savePath: { type: "string", description: "Path to write the file to (optional), RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); escapes are rejected" },
+        overwrite: { type: "boolean", description: "Replace the file if savePath already exists. Default false: a download never destroys a file unasked (TODO-441)." },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -784,6 +785,7 @@ export const sharedTools: Tool[] = [
         ownerSecret: { type: "string", description: "Owner secret from projectRef (required)" },
         id: { type: "string", description: "Note attachment ID (required)" },
         savePath: { type: "string", description: "Optional path to save the file to disk, RELATIVE to ~/Downloads (or TODOCKO_DOWNLOAD_DIR); escapes are rejected" },
+        overwrite: { type: "boolean", description: "Replace the file if savePath already exists. Default false: a download never destroys a file unasked (TODO-441)." },
       },
       required: ["sharedOwnerId", "ownerSecret", "id"],
     },
@@ -1114,7 +1116,7 @@ export async function handleSharedTool(
     case "td_list_shared_attachments":
       return listSharedAttachments(args as { sharedOwnerId: string; ownerSecret: string; taskId: string });
     case "td_download_shared_attachment":
-      return downloadSharedAttachment(args as { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string });
+      return downloadSharedAttachment(args as { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string; overwrite?: boolean });
     case "td_delete_shared_attachment":
       return deleteSharedAttachment(args as { sharedOwnerId: string; ownerSecret: string; id: string });
     case "td_list_shared_members":
@@ -1156,6 +1158,7 @@ export async function handleSharedTool(
         ownerSecret: string;
         id: string;
         savePath?: string;
+        overwrite?: boolean;
       });
     case "td_delete_shared_note_attachment":
       return deleteSharedNoteAttachment(args as {
@@ -2901,7 +2904,7 @@ async function listSharedNoteAttachments(
 }
 
 async function downloadSharedNoteAttachment(
-  args: { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string }
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string; overwrite?: boolean }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
@@ -2934,7 +2937,7 @@ async function downloadSharedNoteAttachment(
     }
 
     if (args.savePath) {
-      const target = resolveDownloadPath(args.savePath);
+      const target = resolveDownloadPath(args.savePath, { overwrite: args.overwrite === true });
       const dir = dirname(target);
       if (!existsSync(dir)) {
         mkdirSync(dir, { recursive: true });
@@ -3102,7 +3105,7 @@ async function listSharedAttachments(
 }
 
 async function downloadSharedAttachment(
-  args: { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string }
+  args: { sharedOwnerId: string; ownerSecret: string; id: string; savePath?: string; overwrite?: boolean }
 ) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) throw new Error("Project Evolu not initialized");
@@ -3145,7 +3148,7 @@ async function downloadSharedAttachment(
     if (!base64) return { error: "Attachment data is empty (may have been deleted)" };
 
     if (args.savePath) {
-      const target = resolveDownloadPath(args.savePath);
+      const target = resolveDownloadPath(args.savePath, { overwrite: args.overwrite === true });
       const dir = dirname(target);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       writeFileSync(target, Buffer.from(base64, "base64"));

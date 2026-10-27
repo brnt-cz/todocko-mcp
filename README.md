@@ -355,6 +355,11 @@ Broadcast oznámení pro všechny uživatele. Zápis a výpis včetně expirovan
 vyžaduje `TODOCKO_RELAY_ADMIN_KEY`; obráceným směrem jdou zprávy od uživatelů,
 viz níž.
 
+Bez `TODOCKO_RELAY_ADMIN_KEY` se `td_create_system_notification`
+a `td_delete_system_notification` klientovi vůbec nenabízejí (nemohly by nic
+jiného než vrátit 401) a u výpisu zmizí přepínač `admin`. Klíč se navíc nikdy
+neposílá přes nešifrované `http://` jinam než na localhost. (TODO-441)
+
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_system_notifications` | Seznam aktivních oznámení (s `admin: true` i expirovaná) |
@@ -616,8 +621,24 @@ todo add "X" --json
 **Důležité:** Vaše zálohovací fráze (mnemonic) je citlivý údaj!
 
 - Nikdy ji nesdílejte v přímé konverzaci s AI
-- V konfiguraci MCP serveru je fráze bezpečná (AI k ní nemá přístup)
+- MCP server frázi nevystavuje přes žádný nástroj: nejde ji z Todočka přečíst ani vypsat
+- To ale neznamená, že k ní AI nemá přístup. Agent, který umí spouštět příkazy nebo číst
+  soubory (Claude Code a podobní), si `~/.claude.json` nebo `~/.claude/settings.json`
+  přečte stejně jako kterýkoli jiný soubor. Konfigurace chrání frázi před nástroji MCP,
+  ne před shellem. (TODO-441)
 - Kdokoli s vaší frází má plný přístup k vašim datům
+
+### Kontrola argumentů a cest (TODO-441)
+
+- Hodnoty argumentů se kontrolují proti typu, který nástroj deklaruje. `isBlocked: "false"`
+  se dřív ukládalo jako `true` (neprázdný řetězec je pravdivý), teď je to chyba.
+- Datová pole (`deadline`, `scheduledDate`, `loggedAt`, `recurrenceEndDate`, `startDate`,
+  `endDate`, …) musí být `YYYY-MM-DD`; kde schéma mluví o datetime (`completedAt`,
+  `expiresAt`, `from`/`to` v activity logu), projde i ISO datetime. `deadline: "zítra"`
+  se dřív uložilo doslova a nikdo se to nedozvěděl.
+- Přílohy: cesty se vyhodnocují až po rozpadnutí symlinků, takže odkaz uvnitř povoleného
+  adresáře už nevede ven. Stahování nově odmítá tečkové soubory (stejně jako nahrávání)
+  a nepřepíše existující soubor, dokud nepošleš `overwrite: true`.
 
 ### WebSocket Origin (TODO-169)
 
@@ -1177,6 +1198,11 @@ Documents are notes with `isDoc`, so they can nest under another document via `p
 
 Broadcast notices for every user. Writing, and listing expired ones, needs `TODOCKO_RELAY_ADMIN_KEY`.
 
+Without `TODOCKO_RELAY_ADMIN_KEY`, `td_create_system_notification` and
+`td_delete_system_notification` are not offered to the client at all (a 401 is
+the only answer they could give) and the listing drops its `admin` flag. The key
+is never sent over plain `http://` to anything but localhost. (TODO-441)
+
 | Tool | Description |
 |------|-------------|
 | `td_list_system_notifications` | List active system/broadcast notifications from the relay server. |
@@ -1295,8 +1321,24 @@ What recurring tasks do I have?
 **Important:** Your backup phrase (mnemonic) is sensitive data!
 
 - Never share it directly in conversation with AI
-- In the MCP server configuration, the phrase is safe (AI has no access to it)
+- The MCP server never exposes the phrase through a tool: nothing in Todocko can read or print it
+- That is not the same as the AI having no access to it. An agent that can run commands or
+  read files (Claude Code and the like) reads `~/.claude.json` or `~/.claude/settings.json`
+  like any other file. The configuration keeps the phrase away from MCP tools, not from a
+  shell. (TODO-441)
 - Anyone with your phrase has full access to your data
+
+### Argument and path checks (TODO-441)
+
+- Argument values are checked against the type the tool declares. `isBlocked: "false"`
+  used to be stored as `true` (a non-empty string is truthy); it is an error now.
+- Date arguments (`deadline`, `scheduledDate`, `loggedAt`, `recurrenceEndDate`,
+  `startDate`, `endDate`, ...) must be `YYYY-MM-DD`; where the schema says datetime
+  (`completedAt`, `expiresAt`, activity-log `from`/`to`) an ISO datetime is accepted too.
+  `deadline: "zitra"` used to be stored verbatim with nothing reporting it.
+- Attachments: paths are judged after symlinks are resolved, so a link inside the allowed
+  directory no longer leads out of it. Downloads now refuse dotfiles (as uploads already
+  did) and never replace an existing file unless `overwrite: true` is passed.
 
 ### Shared project write key rotation (TODO-268)
 

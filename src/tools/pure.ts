@@ -9,8 +9,87 @@
  *
  * helpers.ts re-exports everything here, so existing imports keep working.
  */
-import { resolve, join, sep } from "path";
+import { resolve, join, sep, dirname } from "path";
 import { homedir } from "os";
+import { existsSync, realpathSync, statSync } from "fs";
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The same path with every symlink along it resolved, as far as it exists.
+ *
+ * Confinement used to be decided on the lexical path alone, which a symlink
+ * walks straight out of: `~/Downloads/out -> /etc` makes `out/cron.d/x` look
+ * like a path inside the base while the write lands in /etc. Neither upload nor
+ * download looked, and both follow the link. (TODO-441)
+ *
+ * Only the existing part can be resolved - a download names a file that is not
+ * there yet - so this resolves the deepest existing ancestor and re-appends the
+ * rest. That is enough: a symlink can only redirect through a component that
+ * exists.
+ */
+function realPathOfExistingPart(target: string): string {
+  let existing = target;
+  const missing: string[] = [];
+  while (!existsSync(existing)) {
+    const parent = dirname(existing);
+    // Root reached without finding anything that exists: nothing to resolve.
+    if (parent === existing) return target;
+    missing.unshift(existing.slice(parent.length + 1));
+    existing = parent;
+  }
+  try {
+    return join(realpathSync(existing), ...missing);
+  } catch {
+    // A path that cannot be resolved (permissions, a race) is judged lexically
+    // rather than let through unchecked.
+    return target;
+  }
+}
+
+/** Is `target` the base directory itself or something underneath it? */
+function isInside(base: string, target: string): boolean {
+  return target === base || target.startsWith(base + sep);
+}
+
+/**
+ * Confine a user-supplied path to `base`, lexically AND after resolving symlinks.
+ *
+ * Both ends are checked against the real base too, because the base itself may
+ * be a symlink (/tmp on macOS is) and comparing a resolved target with an
+ * unresolved base would then refuse every legitimate path.
+ */
+function confineToBase(base: string, input: string, label: string, hint: string): string {
+  const target = resolve(base, input);
+  const realBase = realPathOfExistingPart(base);
+  const realTarget = realPathOfExistingPart(target);
+
+  if (!isInside(base, target) || !isInside(realBase, realTarget)) {
+    throw new Error(
+      `${label} "${input}" escapes the allowed directory (${base}). ` +
+        `Use a relative path inside it, or set ${hint}.` +
+        (isInside(base, target) ? " It resolves out of it through a symlink." : ""),
+    );
+  }
+  return target;
+}
+
+/** Refuse a dotfile anywhere below `base`: that is where credentials live. */
+function assertNotDotfile(base: string, target: string, input: string, label: string): void {
+  const relative = target === base ? "" : target.slice(base.length + 1);
+  if (relative.split(sep).some((segment) => segment.startsWith("."))) {
+    throw new Error(
+      `${label} "${input}" points at a dotfile, which is refused: those are ` +
+        `where credentials live.`,
+    );
+  }
+}
 
 /**
  * Resolve a user-supplied attachment `savePath` to an absolute path confined to
@@ -18,16 +97,34 @@ import { homedir } from "os";
  * TODOCKO_DOWNLOAD_DIR). Rejects absolute/`..` escapes so a download can't
  * overwrite arbitrary files (e.g. ~/.ssh/authorized_keys, ~/.bashrc) when the
  * MCP/CLI is driven by an agent acting on untrusted content. (TODO-184)
+ *
+ * Two further rules came with TODO-441, both of which uploads already had or
+ * implied:
+ *
+ * - dotfiles are refused here as well. A download writing `.bashrc` or
+ *   `.config/...` is the same attack as an upload reading one, only pointing
+ *   the other way, and the upload side has refused it since TODO-286.
+ * - an existing file is never replaced unless the caller asked for it with
+ *   `overwrite: true`. The previous behaviour was a silent overwrite, so one
+ *   mistaken savePath destroyed a file with no way back and a `success` reply.
  */
-export function resolveDownloadPath(savePath: string): string {
+export function resolveDownloadPath(
+  savePath: string,
+  options: { overwrite?: boolean } = {},
+): string {
   const base = resolve(process.env.TODOCKO_DOWNLOAD_DIR || join(homedir(), "Downloads"));
-  const target = resolve(base, savePath);
-  if (target !== base && !target.startsWith(base + sep)) {
+  const target = confineToBase(base, savePath, "savePath", "TODOCKO_DOWNLOAD_DIR");
+  assertNotDotfile(base, target, savePath, "savePath");
+
+  // Only an existing FILE is a loss. An existing directory makes the write fail
+  // on its own, and `savePath: "."` resolving to the base must keep working.
+  if (!options.overwrite && existsSync(target) && !isDirectory(target)) {
     throw new Error(
-      `savePath "${savePath}" escapes the allowed download directory (${base}). ` +
-        `Use a relative path inside it, or set TODOCKO_DOWNLOAD_DIR.`,
+      `savePath "${savePath}" already exists and would be overwritten. ` +
+        `Pass overwrite: true if replacing it is intended, or choose another name.`,
     );
   }
+
   return target;
 }
 
@@ -58,23 +155,10 @@ export function resolveUploadPath(filePath: string): string {
       process.env.TODOCKO_DOWNLOAD_DIR ||
       join(homedir(), "Downloads"),
   );
-  const target = resolve(base, filePath);
-
-  if (target !== base && !target.startsWith(base + sep)) {
-    throw new Error(
-      `filePath "${filePath}" escapes the allowed upload directory (${base}). ` +
-        `Use a relative path inside it, or set TODOCKO_UPLOAD_DIR.`,
-    );
-  }
-
-  const relative = target.slice(base.length + 1);
-  if (relative.split(sep).some((segment) => segment.startsWith("."))) {
-    throw new Error(
-      `filePath "${filePath}" points at a dotfile, which is refused: those are ` +
-        `where credentials live, and an upload is how they would leave this machine.`,
-    );
-  }
-
+  // Symlinks are resolved since TODO-441: `~/Downloads/key -> ~/.ssh/id_ed25519`
+  // passed both checks below and the file was read and attached anyway.
+  const target = confineToBase(base, filePath, "filePath", "TODOCKO_UPLOAD_DIR");
+  assertNotDotfile(base, target, filePath, "filePath");
   return target;
 }
 
@@ -317,6 +401,141 @@ export function assertRequiredArgs(
     `${toolName}: ${parts.join(". ")}.` +
       ` Accepted arguments: ${accepted.join(", ") || "(none)"}.`,
   );
+}
+
+/** One property as the tool schemas declare it. */
+interface SchemaProperty {
+  readonly type?: string | string[];
+  readonly items?: { type?: string };
+  readonly description?: string;
+}
+
+/**
+ * Arguments that hold a date even though their name does not end in Date/At.
+ *
+ * Kept to the two the activity-log tools use. The description still has to say
+ * so, so a future `to` meaning something else is not dragged in.
+ */
+const DATE_ARG_NAMES = new Set(["from", "to", "deadline"]);
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?(\.\d{1,6})?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/** Does the schema declare this argument as a date? */
+function dateKind(key: string, property: SchemaProperty): "date" | "datetime" | null {
+  const types = Array.isArray(property.type) ? property.type : [property.type];
+  if (!types.includes("string")) return null;
+  if (!DATE_ARG_NAMES.has(key) && !/(Date|At)$/.test(key)) return null;
+  const description = property.description ?? "";
+  if (!/ISO|YYYY-MM-DD|date/i.test(description)) return null;
+  // "ISO timestamp", "ISO datetime" and "ISO date/datetime" all take a time.
+  return /datetime|timestamp/i.test(description) ? "datetime" : "date";
+}
+
+/** Is `value` a real calendar date, not just the right shape? (2026-02-31 is not.) */
+function isRealDate(ymd: string): boolean {
+  const [y, m, d] = ymd.split("-").map(Number) as [number, number, number];
+  const parsed = new Date(Date.UTC(y, m - 1, d));
+  return (
+    parsed.getUTCFullYear() === y && parsed.getUTCMonth() === m - 1 && parsed.getUTCDate() === d
+  );
+}
+
+function typeMatches(declared: string, value: unknown): boolean {
+  switch (declared) {
+    case "string":
+      return typeof value === "string";
+    case "boolean":
+      return typeof value === "boolean";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "array":
+      return Array.isArray(value);
+    case "object":
+      return typeof value === "object" && value !== null && !Array.isArray(value);
+    case "null":
+      return value === null;
+    default:
+      // An unknown declaration is not something to fail a call over.
+      return true;
+  }
+}
+
+function describeValue(value: unknown): string {
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+/**
+ * Check argument VALUES against the types the tool's own schema declares.
+ *
+ * `assertRequiredArgs` checked that an argument was there, that it was declared
+ * and that an enum value was listed, and nothing else - so the declared type
+ * was documentation. JSON-RPC carries real JSON types, but a caller that builds
+ * the call from text sends `isBlocked: "false"`, which is a non-empty string and
+ * therefore stored as TRUE: the task came back blocked by the attempt to
+ * unblock it. Dates had the same hole, with `deadline: "zítra"` written to the
+ * column verbatim, where no view can read it and nothing ever reports it.
+ * (TODO-441)
+ *
+ * `null` is accepted for every argument regardless of type: that is how most of
+ * the update tools clear a field, and refusing it here would break them.
+ */
+export function assertArgTypes(
+  toolName: string,
+  args: Record<string, unknown>,
+  schema: { properties?: Record<string, unknown> } | undefined,
+): void {
+  const properties = (schema?.properties ?? {}) as Record<string, SchemaProperty>;
+  const problems: string[] = [];
+
+  for (const [key, value] of Object.entries(args)) {
+    const property = properties[key];
+    // Undeclared arguments are assertRequiredArgs' business, not this one's.
+    if (!property || value === undefined || value === null) continue;
+
+    const declared = (Array.isArray(property.type) ? property.type : [property.type]).filter(
+      (t): t is string => typeof t === "string",
+    );
+    if (declared.length > 0 && !declared.some((t) => typeMatches(t, value))) {
+      problems.push(
+        `${key} must be ${declared.join(" or ")}, got ${describeValue(value)} (${JSON.stringify(value)})`,
+      );
+      continue;
+    }
+
+    if (Array.isArray(value) && typeof property.items?.type === "string") {
+      const itemType = property.items.type;
+      const bad = value.findIndex((item) => !typeMatches(itemType, item));
+      if (bad >= 0) {
+        problems.push(
+          `${key}[${bad}] must be ${itemType}, got ${describeValue(value[bad])} (${JSON.stringify(value[bad])})`,
+        );
+        continue;
+      }
+    }
+
+    const kind = dateKind(key, property);
+    if (kind && typeof value === "string") {
+      const ok =
+        kind === "datetime"
+          ? (DATE_ONLY.test(value) || DATETIME.test(value)) && isRealDate(value.slice(0, 10))
+          : DATE_ONLY.test(value) && isRealDate(value);
+      if (!ok) {
+        problems.push(
+          `${key}=${JSON.stringify(value)} is not a valid date` +
+            (kind === "datetime"
+              ? ` (expected YYYY-MM-DD or an ISO datetime)`
+              : ` (expected YYYY-MM-DD)`),
+        );
+      }
+    }
+  }
+
+  if (problems.length === 0) return;
+  throw new Error(`${toolName}: invalid argument(s): ${problems.join("; ")}.`);
 }
 
 /**

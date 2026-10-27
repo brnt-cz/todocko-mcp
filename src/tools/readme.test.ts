@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { tools } from "./index.js";
+import { allTools } from "./index.js";
 
 /**
  * Both README tool tables must list every tool, and only real tools (TODO-303).
@@ -45,7 +45,10 @@ function listed(section: string): Set<string> {
 }
 
 describe("README tool tables", () => {
-  const names = new Set(tools.map((t) => t.name));
+  // The catalogue, not this machine's registration: the admin notification
+  // tools are documented but only offered with TODOCKO_RELAY_ADMIN_KEY.
+  // (TODO-441)
+  const names = new Set(allTools.map((t) => t.name));
   const { czech, english, heading } = halves();
 
   it("finds both tables, so an empty comparison cannot pass", () => {
