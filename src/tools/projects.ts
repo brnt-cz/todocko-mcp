@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, String as EvoluString, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists, assertValidProjectCode } from "./helpers.js";
 import { freeTierNote } from "./tierWarning.js";
 
 export const projectTools: Tool[] = [
@@ -47,7 +47,7 @@ export const projectTools: Tool[] = [
         },
         code: {
           type: "string",
-          description: "Project code (e.g., 'TODO', 'PROJ') — used in task codes like TODO-1",
+          description: "Project code (e.g., 'TODO', 'PROJ'), upper-case letters and digits only (A-Z, 0-9), used in task codes like TODO-1",
         },
         color: {
           type: "string",
@@ -73,7 +73,7 @@ export const projectTools: Tool[] = [
         },
         code: {
           type: "string",
-          description: "New project code",
+          description: "New project code, upper-case letters and digits only (A-Z, 0-9)",
         },
         color: {
           type: "string",
@@ -213,6 +213,10 @@ async function createProject(
   evolu: EvoluInstance,
   args: { name: string; code?: string; color?: string }
 ) {
+  // The app accepts only A-Z and 0-9 here; anything else gives task codes the
+  // app does not recognise as codes. (TODO-434)
+  assertValidProjectCode(args.code);
+
   // Get max position
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("project").select(["position"]).orderBy("position", "desc").limit(1)
@@ -243,6 +247,8 @@ async function updateProject(
   evolu: EvoluInstance,
   args: { id: string; name?: string; code?: string; color?: string; isArchived?: boolean; isHiddenFromFilters?: boolean; autoApproveMembers?: boolean; isDeleted?: boolean }
 ) {
+  // Same rule as td_create_project. (TODO-434)
+  assertValidProjectCode(args.code);
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "project", args.id, "Project");
 
