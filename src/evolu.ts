@@ -7,7 +7,6 @@
 
 import WebSocket from "ws";
 import { isSocketUnanswered, withLoadQueryTimeout } from "./tools/pure.js";
-import Database from "better-sqlite3";
 import { existsSync, mkdirSync } from "fs";
 import { createHash } from "crypto";
 import { join } from "path";
@@ -126,6 +125,8 @@ import {
   createRun,
   AppName,
   Mnemonic,
+  RelayUrlFromString,
+  type RelayUrl,
 } from "@evolu/common";
 import { createAppOwner, mnemonicToOwnerSecret, OwnerSecret as OwnerSecretType, type AppOwner } from "@evolu/common/local-first";
 import { acquireInstanceLock, lockConflictMessage, type HeldLock } from "./instanceLock.js";
@@ -796,11 +797,23 @@ const DB_NAME = INSTANCE_SUFFIX ? `todocko-${INSTANCE_SUFFIX}` : "todocko";
  * it: https to wss, http to ws. A bare host falls back to production rather
  * than guessing at TLS. (TODO-266)
  */
-const RELAY_SERVERS = ((raw: string): string[] => {
-  if (raw.startsWith("wss://") || raw.startsWith("ws://")) return [raw.replace(/\/$/, "")];
-  if (raw.startsWith("https://")) return [raw.replace(/^https:\/\//, "wss://").replace(/\/$/, "")];
-  if (raw.startsWith("http://")) return [raw.replace(/^http:\/\//, "ws://").replace(/\/$/, "")];
-  return ["wss://relay.todocko.cz"];
+const RELAY_SERVERS = ((raw: string): RelayUrl[] => {
+  const toWebSocket = (): string => {
+    if (raw.startsWith("wss://") || raw.startsWith("ws://")) return raw.replace(/\/$/, "");
+    if (raw.startsWith("https://")) return raw.replace(/^https:\/\//, "wss://").replace(/\/$/, "");
+    if (raw.startsWith("http://")) return raw.replace(/^http:\/\//, "ws://").replace(/\/$/, "");
+    return "wss://relay.todocko.cz";
+  };
+  /*
+   * Evolu 8.27 brands a transport URL, so the string has to be parsed rather
+   * than handed over. `RelayUrlFromString` also rejects a URL with a query,
+   * which is right: `createOwnerWebSocketTransport` appends `?ownerId=` itself.
+   * The canonical spelling it returns keeps a trailing slash. (TODO-448)
+   */
+  const parsed = RelayUrlFromString.fromUnknown(toWebSocket());
+  if (parsed.ok) return [parsed.value];
+  console.error(`TODOCKO_RELAY_URL is not a usable relay URL: ${raw}. Using the default relay.`);
+  return [RelayUrlFromString.orThrow("wss://relay.todocko.cz")];
 })(process.env.TODOCKO_RELAY_URL || "wss://relay.todocko.cz");
 
 // --- Sync Health Tracking ---
@@ -1031,49 +1044,23 @@ function getDbPath(appOwner: AppOwner): string {
 }
 
 
-/**
- * Ensure columns declared in Schema exist in the SQLite database.
- * Evolu's ensureSchema doesn't always add new columns to existing tables,
- * which causes loadQuery to hang silently when SELECTing missing columns.
+/*
+ * `ensureMissingColumns` used to sit here. It opened the database file directly
+ * and ALTERed in any column the schema declared but the file lacked, because
+ * Evolu's ensureSchema did not always add one and a SELECT of a missing column
+ * made loadQuery hang without a word.
+ *
+ * It cannot work any more and is gone (TODO-448). Evolu 8.24 replaced
+ * better-sqlite3 in `@evolu/nodejs` with its own SQLite, which, unlike
+ * better-sqlite3, honours the encryption key Evolu passes for a client
+ * database. The file on disk is therefore encrypted and no outside reader
+ * opens it; an attempt fails with "file is not a database". The upside is that
+ * the local copy of every task is no longer sitting on the disk in plaintext.
+ *
+ * What to watch: if a newly declared column ever makes a query hang again,
+ * this is the workaround that used to cover it, and the fix now belongs in
+ * Evolu's own schema handling rather than in an ALTER behind its back.
  */
-function ensureMissingColumns(appOwner: AppOwner): void {
-  const dbPath = getDbPath(appOwner);
-  if (!existsSync(dbPath)) return;
-
-  try {
-    const db = new Database(dbPath);
-
-    // Map of table -> expected columns (from Schema) with their SQLite types
-    const expectedColumns: Record<string, string[]> = {};
-    for (const [tableName, tableSchema] of Object.entries(Schema)) {
-      expectedColumns[tableName] = Object.keys(tableSchema).filter(k => k !== "id");
-    }
-
-    for (const [tableName, columns] of Object.entries(expectedColumns)) {
-      // Check if table exists
-      const tableExists = db.prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
-      ).get(tableName);
-      if (!tableExists) continue;
-
-      // Get existing columns
-      const existingCols = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
-      const existingColNames = new Set(existingCols.map(c => c.name));
-
-      // Add missing columns
-      for (const col of columns) {
-        if (!existingColNames.has(col)) {
-          console.error(`Adding missing column ${tableName}.${col}`);
-          db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${col} ANY`).run();
-        }
-      }
-    }
-
-    db.close();
-  } catch (error) {
-    console.error("Error ensuring missing columns:", error);
-  }
-}
 
 /**
  * Initialize Evolu with the given mnemonic.
@@ -1109,10 +1096,6 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     return failInit(lockConflictMessage(lockResult.holder, dbPath));
   }
   registerLockRelease(lockResult.lock);
-
-  // Ensure missing columns exist in DB before Evolu starts
-  // Evolu's ensureSchema doesn't always add new columns to existing tables
-  ensureMissingColumns(appOwnerForChecks);
 
   // There used to be a belongsToDifferentMnemonic() guard here. It was written
   // for v7, where every mnemonic shared one database file and a switch would

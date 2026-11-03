@@ -18,9 +18,30 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Evolu v8 (TODO-88)
 
-MCP běží na `@evolu/common` 8.23.2 a `@evolu/nodejs` 4.3.4. Upgrade z 8.22
+MCP běží na `@evolu/common` 8.27.0 a `@evolu/nodejs` 4.6.0. Upgrade z 8.22
 (TODO-431) nevyžadoval změnu kódu; sync přes relay ověřen v obou směrech
 proti verzi 8.22.
+
+Upgrade na 8.27 (TODO-448) změnu kódu vyžadoval, a hlavně **mění formát
+databáze na disku**:
+
+- `@evolu/nodejs` 4.4 vyměnilo better-sqlite3 za vlastní SQLite. Ten na rozdíl
+  od better-sqlite3 respektuje šifrovací klíč, který Evolu pro klientskou
+  databázi předává, takže soubor v `~/.todocko` je nově **šifrovaný**. Starou
+  databázi psanou better-sqlite3 nový driver neotevře, skončí na
+  `file is not a database` (SQLITE_NOTADB, ověřeno na kopii reálné databáze).
+  **Při upgradu je proto nutné lokální databáze smazat**; jsou jen keší dat
+  z relaye, takže se stáhnou znovu (ověřeno: čerstvá databáze se dosynchronizovala
+  na 17 MB). Co nebylo odsynchronizované, je pryč, takže před smazáním
+  zkontrolovat `td_sync_status`.
+- Dopad na bezpečnost je naopak příjemný: lokální kopie všech úkolů už neleží na
+  disku v plaintextu. Druhá strana téže mince je, že do souboru nenahlédne ani
+  žádný vlastní nástroj, což odneslo `ensureMissingColumns`.
+- Transportní URL je od 8.27 brandovaný `RelayUrl`, takže `TODOCKO_RELAY_URL` se
+  parsuje přes `RelayUrlFromString` a URL s query se odmítne; `createOwnerWebSocketTransport`
+  si `?ownerId=` připojuje sám.
+- Platforma musí nově dodat `deleteDatabaseFiles` (maže soubor databáze i žurnál)
+  a `getDevicePersistence` i na hlavním vlákně, ne jen v shared workeru.
 
 Od Evolu 8.20.3 nese zápis do sdílené instance celého ownera,
 `{ owner: sharedOwner }`, ne `{ ownerId }`. Zapomenuté `ownerId` Evolu ignoruje
@@ -830,19 +851,16 @@ a do stderr jako `FATAL: Evolu dbWorker defect: ...`. Dřív se tvářil
 zdravě a každý dotaz visel, dokud to klient po 1800 s nevzdal. Řešení je `/mcp`
 reconnect v Claude Code.
 
-**2. Nesedící native binding.** `better-sqlite3` native binding byl zkompilován proti jiné Node.js ABI verzi, než pod kterou MCP server běží. `new Database()` selže s `ERR_DLOPEN_FAILED`, Evolu dbWorker init nikdy nedoběhne a všechny `loadQuery` volání visí navždy. Mutace (insert/update) reportují success, ale ve skutečnosti se nezapíšou.
+**2. Databáze, kterou nový driver neotevře.** Od TODO-448 je klientská databáze
+šifrovaná a starou, plaintextovou, nový driver odmítne: `file is not a database`.
+Symptom je stejný jako u všech vad dbWorkeru, tedy `Evolu dbWorker never answered`
+u každého volání. Řešení je smazat `~/.todocko/todocko*-<ownerId>.db` a nechat
+data stáhnout z relaye; předtím se ujistit přes `td_sync_status`, že nic nečeká
+na odeslání.
 
-Symptom v praxi: `td_sync_status` hlásí `ok`, `errorCount: 0`, ale `td_get_task`, `td_list_*` apod. timeoutují.
-
-Fix — přebuildit native binding proti aktuálnímu Node:
-```bash
-cd ~/.todocko-mcp # případně cesta, kde máš nainstalované todocko-mcp
-cd node_modules/better-sqlite3
-npx node-gyp rebuild --release
-```
-Pak `/mcp` reconnect v Claude Code.
-
-Mismatch je typický, pokud upgradneš Node.js (např. z v22 na v25) nebo přepneš mezi nvm a linuxbrew/brew Node. Při instalaci installer použije `node` z `PATH` — pokud `claude` později spouští MCP přes jiný node binary, binding nesedí.
+Dřív tu stával mismatch native bindingu better-sqlite3 (`ERR_DLOPEN_FAILED` po
+upgradu Node nebo přepnutí mezi nvm a brew). `@evolu/nodejs` 4.4 ho nahradilo
+předpřipraveným SQLite, takže se nic nekompiluje a tahle třída chyb zmizela.
 
 ## Vývoj
 

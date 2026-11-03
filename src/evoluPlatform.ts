@@ -40,17 +40,26 @@ import {
   type WebSocketCloseEvent,
   createWorker,
   waitForAbort,
+  err,
+  ok,
+  type Name,
+  type Result,
+  type UnknownError,
 } from "@evolu/common";
 import {
   createEvoluDeps as createCommonEvoluDeps,
   initSharedWorker,
   startDbWorker,
+  type DatabaseHeldError,
   type DbWorkerInit,
+  type DeleteDatabaseFiles,
   type EvoluDeps,
   type SharedWorkerInput,
   type SharedWorkerOutput,
 } from "@evolu/common/local-first";
-import { createBetterSqliteDriver, createBroadcastChannel } from "@evolu/nodejs";
+import { createNodeJsSqliteDriver, createBroadcastChannel } from "@evolu/nodejs";
+import { rm } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import type { CreateWebSocket, ReportDefect } from "@evolu/common";
 import { describeDefect } from "./tools/pure.js";
@@ -288,12 +297,43 @@ export function createNodeEvoluDeps(): EvoluDeps {
   return (cachedDeps ??= buildNodeEvoluDeps());
 }
 
+/**
+ * Delete the files of a database, which Evolu 8.27 requires of a platform.
+ *
+ * `Evolu.deleteDatabase` stopped being a stub, and `startDbWorker` now asks the
+ * platform to do the deleting, because only the platform knows where the files
+ * are. Ours is `createNodeJsSqliteDriver`, which opens `<name>.db` relative to
+ * the working directory, so this has to resolve the same way: `src/index.ts`
+ * chdirs into the Todocko directory at startup and everything below depends on
+ * it. The journal, WAL and shared-memory files go with it, or the next open
+ * would replay a journal belonging to a database that is gone.
+ *
+ * A missing file counts as deleted, as the contract asks, which `force` does.
+ * Evolu calls this while it holds the leader lock with the database closed, so
+ * nothing here waits for a release; a file still held surfaces as the
+ * `UnknownError` below rather than `DatabaseHeldError`, which this platform
+ * cannot tell apart. (TODO-448)
+ */
+const deleteDatabaseFiles: DeleteDatabaseFiles =
+  (name: Name) => async (): Promise<Result<void, DatabaseHeldError | UnknownError>> => {
+    try {
+      const base = resolve(`${name}.db`);
+      for (const suffix of ["", "-journal", "-wal", "-shm"]) {
+        await rm(`${base}${suffix}`, { force: true });
+      }
+      return ok();
+    } catch (error) {
+      return err<UnknownError>({ type: "UnknownError", error });
+    }
+  };
+
 function buildNodeEvoluDeps(): EvoluDeps {
   const createDbWorker = () =>
     createWorker<DbWorkerInit>((self) => {
       const run = createRun({
         ...createWorkerDeps(),
-        createSqliteDriver: createBetterSqliteDriver,
+        createSqliteDriver: createNodeJsSqliteDriver,
+        deleteDatabaseFiles,
         lockManager: navigator.locks,
         randomBytes: createRandomBytes(),
         reportDefect: reportDbWorkerDefect,
@@ -313,7 +353,7 @@ function buildNodeEvoluDeps(): EvoluDeps {
        *
        * "Persisted" is a claim Evolu asks platforms to make only when it is
        * certain, and here it is: the database is a file on disk opened through
-       * better-sqlite3, with no browser in between that might evict it, no
+       * Evolu's own SQLite, with no browser in between that might evict it, no
        * private window and no memory-only mode. That is exactly the case the
        * Evolu docs give for "Persisted" ("the database is the app's own file,
        * as in React Native").
@@ -332,6 +372,10 @@ function buildNodeEvoluDeps(): EvoluDeps {
     createDbWorker,
     createBroadcastChannel,
     createMessageChannel,
+    // Asked for here as well since Evolu 8.27, not only in the shared worker:
+    // the main thread reports persistence without going through sync. Same
+    // answer and the same reason as above. (TODO-448)
+    getDevicePersistence: () => Promise.resolve("Persisted" as const),
     lockManager: navigator.locks,
     // Nothing to reload in a CLI process — the MCP host restarts us.
     reloadApp: () => {},
