@@ -197,6 +197,23 @@ export function appSettingRowId(key: string): AppSettingId {
   return createIdFromString(key) as unknown as AppSettingId;
 }
 
+export const ShareInviteId = id("ShareInvite");
+export type ShareInviteId = typeof ShareInviteId.Output;
+
+export const MemberGrantId = id("MemberGrant");
+export type MemberGrantId = typeof MemberGrantId.Output;
+
+/**
+ * The row id of the owner's grant for one member, derived from the pair.
+ *
+ * Must match the app's `src/db/memberVerification.ts:memberGrantRowId`
+ * exactly. Two devices of the same owner granting the same member otherwise
+ * race to create two rows with no rule for picking between them. (TODO-440)
+ */
+export function memberGrantRowId(sharedOwnerId: string, memberAppOwnerId: string): MemberGrantId {
+  return createIdFromString(`memberGrant:${sharedOwnerId}:${memberAppOwnerId}`) as unknown as MemberGrantId;
+}
+
 export const SavedViewId = id("SavedView");
 export type SavedViewId = typeof SavedViewId.Output;
 
@@ -247,6 +264,33 @@ export const Schema = {
     key: String,
     value: String,
   },
+  /*
+   * Co vlastník sdíleného projektu komu udělil (app TODO-440, do MCP doplněno
+   * v TODO-112, kolo XI).
+   *
+   * `projectMember.permission` píše sám člen, takže o write key rozhodovat
+   * nemůže. Vlastník si vede vlastní záznam tady, ve své osobní instanci, kam
+   * žádný člen nedosáhne, a skutečné oprávnění je to nižší z nároku a záznamu.
+   * Dokud tyhle dvě tabulky v MCP nebyly, zapisovala změna oprávnění přes
+   * `td_update_shared_member` jen ten nárok: člen write key nedostal a appka
+   * u něj navíc začala hlásit, že si nárokuje víc, než má potvrzeno.
+   *
+   * `shareInvite` je pozvánka na jeden vygenerovaný odkaz, její id cestuje
+   * v tokenu. MCP odkazy nevydává, takže jen čte: podle ní umí spočítat, na co
+   * má člen nárok z pozvánky, kterou přišel. `memberGrant` je rozhodnutí
+   * vlastníka a pozvánku přebíjí, to MCP zapisuje.
+   */
+  shareInvite: {
+    id: ShareInviteId,
+    sharedOwnerId: String,
+    permission: String,
+  },
+  memberGrant: {
+    id: MemberGrantId,
+    sharedOwnerId: String,
+    memberAppOwnerId: String,
+    permission: String,
+  },
   project: {
     id: ProjectId,
     name: NonEmptyTrimmedString100,
@@ -288,6 +332,11 @@ export const Schema = {
     sprintNumber: nullOr(Int),
     parentTaskId: nullOr(TaskId),
     deletedAt: nullOr(String), // trash timestamp, mirrors app (TODO-179/182)
+    // Datum vzniku ze zálohy; systémový createdAt zapsat nejde, takže obnovený
+    // úkol by jinak tvrdil, že vznikl v den obnovy. Appka čte
+    // coalesce(originalCreatedAt, createdAt), MCP přes `effectiveCreatedAt`.
+    // (app TODO-422, do MCP doplněno v TODO-112)
+    originalCreatedAt: nullOr(String),
   },
   tag: {
     id: TagId,
@@ -506,6 +555,10 @@ export const ProjectSchema = {
     isKicked: nullOr(SqliteBoolean),
     isBlocked: nullOr(SqliteBoolean),
     isPending: nullOr(SqliteBoolean), // TODO-332: waiting for approval
+    // HMAC členovy identity klíčovaný id pozvánky z jeho odkazu. Vlastník
+    // podle něj pozná, kterou pozvánkou člen přišel, aniž by tajemství samo
+    // leželo tady, kde ho přečte každý další člen. (app TODO-440)
+    inviteProof: nullOr(String),
   },
   task: {
     id: TaskId,
@@ -532,6 +585,11 @@ export const ProjectSchema = {
     sprintNumber: nullOr(Int),
     parentTaskId: nullOr(TaskId),
     deletedAt: nullOr(String), // trash timestamp, mirrors app (TODO-179/182)
+    // Datum vzniku ze zálohy; systémový createdAt zapsat nejde, takže obnovený
+    // úkol by jinak tvrdil, že vznikl v den obnovy. Appka čte
+    // coalesce(originalCreatedAt, createdAt), MCP přes `effectiveCreatedAt`.
+    // (app TODO-422, do MCP doplněno v TODO-112)
+    originalCreatedAt: nullOr(String),
   },
   tag: {
     id: TagId,
