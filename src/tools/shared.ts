@@ -30,8 +30,10 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { safeLoadQuery, type SharedProjectRefLite } from "./pure.js";
+import { safeLoadQuery, effectiveCreatedAt, type SharedProjectRefLite } from "./pure.js";
 import { resolveSharedOwner, loadSharedProjectRef, logSharedActivity, logSharedTaskChanges, logSharedProjectChanges, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
+import { loadOwnerSideRecords, recordMemberGrant } from "./ownerGrants.js";
+import { resolveVerifiedPermission, effectivePermission } from "../memberVerification.js";
 import { createMutationWaiter, assertMutation, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertValidProjectCode, nextTaskCode, assertTaskCodeForProject, withTaskCodeLock, pickSharedProjectRow } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
@@ -719,7 +721,11 @@ export const sharedTools: Tool[] = [
   },
   {
     name: "td_list_shared_members",
-    description: "List members of a shared project (name, permission, kicked/blocked state, isPending = waiting for approval)",
+    description:
+      "List members of a shared project (name, permission, kicked/blocked state, isPending = waiting for approval). " +
+      "`permission` is what the member claims. When you own the project, each member also carries " +
+      "`verifiedPermission` (what you granted, null if you have no record of them) and `effectivePermission`, " +
+      "the lower of the two, which is what decides whether they hold the write key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -733,7 +739,7 @@ export const sharedTools: Tool[] = [
   },
   {
     name: "td_update_shared_member",
-    description: "Update a shared project member (owner or admin only). Allowed: change permission between write and admin, approve a pending join (isPending: false with isBlocked: false) or unblock a writer, the last two only while the project has no rotated write key. Refused, because the app must rotate the write key for them: block, kick, reject, downgrade to read; do those in the Todocko app.",
+    description: "Update a shared project member (owner or admin only). Allowed: change permission between write and admin, approve a pending join (isPending: false with isBlocked: false) or unblock a writer, the last two only while the project has no rotated write key. Refused, because the app must rotate the write key for them: block, kick, reject, downgrade to read; do those in the Todocko app. A permission set by the project owner is also recorded as the owner's grant, which is what actually hands out the write key; an admin who does not own the project can only change the member's claim, and the owner still has to confirm it in the app.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2780,6 +2786,7 @@ async function listSharedMembers(
           "isKicked",
           "isBlocked",
           "isPending",
+          "inviteProof",
         ])
         .where("isDeleted", "is not", SQLITE_TRUE)
         .where("ownerId", "=", sharedOwner.id as string);
@@ -2799,10 +2806,26 @@ async function listSharedMembers(
     const actualOwnerId = sharedOwner.id as string;
     const filtered = result.filter((m: any) => (m.ownerId as string | undefined) === actualOwnerId);
 
-    return {
-      count: filtered.length,
-      sharedOwnerId: actualOwnerId,
-      members: filtered.map((m: any) => ({
+    // `permission` is the member's own claim. Only the owner can check it
+    // against what they granted, and only on their own device, because the
+    // record lives in their personal instance. Everyone else leaves
+    // `verifiedPermission` out rather than guessing. (app TODO-440, TODO-112)
+    const ref = await loadSharedProjectRef(args.sharedOwnerId);
+    const records = ref?.isOwner ? await loadOwnerSideRecords(args.sharedOwnerId) : null;
+
+    const members: Record<string, unknown>[] = [];
+    for (const m of filtered) {
+      const verified = records
+        ? await resolveVerifiedPermission(
+            {
+              userAppOwnerId: (m.userAppOwnerId as string) ?? "",
+              permission: (m.permission as string) ?? "",
+              inviteProof: (m.inviteProof as string) ?? null,
+            },
+            records,
+          )
+        : undefined;
+      members.push({
         id: m.id,
         projectId: m.projectId,
         userAppOwnerId: m.userAppOwnerId,
@@ -2810,11 +2833,23 @@ async function listSharedMembers(
         userColor: m.userColor,
         userAvatarUrl: m.userAvatarUrl,
         permission: m.permission,
+        ...(records
+          ? {
+              verifiedPermission: verified,
+              effectivePermission: effectivePermission(m.permission as string, verified),
+            }
+          : {}),
         joinedAt: m.joinedAt,
         isKicked: m.isKicked === SQLITE_TRUE,
         isBlocked: m.isBlocked === SQLITE_TRUE,
         isPending: m.isPending === SQLITE_TRUE,
-      })),
+      });
+    }
+
+    return {
+      count: filtered.length,
+      sharedOwnerId: actualOwnerId,
+      members,
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
@@ -2850,7 +2885,7 @@ async function updateSharedMember(
     // change that needs one is refused before anything is written, rather
     // than leaving a "blocked" member who can still write. (TODO-434)
     const member = await loadOwnedRow(projectEvolu, "projectMember", args.id, sharedOwner.id as string, [
-      "userName", "permission", "isBlocked", "isPending", "isKicked",
+      "userName", "userAppOwnerId", "permission", "isBlocked", "isPending", "isKicked",
     ]);
     if (!member) throw new Error(`Member not found: ${args.id}`);
     const ref = await loadSharedProjectRef(args.sharedOwnerId);
@@ -2865,6 +2900,19 @@ async function updateSharedMember(
       { actorIsOwner: ref?.isOwner === true, hasRotatedWriteKey: Boolean(ref?.writeKey) },
     );
     if (refusal) throw new Error(refusal);
+
+    // The owner's own record is what decides who gets the write key; the
+    // shared row below is only what the member sees. Written first and awaited,
+    // so a failure here cannot leave a raised claim with no grant behind it,
+    // which is the state the app reports as "claims more than confirmed" and
+    // which costs the member their write access. (app TODO-440, TODO-112)
+    const memberAppOwnerId = (member.userAppOwnerId as string) ?? null;
+    const grantRecorded = Boolean(
+      ref?.isOwner && args.permission !== undefined && memberAppOwnerId,
+    );
+    if (grantRecorded) {
+      await recordMemberGrant(args.sharedOwnerId, memberAppOwnerId as string, args.permission as string);
+    }
 
     const updates: Record<string, unknown> = {
       id: args.id as ProjectMemberId,
@@ -2910,7 +2958,12 @@ async function updateSharedMember(
 
     return {
       success: true,
-      message: "Shared project member updated successfully",
+      grantRecorded,
+      message: grantRecorded
+        ? "Shared project member updated and the owner's grant recorded, so the member really holds this permission."
+        : args.permission !== undefined
+          ? "Shared project member updated. You are not the project owner, so the member's claim changed but nobody confirmed it: the owner has to set the permission in the app for the write key to follow."
+          : "Shared project member updated successfully",
     };
   } finally {
     stopUsingSharedOwner(sharedOwner);
@@ -3389,6 +3442,10 @@ async function getSharedTask(
           "recurrenceInterval",
           "recurrenceDay",
           "recurrenceEndDate",
+          "createdAt",
+          // Viz effectiveCreatedAt: obnovený úkol by jinak tvrdil, že vznikl
+          // v den obnovy. (app TODO-422, TODO-112)
+          "originalCreatedAt",
         ])
         .where("isDeleted", "is not", SQLITE_TRUE)
         // Owner scoping in SQL, before the limit — see listSharedTasks.
@@ -3460,6 +3517,7 @@ async function getSharedTask(
       estimate: t.estimate,
       totalLoggedMinutes: worklogs.reduce((sum: number, w: any) => sum + (w.durationMinutes || 0), 0),
       completedAt: t.completedAt,
+      createdAt: effectiveCreatedAt(t),
       isOnProduction: t.isOnProduction === SQLITE_TRUE,
       sprintNumber: t.sprintNumber ?? null,
       parentTaskId: t.parentTaskId ?? null,
