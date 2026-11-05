@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { getQuarantineCounts, getSyncHealth, testWebSocketConnectivity, forceSync as forceSyncImpl } from "../evolu.js";
 import { getEvoluError, getFatalWorkerReason, getSocketTraffic, getWorkerDefects } from "../evoluPlatform.js";
-import { judgeSyncFreshness } from "./pure.js";
+import { judgeSyncFreshness, classifyUnreachableRelay, relayHttpBase, RELAY_BLOCKED_HINT } from "./pure.js";
 import { classifyFreshness, localMessageCount, fetchRelayMessageCount, missingMessages } from "../utils/syncFreshness.js";
 import { getEvolu, getAppOwnerId } from "../evolu.js";
 
@@ -52,6 +52,22 @@ export async function handleDiagnosticTool(
   }
 }
 
+/**
+ * Does the relay answer plain HTTPS? Used only to tell a blocked socket from
+ * a machine with no network. Failure of any kind counts as unreachable.
+ */
+async function relayAnswersOverHttp(): Promise<boolean> {
+  try {
+    const response = await fetch(`${relayHttpBase(process.env.TODOCKO_RELAY_URL)}/`, {
+      method: "GET",
+      signal: AbortSignal.timeout(4000),
+    });
+    return response.status > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function syncStatus(args: { retest?: boolean }) {
   const health = getSyncHealth();
 
@@ -62,6 +78,12 @@ async function syncStatus(args: { retest?: boolean }) {
   }
 
   const anyRelayReachable = Object.values(health.wsConnectivity).some((s) => s === 'ok');
+
+  // Only asked when no socket got through, and only of the user's own relay.
+  // See classifyUnreachableRelay. (TODO-112)
+  const unreachableKind = anyRelayReachable
+    ? null
+    : classifyUnreachableRelay(await relayAnswersOverHttp());
   const quarantine = await getQuarantineCounts();
 
   // Real traffic on the wire, measured by the wrapper around createWebSocket.
@@ -107,7 +129,7 @@ async function syncStatus(args: { retest?: boolean }) {
       : !health.evoluReady
       ? 'not-ready'
       : !anyRelayReachable
-        ? 'no-relay'
+        ? (unreachableKind ?? 'no-relay')
         : freshness.verdict === 'stale'
           ? 'stale'
           : 'ok',
@@ -151,6 +173,9 @@ async function syncStatus(args: { retest?: boolean }) {
     evoluError: getEvoluError()?.type ?? null,
     relayServers: health.relayServers,
     wsConnectivity: health.wsConnectivity,
+    // Only present when no socket got through, and it says which of the two
+    // very different reasons it was. (TODO-112)
+    ...(unreachableKind === "relay-blocked" ? { relayBlocked: RELAY_BLOCKED_HINT } : {}),
     // Messages Evolu received and could not apply, per instance. Nothing logs
     // these and no Evolu API reports them; the table has to be counted.
     quarantinedRows: quarantine,
@@ -164,6 +189,7 @@ async function syncStatus(args: { retest?: boolean }) {
       "onCompleteCount tracks successfully applied local mutations",
       "sync.verdict is the one to read: 'stale' means a local write is waiting and nothing is leaving, which an open socket does not tell you",
       "'idle' is not a fault — nothing was written, so nothing had to go out",
+      "'relay-blocked' means the relay answers over HTTPS but not over a WebSocket, so look at a proxy or firewall, not at the relay",
     ],
   };
 }

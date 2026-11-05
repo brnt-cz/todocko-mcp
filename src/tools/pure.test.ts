@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, resolveCompletedAt, effectiveCreatedAt, MAX_RICH_TEXT_LENGTH, richTextLimitFromEvolu, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
+import { assertMutation, classifyUnreachableRelay, resolveCompletedAt, effectiveCreatedAt, MAX_RICH_TEXT_LENGTH, richTextLimitFromEvolu, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -776,5 +776,15 @@ describe("MAX_RICH_TEXT_LENGTH", () => {
 
   it("is the app's limit, not the old flat 10 000", () => {
     expect(MAX_RICH_TEXT_LENGTH).toBe(200_000);
+  });
+});
+
+describe("classifyUnreachableRelay", () => {
+  it("calls it blocked when the relay answers over HTTPS but not over a socket", () => {
+    expect(classifyUnreachableRelay(true)).toBe("relay-blocked");
+  });
+
+  it("calls it no-relay when nothing answers at all", () => {
+    expect(classifyUnreachableRelay(false)).toBe("no-relay");
   });
 });

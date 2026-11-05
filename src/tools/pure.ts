@@ -1088,3 +1088,27 @@ export function resolveCompletedAt(
   if (change.status !== "done") return change.previousStatus === "done" ? null : undefined;
   return now();
 }
+
+/**
+ * Why no relay WebSocket could be opened. (TODO-112)
+ *
+ * The app tells a user whose relay never connects while their internet works
+ * that something between them and it is in the way, typically a corporate
+ * proxy (TODO-429). MCP answered `no-relay` to both that and a machine with
+ * no network at all, which call for opposite reactions: wait, or go and look
+ * at the proxy.
+ *
+ * The relay's own HTTPS endpoint settles it without asking any third party:
+ * proxies that block a WebSocket upgrade commonly pass ordinary HTTPS. An
+ * answer over HTTPS means the host is up and reachable and only the socket is
+ * being refused.
+ */
+export function classifyUnreachableRelay(httpReachable: boolean): "relay-blocked" | "no-relay" {
+  return httpReachable ? "relay-blocked" : "no-relay";
+}
+
+/** What `relay-blocked` means, in the words the user needs to act on it. */
+export const RELAY_BLOCKED_HINT =
+  "The relay answers over HTTPS but refuses a WebSocket. Something between this machine and the relay " +
+  "is blocking the upgrade, usually a proxy or a firewall. Writes are kept locally and sync as soon as " +
+  "a socket gets through.";

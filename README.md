@@ -778,6 +778,14 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - Počkejte pár sekund na synchronizaci
 - Zkuste smazat `~/.todocko/todocko.db` a restartovat
 
+
+### `status: relay-blocked` v `td_sync_status` (TODO-112)
+
+Relay odpovídá na HTTPS, ale WebSocket nepropustí. Mezi strojem a relayí tedy
+něco blokuje upgrade spojení, typicky proxy nebo firewall, ne vada relaye.
+Zápisy se drží lokálně a odejdou, jakmile socket projde. Od `no-relay` se to
+liší tím, že tam neodpovídá vůbec nic, což znamená spíš výpadek sítě.
+
 ### Nástroje nejsou viditelné
 - Restartujte Claude Desktop
 - V Claude Code použijte `/mcp` pro reload
