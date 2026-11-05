@@ -3,6 +3,7 @@ import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
 import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
 import { createMutationWaiter, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
+import { effectiveCreatedAt } from "./pure.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 import { assertCopyCanNumberTasks } from "../utils/syncFreshness.js";
@@ -597,6 +598,11 @@ async function getTask(
         "estimate",
         "completedAt",
         "position",
+        "createdAt",
+        // Datum vzniku ze zálohy; bez něj by obnovený úkol tvrdil, že vznikl
+        // v den obnovy, a MCP by se s appkou rozcházelo o celou historii.
+        // (app TODO-422, TODO-112)
+        "originalCreatedAt",
         "isOnProduction",
         "deploymentStageId",
         "sprintNumber",
@@ -662,6 +668,7 @@ async function getTask(
     estimate: t.estimate,
     totalLoggedMinutes,
     completedAt: t.completedAt,
+    createdAt: effectiveCreatedAt(t),
     isOnProduction: t.isOnProduction === SQLITE_TRUE,
     sprintNumber: t.sprintNumber ?? null,
     parentTaskId: t.parentTaskId ?? null,

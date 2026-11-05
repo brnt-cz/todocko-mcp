@@ -1013,3 +1013,22 @@ export function pickSharedProjectRow<T extends SharedProjectRowLike>(
   const pool = alive.length > 0 ? alive : options.includeDeleted ? owned : [];
   return [...pool].sort(olderFirst)[0] ?? null;
 }
+
+/**
+ * When a task really came into being.
+ *
+ * Mirrors the app's `src/db/taskCreatedAt.ts`: a restored backup cannot write
+ * the system `createdAt`, so the import keeps the original date in
+ * `originalCreatedAt` and every reader coalesces the two. Without this, every
+ * task of a restored account claims it was created on the day of the restore,
+ * and MCP would disagree with the app about the whole history. (TODO-112)
+ */
+export function effectiveCreatedAt(row: {
+  createdAt?: unknown;
+  originalCreatedAt?: unknown;
+}): string | null {
+  if (typeof row.originalCreatedAt === "string" && row.originalCreatedAt !== "") {
+    return row.originalCreatedAt;
+  }
+  return typeof row.createdAt === "string" && row.createdAt !== "" ? row.createdAt : null;
+}
