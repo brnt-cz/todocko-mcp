@@ -89,7 +89,9 @@ export const projectTools: Tool[] = [
         },
         autoApproveMembers: {
           type: "boolean",
-          description: "Auto-approve new members joining the project",
+          description:
+            "Not settable here: the setting belongs to the shared project, so use " +
+            "td_update_shared_project. Still declared so that passing it is refused rather than ignored.",
         },
         isDeleted: {
           type: "boolean",
@@ -272,7 +274,14 @@ async function updateProject(
     updates.isHiddenFromFilters = args.isHiddenFromFilters ? SQLITE_TRUE : null;
   }
   if (args.autoApproveMembers !== undefined) {
-    updates.autoApproveMembers = args.autoApproveMembers ? SQLITE_TRUE : null;
+    // The app reads this from the SHARED project row (ProjectsView.vue), never
+    // from the personal one. Writing it here was accepted and then read by
+    // nobody, which is the silent kind of wrong: the call reported success and
+    // the switch in the app never moved. (TODO-112, round XI)
+    throw new Error(
+      "autoApproveMembers lives on the shared project, not on the personal row. " +
+        "Use td_update_shared_project with the project's sharedOwnerId.",
+    );
   }
   if (args.isDeleted !== undefined) {
     // `deletedAt` must move with it, not just `isDeleted`: the app's Trash
