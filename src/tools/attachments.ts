@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
 import { joinChunks, splitIntoChunks } from "./attachmentChunks.js";
-import { createMutationWaiter, resolveDownloadPath, resolveUploadPath, assertAttachmentSize } from "./helpers.js";
+import { createMutationWaiter, assertMutation, resolveDownloadPath, resolveUploadPath, assertAttachmentSize } from "./helpers.js";
 
 export const attachmentTools: Tool[] = [
   {
@@ -258,11 +258,11 @@ async function deleteAttachment(
   const chunkRows = (await evolu.loadQuery(chunkQuery)) as unknown as Array<{ id: string }>;
 
   const waiter = createMutationWaiter();
-  const result = evolu.update("attachment", {
+  assertMutation("deleteAttachment", evolu.update("attachment", {
     id: args.id as AttachmentId,
     data: null,
     isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  } as any, { onComplete: waiter.onComplete }));
 
   for (const chunk of chunkRows) {
     evolu.update("attachmentChunk", {

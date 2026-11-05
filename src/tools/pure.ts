@@ -1,3 +1,4 @@
+import { maxMutationSize } from "@evolu/common";
 /**
  * Helpers with no Evolu dependency.
  *
@@ -199,7 +200,36 @@ export function assertAttachmentSize(base64: string): void {
   }
 }
 
-export const MAX_DESCRIPTION_LENGTH = 10000;
+/**
+ * How long a text written into one row may be. (TODO-112)
+ *
+ * Ported from the app's `src/utils/mutationSize.ts` (TODO-441). Evolu refuses
+ * a mutation over `maxMutationSize` by raising synchronously, so an oversized
+ * write does not come back as an error, it blows up in the middle of saving.
+ *
+ * MCP used a flat 10 000 instead, picked when the app had no limit at all
+ * (TODO-181). That was a guardrail against megabyte payloads, but it also
+ * refused descriptions the app stores without blinking, and nothing guarded
+ * note or document content at all. Both now use the app's number.
+ *
+ * Counted in characters, not bytes: Evolu budgets the worst case of three
+ * bytes per UTF-16 code unit. The rest of the row gets a reserve, so the
+ * limit holds for a task with every field filled in.
+ */
+export const ROW_RESERVE_BYTES = 40_000;
+export const MAX_BYTES_PER_CODE_UNIT = 3;
+
+/**
+ * Written out rather than computed, because Evolu's `maxLength` brands the
+ * type with the number and needs a literal. `richTextLimitFromEvolu` recomputes
+ * it from Evolu's own constant and a test holds the two together, so a change
+ * in Evolu fails here instead of passing unnoticed.
+ */
+export const MAX_RICH_TEXT_LENGTH = 200_000;
+
+export function richTextLimitFromEvolu(): number {
+  return Math.floor((maxMutationSize - ROW_RESERVE_BYTES) / MAX_BYTES_PER_CODE_UNIT);
+}
 
 /** Gap between neighbouring positions, matching the app's renumbering step. */
 export const POSITION_STEP = 10;
@@ -1012,4 +1042,93 @@ export function pickSharedProjectRow<T extends SharedProjectRowLike>(
   const alive = owned.filter((row) => !rowIsDeleted(row));
   const pool = alive.length > 0 ? alive : options.includeDeleted ? owned : [];
   return [...pool].sort(olderFirst)[0] ?? null;
+}
+
+/**
+ * When a task really came into being.
+ *
+ * Mirrors the app's `src/db/taskCreatedAt.ts`: a restored backup cannot write
+ * the system `createdAt`, so the import keeps the original date in
+ * `originalCreatedAt` and every reader coalesces the two. Without this, every
+ * task of a restored account claims it was created on the day of the restore,
+ * and MCP would disagree with the app about the whole history. (TODO-112)
+ */
+export function effectiveCreatedAt(row: {
+  createdAt?: unknown;
+  originalCreatedAt?: unknown;
+}): string | null {
+  if (typeof row.originalCreatedAt === "string" && row.originalCreatedAt !== "") {
+    return row.originalCreatedAt;
+  }
+  return typeof row.createdAt === "string" && row.createdAt !== "" ? row.createdAt : null;
+}
+
+/**
+ * What to write into `task.completedAt`, or undefined to leave it alone.
+ *
+ * Ported from the app's `src/db/taskCompletedAt.ts` (TODO-437) in round XI.
+ * MCP rewrote the column on every status write, so re-sending the status a
+ * task already had moved its completion time, and every such write was
+ * another message in the owner's history forever.
+ *
+ * - An explicit `completedAt` always wins.
+ * - Without `previousStatus`, or when the status did not change, the column
+ *   is left alone.
+ * - A task leaving `done` loses its completion time; one entering `done` gets
+ *   the current time.
+ */
+export function resolveCompletedAt(
+  change: { status?: string; previousStatus?: string | null; completedAt?: string | null },
+  now: () => string = () => new Date().toISOString(),
+): string | null | undefined {
+  if (change.completedAt !== undefined) return change.completedAt;
+  if (change.status === undefined) return undefined;
+  if (change.previousStatus === undefined || change.previousStatus === null) return undefined;
+  if (change.previousStatus === change.status) return undefined;
+  if (change.status !== "done") return change.previousStatus === "done" ? null : undefined;
+  return now();
+}
+
+/**
+ * Why no relay WebSocket could be opened. (TODO-112)
+ *
+ * The app tells a user whose relay never connects while their internet works
+ * that something between them and it is in the way, typically a corporate
+ * proxy (TODO-429). MCP answered `no-relay` to both that and a machine with
+ * no network at all, which call for opposite reactions: wait, or go and look
+ * at the proxy.
+ *
+ * The relay's own HTTPS endpoint settles it without asking any third party:
+ * proxies that block a WebSocket upgrade commonly pass ordinary HTTPS. An
+ * answer over HTTPS means the host is up and reachable and only the socket is
+ * being refused.
+ */
+export function classifyUnreachableRelay(httpReachable: boolean): "relay-blocked" | "no-relay" {
+  return httpReachable ? "relay-blocked" : "no-relay";
+}
+
+/** What `relay-blocked` means, in the words the user needs to act on it. */
+export const RELAY_BLOCKED_HINT =
+  "The relay answers over HTTPS but refuses a WebSocket. Something between this machine and the relay " +
+  "is blocking the upgrade, usually a proxy or a firewall. Writes are kept locally and sync as soon as " +
+  "a socket gets through.";
+
+/**
+ * What a list entry says about its text. (TODO-112)
+ *
+ * Listing a project's document pages returned every page's full content: one
+ * real project answered with 182 119 characters, 168 518 of it text, just to
+ * say which pages exist. The app went the other way for note attachments in
+ * its TODO-439 - list without the payload, fetch it when it is wanted.
+ *
+ * The length stays, so a caller can see there is something to fetch and how
+ * much of it, which an absent field would not say.
+ */
+export function contentField(
+  content: unknown,
+  includeContent: boolean | undefined,
+): { content: string | null; contentLength: number } | { contentLength: number } {
+  const text = typeof content === "string" ? content : null;
+  const contentLength = text?.length ?? 0;
+  return includeContent ? { content: text, contentLength } : { contentLength };
 }

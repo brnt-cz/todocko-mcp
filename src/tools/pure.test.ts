@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
+import { assertMutation, classifyUnreachableRelay, contentField, resolveCompletedAt, effectiveCreatedAt, MAX_RICH_TEXT_LENGTH, richTextLimitFromEvolu, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -706,5 +706,101 @@ describe("real tool schemas are validated by it (TODO-441)", () => {
     const { tools } = await import("./index.js");
     const schema = tools.find((t) => t.name === "td_add_shared_worklog")?.inputSchema as never;
     expect(() => assertArgTypes("td_add_shared_worklog", { loggedAt: "vcera" }, schema)).toThrow(/loggedAt/);
+  });
+});
+
+describe("resolveCompletedAt", () => {
+  const now = () => "2026-11-05T10:00:00.000Z";
+
+  it("leaves the column alone when the status did not change", () => {
+    expect(resolveCompletedAt({ status: "done", previousStatus: "done" }, now)).toBeUndefined();
+  });
+
+  // This is the one that mattered: MCP rewrote completedAt on every status
+  // write, so sending `done` twice moved the completion time. (TODO-112)
+  it("does not move a completion time by re-sending the same status", () => {
+    expect(resolveCompletedAt({ status: "done", previousStatus: "done" }, now)).toBeUndefined();
+    expect(resolveCompletedAt({ status: "todo", previousStatus: "todo" }, now)).toBeUndefined();
+  });
+
+  it("stamps a task entering done", () => {
+    expect(resolveCompletedAt({ status: "done", previousStatus: "todo" }, now)).toBe(now());
+  });
+
+  it("clears it for a task leaving done", () => {
+    expect(resolveCompletedAt({ status: "todo", previousStatus: "done" }, now)).toBeNull();
+  });
+
+  it("leaves it alone for a move between two statuses that are not done", () => {
+    expect(resolveCompletedAt({ status: "in_progress", previousStatus: "todo" }, now)).toBeUndefined();
+  });
+
+  it("leaves it alone without a previous status, which is the safe direction", () => {
+    expect(resolveCompletedAt({ status: "done" }, now)).toBeUndefined();
+    expect(resolveCompletedAt({ status: "done", previousStatus: null }, now)).toBeUndefined();
+  });
+
+  it("writes nothing when no status was sent at all", () => {
+    expect(resolveCompletedAt({ previousStatus: "todo" }, now)).toBeUndefined();
+  });
+
+  it("lets an explicit value win, including null", () => {
+    expect(resolveCompletedAt({ status: "todo", previousStatus: "todo", completedAt: "2026-01-01" }, now)).toBe("2026-01-01");
+    expect(resolveCompletedAt({ status: "done", previousStatus: "todo", completedAt: null }, now)).toBeNull();
+  });
+});
+
+describe("effectiveCreatedAt", () => {
+  it("prefers the date a restored backup kept", () => {
+    expect(effectiveCreatedAt({ createdAt: "2026-11-01", originalCreatedAt: "2025-02-03" })).toBe("2025-02-03");
+  });
+
+  it("falls back to the system date", () => {
+    expect(effectiveCreatedAt({ createdAt: "2026-11-01" })).toBe("2026-11-01");
+    expect(effectiveCreatedAt({ createdAt: "2026-11-01", originalCreatedAt: null })).toBe("2026-11-01");
+    expect(effectiveCreatedAt({ createdAt: "2026-11-01", originalCreatedAt: "" })).toBe("2026-11-01");
+  });
+
+  it("answers null rather than a non-date", () => {
+    expect(effectiveCreatedAt({})).toBeNull();
+    expect(effectiveCreatedAt({ createdAt: 17 })).toBeNull();
+  });
+});
+
+describe("MAX_RICH_TEXT_LENGTH", () => {
+  // Spelled out because Evolu's maxLength brands the type with the number and
+  // needs a literal. If Evolu's mutation limit moves, this is where it shows.
+  it("is the number Evolu's own limit implies", () => {
+    expect(MAX_RICH_TEXT_LENGTH).toBe(richTextLimitFromEvolu());
+  });
+
+  it("is the app's limit, not the old flat 10 000", () => {
+    expect(MAX_RICH_TEXT_LENGTH).toBe(200_000);
+  });
+});
+
+describe("classifyUnreachableRelay", () => {
+  it("calls it blocked when the relay answers over HTTPS but not over a socket", () => {
+    expect(classifyUnreachableRelay(true)).toBe("relay-blocked");
+  });
+
+  it("calls it no-relay when nothing answers at all", () => {
+    expect(classifyUnreachableRelay(false)).toBe("no-relay");
+  });
+});
+
+describe("contentField", () => {
+  it("gives only the length by default, so a listing stays an index", () => {
+    expect(contentField("ahoj", undefined)).toEqual({ contentLength: 4 });
+    expect(contentField("ahoj", false)).toEqual({ contentLength: 4 });
+  });
+
+  it("gives the text when it is asked for", () => {
+    expect(contentField("ahoj", true)).toEqual({ content: "ahoj", contentLength: 4 });
+  });
+
+  it("counts an absent text as zero rather than hiding the field", () => {
+    expect(contentField(null, false)).toEqual({ contentLength: 0 });
+    expect(contentField(null, true)).toEqual({ content: null, contentLength: 0 });
   });
 });

@@ -10,19 +10,36 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertRowExists, RichTextString, assertMaxLength, MAX_RICH_TEXT_LENGTH, contentField } from "./helpers.js";
 import { resolveSharedOwner, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 
 export const projectNoteTools: Tool[] = [
   // Local project notes (not synced)
   {
     name: "td_list_project_notes",
-    description: "List local project notes (not synced to shared projects)",
+    description:
+      "List local project notes (not synced to shared projects). Returns an index: title and " +
+      "contentLength, not the text. Read one note with td_get_project_note.",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string", description: "Filter by project ID" },
+        includeContent: {
+          type: "boolean",
+          description: "Return the full content of every note as well (default false).",
+        },
       },
+    },
+  },
+  {
+    name: "td_get_project_note",
+    description: "Read one local project note, with its full content",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Note ID (required)" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -66,15 +83,34 @@ export const projectNoteTools: Tool[] = [
   // Shared project notes
   {
     name: "td_list_shared_project_notes",
-    description: "List project notes from a shared project",
+    description:
+      "List project notes from a shared project. Returns an index: title and contentLength, not " +
+      "the text. Read one note with td_get_shared_project_note.",
     inputSchema: {
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
         ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
         projectId: { type: "string", description: "Filter by project ID" },
+        includeContent: {
+          type: "boolean",
+          description: "Return the full content of every note as well (default false).",
+        },
       },
       required: ["sharedOwnerId"],
+    },
+  },
+  {
+    name: "td_get_shared_project_note",
+    description: "Read one note from a shared project, with its full content",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
+        ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
+        id: { type: "string", description: "Note ID (required)" },
+      },
+      required: ["sharedOwnerId", "id"],
     },
   },
   {
@@ -130,7 +166,9 @@ export async function handleProjectNoteTool(
 ): Promise<unknown> {
   switch (name) {
     case "td_list_project_notes":
-      return listProjectNotes(evolu, args as { projectId?: string });
+      return listProjectNotes(evolu, args as { projectId?: string; includeContent?: boolean });
+    case "td_get_project_note":
+      return getProjectNote(evolu, args as { id: string });
     case "td_create_project_note":
       return createProjectNote(evolu, args as { projectId: string; title: string; content?: string });
     case "td_update_project_note":
@@ -138,7 +176,9 @@ export async function handleProjectNoteTool(
     case "td_delete_project_note":
       return deleteProjectNote(evolu, args as { id: string });
     case "td_list_shared_project_notes":
-      return listSharedProjectNotes(args as { sharedOwnerId: string; ownerSecret?: string; projectId?: string });
+      return listSharedProjectNotes(args as { sharedOwnerId: string; ownerSecret?: string; projectId?: string; includeContent?: boolean });
+    case "td_get_shared_project_note":
+      return getSharedProjectNote(args as { sharedOwnerId: string; ownerSecret?: string; id: string });
     case "td_create_shared_project_note":
       return createSharedProjectNote(args as { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string });
     case "td_update_shared_project_note":
@@ -152,7 +192,7 @@ export async function handleProjectNoteTool(
 
 // --- Local project notes ---
 
-async function listProjectNotes(evolu: EvoluInstance, args: { projectId?: string }) {
+async function listProjectNotes(evolu: EvoluInstance, args: { projectId?: string; includeContent?: boolean }) {
   const query = evolu.createQuery((db: any) => {
     let q = db
       .selectFrom("localProjectNote")
@@ -169,15 +209,34 @@ async function listProjectNotes(evolu: EvoluInstance, args: { projectId?: string
   return {
     count: result.length,
     notes: result.map((n: any) => ({
-      id: n.id, projectId: n.projectId, title: n.title, content: n.content, position: n.position,
+      id: n.id, projectId: n.projectId, title: n.title,
+      ...contentField(n.content, args.includeContent),
+      position: n.position,
     })),
   };
+}
+
+async function getProjectNote(evolu: EvoluInstance, args: { id: string }) {
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom("localProjectNote")
+      .select(["id", "projectId", "title", "content", "position"])
+      .where("id", "=", args.id as LocalProjectNoteId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1)
+  );
+  const rows = await evolu.loadQuery(query);
+  if (rows.length === 0) return { error: "Note not found" };
+  const n = rows[0] as any;
+  return { id: n.id, projectId: n.projectId, title: n.title, content: n.content ?? null, position: n.position };
 }
 
 async function createProjectNote(
   evolu: EvoluInstance,
   args: { projectId: string; title: string; content?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("localProjectNote").select(["position"])
       .where("projectId", "=", args.projectId as ProjectId)
@@ -191,7 +250,7 @@ async function createProjectNote(
   const result = evolu.insert("localProjectNote", {
     projectId: args.projectId as ProjectId,
     title: NonEmptyTrimmedString100.orThrow(args.title),
-    content: args.content ? EvoluString.orThrow(args.content) : null,
+    content: args.content ? RichTextString.orThrow(args.content) : null,
     position: Int.orThrow(maxPos + 1),
   }, { onComplete: waiter.onComplete });
 
@@ -204,12 +263,15 @@ async function updateProjectNote(
   evolu: EvoluInstance,
   args: { id: string; title?: string; content?: string; position?: number }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "localProjectNote", args.id, "Note");
 
   const updates: Record<string, unknown> = { id: args.id as LocalProjectNoteId };
   if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
-  if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
+  if (args.content !== undefined) updates.content = args.content ? RichTextString.orThrow(args.content) : null;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
@@ -228,7 +290,7 @@ async function deleteProjectNote(evolu: EvoluInstance, args: { id: string }) {
 
 // --- Shared project notes ---
 
-async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret?: string; projectId?: string }) {
+async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret?: string; projectId?: string; includeContent?: boolean }) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -260,9 +322,39 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
     return {
       count: filtered.length,
       notes: filtered.map((n: any) => ({
-        id: n.id, projectId: n.projectId, title: n.title, content: n.content,
+        id: n.id, projectId: n.projectId, title: n.title,
+        ...contentField(n.content, args.includeContent),
         createdBy: n.createdBy, position: n.position,
       })),
+    };
+  } finally {
+    stopUsingSharedOwner(owner);
+  }
+}
+
+async function getSharedProjectNote(args: { sharedOwnerId: string; ownerSecret?: string; id: string }) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+  const owner = await resolveSharedOwner(args, "read");
+  useSharedOwner(owner);
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db.selectFrom("projectNote")
+        .select(["id", "ownerId", "projectId", "title", "content", "createdBy", "position"])
+        .where("id", "=", args.id as ProjectNoteId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", owner.id as string)
+        .limit(1)
+    );
+    const rows = ((await projectEvolu.loadQuery(query)) as any[])
+      .filter((n) => (n.ownerId as string | undefined) === (owner.id as string));
+    if (rows.length === 0) return { error: "Note not found" };
+    const n = rows[0];
+    return {
+      id: n.id, projectId: n.projectId, title: n.title, content: n.content ?? null,
+      createdBy: n.createdBy, position: n.position,
     };
   } finally {
     stopUsingSharedOwner(owner);
@@ -272,6 +364,9 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
 async function createSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -296,7 +391,7 @@ async function createSharedProjectNote(
     const result = projectEvolu.insert("projectNote", {
       projectId: args.projectId as ProjectId,
       title: NonEmptyTrimmedString100.orThrow(args.title),
-      content: args.content ? EvoluString.orThrow(args.content) : null,
+      content: args.content ? RichTextString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
     }, { owner: owner, onComplete: waiter.onComplete });
@@ -312,6 +407,9 @@ async function createSharedProjectNote(
 async function updateSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret?: string; id: string; title?: string; content?: string; position?: number }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -326,7 +424,7 @@ async function updateSharedProjectNote(
   try {
     const updates: Record<string, unknown> = { id: args.id as ProjectNoteId };
     if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
-    if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
+    if (args.content !== undefined) updates.content = args.content ? RichTextString.orThrow(args.content) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
     // `{ ownerId }` is what puts the row in the shared project's partition.

@@ -45,18 +45,24 @@ export function onMarkedDone(task: RecurrenceFields): DoneOutcome {
 /**
  * Apply the outcome to an update being built, in place.
  *
- * `previousStatus` is written for personal tasks only, matching the app: the
- * shared reset path in `useRecurringTasks` does not set it either.
+ * It used to add `previousStatus: "done"` for personal tasks, said to match
+ * the app. It did not: in the app `previousStatus` is an argument to its own
+ * update helper, which reads it and drops it, while here `updates` goes
+ * straight into `evolu.update`, where `task` has no such column. Measured in
+ * round XI (TODO-112): the mutation is accepted and returns a row id, and
+ * selecting the column afterwards fails because it was never created. The
+ * value was thrown away on every recurring completion, in silence.
+ *
+ * MCP now has the same signal in the right place: `resolveCompletedAt` takes
+ * `previousStatus` as an argument and it never reaches the database.
  */
 export function applyDoneOutcome(
   updates: Record<string, unknown>,
   outcome: DoneOutcome,
-  { personal }: { personal: boolean },
 ): void {
   if (outcome.kind !== "reset") return;
   updates.status = "recurring";
   updates.deadline = outcome.nextDeadline;
   updates.scheduledDate = outcome.nextDeadline;
   updates.completedAt = null;
-  if (personal) updates.previousStatus = "done";
 }

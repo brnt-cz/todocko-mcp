@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString1000, Int, String as EvoluString } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type UserId, type WorklogId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, assertRowExists } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertRowExists } from "./helpers.js";
 import { logActivity } from "../utils/activityLog.js";
 
 export const worklogTools: Tool[] = [
@@ -230,7 +230,7 @@ async function updateWorklog(
   }
 
   const waiter = createMutationWaiter();
-  const result = evolu.update("worklog", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateWorklog", evolu.update("worklog", updates as any, { onComplete: waiter.onComplete }));
 
   await waiter.waitForSync();
 
@@ -242,10 +242,10 @@ async function updateWorklog(
 
 async function deleteWorklog(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  const result = evolu.update("worklog", {
+  assertMutation("deleteWorklog", evolu.update("worklog", {
     id: args.id as WorklogId,
     isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete });
+  } as any, { onComplete: waiter.onComplete }));
 
   await waiter.waitForSync();
 

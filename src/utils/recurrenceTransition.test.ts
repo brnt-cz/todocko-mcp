@@ -47,7 +47,7 @@ describe("what done means for a recurring task", () => {
 describe("what gets written", () => {
   it("a reset writes the settled state the app writes after its 1.5 s", () => {
     const updates: Record<string, unknown> = { id: "t", status: "done", completedAt: "x" };
-    applyDoneOutcome(updates, { kind: "reset", nextDeadline: "2026-11-07" }, { personal: true });
+    applyDoneOutcome(updates, { kind: "reset", nextDeadline: "2026-11-07" });
 
     expect(updates).toEqual({
       id: "t",
@@ -55,13 +55,15 @@ describe("what gets written", () => {
       deadline: "2026-11-07",
       scheduledDate: "2026-11-07",
       completedAt: null,
-      previousStatus: "done",
     });
   });
 
-  it("shared tasks get no previousStatus, matching the app's shared path", () => {
+  // It used to add previousStatus: "done" here. `task` has no such column, so
+  // Evolu accepted the mutation and dropped the value; selecting it afterwards
+  // fails. Measured in TODO-112, round XI.
+  it("writes nothing the task table has no column for", () => {
     const updates: Record<string, unknown> = { status: "done" };
-    applyDoneOutcome(updates, { kind: "reset", nextDeadline: "2026-11-07" }, { personal: false });
+    applyDoneOutcome(updates, { kind: "reset", nextDeadline: "2026-11-07" });
 
     expect(updates.previousStatus).toBeUndefined();
     expect(updates.status).toBe("recurring");
@@ -70,7 +72,7 @@ describe("what gets written", () => {
   it("anything but a reset leaves the update untouched", () => {
     for (const outcome of [{ kind: "not-recurring" as const }, { kind: "expired" as const }]) {
       const updates: Record<string, unknown> = { status: "done", completedAt: "x" };
-      applyDoneOutcome(updates, outcome, { personal: true });
+      applyDoneOutcome(updates, outcome);
       expect(updates).toEqual({ status: "done", completedAt: "x" });
     }
   });

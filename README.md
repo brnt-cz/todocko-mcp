@@ -174,7 +174,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (157)
+## Dostupné nástroje (161)
 
 ### Projekty
 
@@ -183,7 +183,7 @@ Instalátor:
 | `td_list_projects` | Seznam všech projektů |
 | `td_get_project` | Detail projektu podle ID nebo kódu |
 | `td_create_project` | Vytvoření nového projektu (kód jen `A-Z` a `0-9`, jako v appce) |
-| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters; kód jen `A-Z` a `0-9`) |
+| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, isHiddenFromFilters; kód jen `A-Z` a `0-9`). `autoApproveMembers` patří sdílenému projektu, tady se odmítne, viz `td_update_shared_project` |
 | `td_delete_project` | Smazání projektu (soft delete) |
 
 ### Úkoly
@@ -353,7 +353,8 @@ Sdílené projekty (TODO-235):
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_project_notes` | Seznam lokálních poznámek projektu |
+| `td_list_project_notes` | Seznam lokálních poznámek projektu (rejstřík: titulek a `contentLength`, obsah až na `includeContent`) |
+| `td_get_project_note` | Jedna lokální poznámka včetně obsahu |
 | `td_create_project_note` | Vytvoření lokální poznámky |
 | `td_update_project_note` | Aktualizace lokální poznámky |
 | `td_delete_project_note` | Smazání lokální poznámky (soft delete) |
@@ -365,7 +366,8 @@ Dokumenty jsou poznámky s `isDoc`, takže mohou být zanořené pod jiný dokum
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_project_docs` | Seznam dokumentů projektu |
+| `td_list_project_docs` | Seznam dokumentů projektu (rejstřík: titulek, hierarchie a `contentLength`, obsah až na `includeContent`) |
+| `td_get_project_doc` | Jedna stránka dokumentace včetně obsahu |
 | `td_create_project_doc` | Vytvoření dokumentu |
 | `td_update_project_doc` | Aktualizace dokumentu |
 | `td_delete_project_doc` | Smazání dokumentu (soft delete) |
@@ -441,17 +443,19 @@ neposílá přes nešifrované `http://` jinam než na localhost. (TODO-441)
 | `td_create_shared_repository_link` | Vytvoření repozitářového linku ve sdíleném projektu |
 | `td_update_shared_repository_link` | Aktualizace repozitářového linku ve sdíleném projektu |
 | `td_delete_shared_repository_link` | Smazání repozitářového linku ve sdíleném projektu |
-| `td_list_shared_project_notes` | Seznam poznámek sdíleného projektu |
+| `td_list_shared_project_notes` | Seznam poznámek sdíleného projektu (rejstřík, obsah až na `includeContent`) |
+| `td_get_shared_project_note` | Jedna poznámka sdíleného projektu včetně obsahu |
 | `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
-| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav, `isPending` = čeká na schválení) |
-| `td_update_shared_member` | Jen admin. Změna oprávnění mezi `write` a `admin`, schválení čekajícího nebo odblokování (jen dokud projekt nemá rotovaný klíč); block, kick, zamítnutí a snížení na `read` odmítne, ty patří do appky |
+| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav, `isPending` = čeká na schválení). Vlastníkovi navíc `verifiedPermission` (co udělil) a `effectivePermission` (to nižší z obojího, rozhoduje o write key) |
+| `td_update_shared_member` | Jen admin. Změna oprávnění mezi `write` a `admin`, schválení čekajícího nebo odblokování (jen dokud projekt nemá rotovaný klíč); block, kick, zamítnutí a snížení na `read` odmítne, ty patří do appky. Oprávnění nastavené vlastníkem se zapíše i jako jeho `memberGrant`, což teprve rozdává write key; admin bez vlastnictví změní jen členův nárok |
 | `td_upload_shared_note_attachment` | Nahrání přílohy k poznámce sdíleného projektu |
 | `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
 | `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
 | `td_delete_shared_note_attachment` | Smazání přílohy poznámky sdíleného projektu |
-| `td_list_shared_project_docs` | Seznam dokumentů sdíleného projektu |
+| `td_list_shared_project_docs` | Seznam dokumentů sdíleného projektu (rejstřík, obsah až na `includeContent`) |
+| `td_get_shared_project_doc` | Jedna stránka dokumentace sdíleného projektu včetně obsahu |
 | `td_create_shared_project_doc` | Vytvoření dokumentu ve sdíleném projektu |
 | `td_update_shared_project_doc` | Aktualizace dokumentu ve sdíleném projektu |
 | `td_delete_shared_project_doc` | Smazání dokumentu ve sdíleném projektu |
@@ -706,6 +710,27 @@ databáze přiteče běžným syncem AppOwnera. Kontrola běží při startu a p
 minutu, takže po rotaci může být zhruba minuta, kdy zápisy do toho jednoho
 projektu relay odmítá a řádky čekají lokálně. Čtení rotace neovlivňuje.
 
+### Komu klíč patří: nárok versus grant (TODO-440)
+
+`projectMember.permission` si zapisuje sám člen, takže o tom, kdo dostane
+zapisovací klíč, rozhodovat nemůže. Vlastník si vede vlastní záznam ve své
+osobní instanci, kam žádný člen nedosáhne:
+
+- `shareInvite` na každý vygenerovaný odkaz, její id cestuje v tokenu,
+- `memberGrant` na každého člena, jehož oprávnění vlastník nastavil ručně,
+  a ten pozvánku přebíjí.
+
+Člen si id pozvánky neukládá, ten řádek čtou i ostatní členové a mohli by si ho
+opsat. Ukládá si do `projectMember.inviteProof` HMAC vlastní identity klíčovaný
+id pozvánky; vlastník, který id má, ho ověří, cizí člen si ho pro sebe nevyrobí.
+Skutečné oprávnění je to nižší z nároku a záznamu.
+
+`td_list_shared_members` proto vlastníkovi vrací navíc `verifiedPermission`
+a `effectivePermission` a `td_update_shared_member` zapisuje `memberGrant`
+spolu se změnou nároku. Dokud to MCP neumělo, změnilo povýšení přes MCP jen
+nárok: člen zapisovací klíč nedostal a appka u něj začala hlásit, že si
+nárokuje víc, než má potvrzeno.
+
 ## Umístění dat
 
 Databáze jsou uloženy v adresáři `~/.todocko/`:
@@ -756,6 +781,14 @@ Databáze obsahuje ID vlastníka z předchozího mnemonicu. Po smazání se při
 - Zkontrolujte internetové připojení
 - Počkejte pár sekund na synchronizaci
 - Zkuste smazat `~/.todocko/todocko.db` a restartovat
+
+
+### `status: relay-blocked` v `td_sync_status` (TODO-112)
+
+Relay odpovídá na HTTPS, ale WebSocket nepropustí. Mezi strojem a relayí tedy
+něco blokuje upgrade spojení, typicky proxy nebo firewall, ne vada relaye.
+Zápisy se drží lokálně a odejdou, jakmile socket projde. Od `no-relay` se to
+liší tím, že tam neodpovídá vůbec nic, což znamená spíš výpadek sítě.
 
 ### Nástroje nejsou viditelné
 - Restartujte Claude Desktop
@@ -972,7 +1005,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (157)
+## Available Tools (161)
 
 ### Projects
 
@@ -981,7 +1014,7 @@ The installer will:
 | `td_list_projects` | List all projects |
 | `td_get_project` | Get project details by ID or code |
 | `td_create_project` | Create a new project (code: `A-Z` and `0-9` only, as in the app) |
-| `td_update_project` | Update a project (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters; code `A-Z` and `0-9` only) |
+| `td_update_project` | Update a project (name, code, color, isArchived, isHiddenFromFilters; code `A-Z` and `0-9` only). `autoApproveMembers` belongs to the shared project and is refused here, see `td_update_shared_project` |
 | `td_delete_project` | Delete a project (soft delete) |
 
 ### Tasks
@@ -1151,7 +1184,8 @@ Shared projects (TODO-235):
 
 | Tool | Description |
 |------|-------------|
-| `td_list_project_notes` | List local project notes |
+| `td_list_project_notes` | List local project notes (index: title and `contentLength`; content via `includeContent`) |
+| `td_get_project_note` | Read one local project note, with its content |
 | `td_create_project_note` | Create a local project note |
 | `td_update_project_note` | Update a local project note |
 | `td_delete_project_note` | Delete a local project note (soft delete) |
@@ -1185,17 +1219,19 @@ Shared projects (TODO-235):
 | `td_create_shared_deployment_stage` | Create a deployment stage in a shared project |
 | `td_list_shared_repository_links` | List repository links for a shared project |
 | `td_create_shared_repository_link` | Create a repository link in a shared project |
-| `td_list_shared_project_notes` | List notes for a shared project |
+| `td_list_shared_project_notes` | List notes for a shared project (index; content via `includeContent`) |
+| `td_get_shared_project_note` | Read one note from a shared project, with its content |
 | `td_create_shared_project_note` | Create a note in a shared project |
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
-| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval) |
-| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app |
+| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval). The owner also gets `verifiedPermission` (what they granted) and `effectivePermission` (the lower of the two, which decides the write key) |
+| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app. A permission set by the owner is also recorded as their `memberGrant`, which is what hands out the write key; an admin who does not own the project changes only the member's claim |
 | `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
 | `td_list_shared_note_attachments` | List attachments of a shared project note |
 | `td_download_shared_note_attachment` | Download a shared note attachment |
 | `td_delete_shared_note_attachment` | Delete a shared note attachment |
-| `td_list_shared_project_docs` | List document pages from a shared project |
+| `td_list_shared_project_docs` | List document pages from a shared project (index; content via `includeContent`) |
+| `td_get_shared_project_doc` | Read one document page from a shared project, with its content |
 | `td_create_shared_project_doc` | Create a document page in a shared project |
 | `td_update_shared_project_doc` | Update a document page in a shared project |
 | `td_delete_shared_project_doc` | Delete a document page in a shared project (soft delete) |
@@ -1268,7 +1304,8 @@ Documents are notes with `isDoc`, so they can nest under another document via `p
 
 | Tool | Description |
 |------|-------------|
-| `td_list_project_docs` | List local project document pages (not synced to shared projects) |
+| `td_list_project_docs` | List local project document pages (index: title, hierarchy and `contentLength`; content via `includeContent`) |
+| `td_get_project_doc` | Read one local project document page, with its content |
 | `td_create_project_doc` | Create a local project document page |
 | `td_update_project_doc` | Update a local project document page |
 | `td_delete_project_doc` | Delete a local project document page (soft delete) |
