@@ -30,6 +30,31 @@ function base64Url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
+/**
+ * Veřejná půlka téhož klíče, base64url, jak ji čeká registrace na relayi.
+ *
+ * Ed25519 veřejný klíč je posledních 32 bajtů z SPKI, který WebCrypto vrací
+ * pro exportovatelný klíč. Proto se tady odvozuje znovu a zvlášť: ten
+ * podepisovací klíč výš je schválně neexportovatelný. (TODO-451)
+ */
+export async function deriveOwnerPublicKeyBase64Url(mnemonic: string): Promise<string> {
+  const seed = new TextEncoder().encode(mnemonic.normalize("NFKD"));
+  const baseKey = await webcrypto.subtle.importKey("raw", seed, "HKDF", false, ["deriveBits"]);
+  const bits = await webcrypto.subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-512", salt: HKDF_SALT, info: ED25519_INFO },
+    baseKey,
+    32 * 8,
+  );
+  const pkcs8 = Buffer.concat([
+    Buffer.from("302e020100300506032b657004220420", "hex"),
+    Buffer.from(new Uint8Array(bits)),
+  ]);
+  const privateKey = await webcrypto.subtle.importKey("pkcs8", pkcs8, { name: "Ed25519" }, true, ["sign"]);
+  const jwk = await webcrypto.subtle.exportKey("jwk", privateKey);
+  if (!jwk.x) throw new Error("Ed25519 JWK has no public component");
+  return jwk.x;
+}
+
 async function deriveOwnerPrivateKey(mnemonic: string): Promise<webcrypto.CryptoKey> {
   if (cachedFor === mnemonic && cachedKey) return cachedKey;
 

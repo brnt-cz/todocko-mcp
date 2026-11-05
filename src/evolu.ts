@@ -797,6 +797,16 @@ function getAppOwnerForProjectInstance() {
 }
 
 /**
+ * Šifrovací klíč AppOwnera, nebo null před initEvolu.
+ *
+ * Jen pro odvození dalších klíčů (viz agentStatus.ts). Sám se nikam
+ * neposílá a nikde neloguje. (TODO-451)
+ */
+export function getAppOwnerEncryptionKey(): Uint8Array | null {
+  return (appOwnerForProcess?.encryptionKey as Uint8Array) ?? null;
+}
+
+/**
  * The user's own owner id, or null before initEvolu has run.
  *
  * Only the id: it is public, unlike the secret on the owner object, and the

@@ -24,6 +24,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { initEvolu, getEvolu, initProjectEvolu, startWriteKeyRefresh, waitForEvolu } from "./evolu.js";
 import { tools, handleToolCall } from "./tools/index.js";
+import { startStatusReporting, reportToolCall } from "./statusReporting.js";
 
 // Set working directory to ~/.todocko for database storage (cross-platform)
 const todockoDir = join(homedir(), ".todocko");
@@ -69,6 +70,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     const result = await handleToolCall(name, args || {}, evolu);
+    // Mini obrazovka v aplikaci (TODO-451). Pošli a nečekej: hlášení stavu
+    // nesmí zpomalit ani shodit volání nástroje, které už proběhlo.
+    reportToolCall(name, args);
     return {
       content: [
         {
@@ -141,6 +145,10 @@ async function main() {
 
     await initProjectEvolu();
     console.error("Project Evolu created for shared projects.");
+
+    // Mini obrazovka v aplikaci (TODO-451). Až teď, protože klíč se odvozuje
+    // z AppOwnera, který vzniká v initEvolu o řádek výš.
+    startStatusReporting();
 
     // Pick up write keys the app has rotated, and keep looking (TODO-268).
     // Without it this process would go on sending the key derived from
