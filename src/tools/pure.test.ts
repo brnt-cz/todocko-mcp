@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, classifyUnreachableRelay, resolveCompletedAt, effectiveCreatedAt, MAX_RICH_TEXT_LENGTH, richTextLimitFromEvolu, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
+import { assertMutation, classifyUnreachableRelay, contentField, resolveCompletedAt, effectiveCreatedAt, MAX_RICH_TEXT_LENGTH, richTextLimitFromEvolu, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -786,5 +786,21 @@ describe("classifyUnreachableRelay", () => {
 
   it("calls it no-relay when nothing answers at all", () => {
     expect(classifyUnreachableRelay(false)).toBe("no-relay");
+  });
+});
+
+describe("contentField", () => {
+  it("gives only the length by default, so a listing stays an index", () => {
+    expect(contentField("ahoj", undefined)).toEqual({ contentLength: 4 });
+    expect(contentField("ahoj", false)).toEqual({ contentLength: 4 });
+  });
+
+  it("gives the text when it is asked for", () => {
+    expect(contentField("ahoj", true)).toEqual({ content: "ahoj", contentLength: 4 });
+  });
+
+  it("counts an absent text as zero rather than hiding the field", () => {
+    expect(contentField(null, false)).toEqual({ contentLength: 0 });
+    expect(contentField(null, true)).toEqual({ content: null, contentLength: 0 });
   });
 });

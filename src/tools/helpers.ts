@@ -11,6 +11,7 @@ export {
   MAX_ATTACHMENT_BYTES,
   assertAttachmentSize,
   MAX_RICH_TEXT_LENGTH,
+  contentField,
   POSITION_STEP,
   topPositionForNewTask,
   NETWORK_DELAY_MS,

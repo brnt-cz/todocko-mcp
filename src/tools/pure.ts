@@ -1112,3 +1112,23 @@ export const RELAY_BLOCKED_HINT =
   "The relay answers over HTTPS but refuses a WebSocket. Something between this machine and the relay " +
   "is blocking the upgrade, usually a proxy or a firewall. Writes are kept locally and sync as soon as " +
   "a socket gets through.";
+
+/**
+ * What a list entry says about its text. (TODO-112)
+ *
+ * Listing a project's document pages returned every page's full content: one
+ * real project answered with 182 119 characters, 168 518 of it text, just to
+ * say which pages exist. The app went the other way for note attachments in
+ * its TODO-439 - list without the payload, fetch it when it is wanted.
+ *
+ * The length stays, so a caller can see there is something to fetch and how
+ * much of it, which an absent field would not say.
+ */
+export function contentField(
+  content: unknown,
+  includeContent: boolean | undefined,
+): { content: string | null; contentLength: number } | { contentLength: number } {
+  const text = typeof content === "string" ? content : null;
+  const contentLength = text?.length ?? 0;
+  return includeContent ? { content: text, contentLength } : { contentLength };
+}

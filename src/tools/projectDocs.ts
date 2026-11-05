@@ -10,19 +10,38 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter , assertMutation, assertRowExists, RichTextString, assertMaxLength, MAX_RICH_TEXT_LENGTH } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertRowExists, RichTextString, assertMaxLength, MAX_RICH_TEXT_LENGTH, contentField } from "./helpers.js";
 import { resolveSharedOwner, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 
 export const projectDocTools: Tool[] = [
   // Local project docs (not synced)
   {
     name: "td_list_project_docs",
-    description: "List local project document pages (not synced to shared projects)",
+    description:
+      "List local project document pages (not synced to shared projects). Returns an index: title, " +
+      "hierarchy and contentLength, not the text. Read one page with td_get_project_doc.",
     inputSchema: {
       type: "object",
       properties: {
         projectId: { type: "string", description: "Filter by project ID" },
+        includeContent: {
+          type: "boolean",
+          description:
+            "Return the full content of every page as well (default false). One real project answers " +
+            "this with about 180 000 characters, so ask for it only when every page is genuinely needed.",
+        },
       },
+    },
+  },
+  {
+    name: "td_get_project_doc",
+    description: "Read one local project document page, with its full content",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Document page ID (required)" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -68,15 +87,34 @@ export const projectDocTools: Tool[] = [
   // Shared project docs
   {
     name: "td_list_shared_project_docs",
-    description: "List document pages from a shared project",
+    description:
+      "List document pages from a shared project. Returns an index: title, hierarchy and " +
+      "contentLength, not the text. Read one page with td_get_shared_project_doc.",
     inputSchema: {
       type: "object",
       properties: {
         sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
         ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
         projectId: { type: "string", description: "Filter by project ID" },
+        includeContent: {
+          type: "boolean",
+          description: "Return the full content of every page as well (default false).",
+        },
       },
       required: ["sharedOwnerId"],
+    },
+  },
+  {
+    name: "td_get_shared_project_doc",
+    description: "Read one document page from a shared project, with its full content",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sharedOwnerId: { type: "string", description: "SharedOwner ID (required)" },
+        ownerSecret: { type: "string", description: OWNER_SECRET_DESCRIPTION },
+        id: { type: "string", description: "Document page ID (required)" },
+      },
+      required: ["sharedOwnerId", "id"],
     },
   },
   {
@@ -134,7 +172,9 @@ export async function handleProjectDocTool(
 ): Promise<unknown> {
   switch (name) {
     case "td_list_project_docs":
-      return listProjectDocs(evolu, args as { projectId?: string });
+      return listProjectDocs(evolu, args as { projectId?: string; includeContent?: boolean });
+    case "td_get_project_doc":
+      return getProjectDoc(evolu, args as { id: string });
     case "td_create_project_doc":
       return createProjectDoc(evolu, args as { projectId: string; title: string; content?: string; parentDocId?: string });
     case "td_update_project_doc":
@@ -142,7 +182,9 @@ export async function handleProjectDocTool(
     case "td_delete_project_doc":
       return deleteProjectDoc(evolu, args as { id: string });
     case "td_list_shared_project_docs":
-      return listSharedProjectDocs(args as { sharedOwnerId: string; ownerSecret?: string; projectId?: string });
+      return listSharedProjectDocs(args as { sharedOwnerId: string; ownerSecret?: string; projectId?: string; includeContent?: boolean });
+    case "td_get_shared_project_doc":
+      return getSharedProjectDoc(args as { sharedOwnerId: string; ownerSecret?: string; id: string });
     case "td_create_shared_project_doc":
       return createSharedProjectDoc(args as { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string; parentDocId?: string });
     case "td_update_shared_project_doc":
@@ -156,7 +198,7 @@ export async function handleProjectDocTool(
 
 // --- Local project docs ---
 
-async function listProjectDocs(evolu: EvoluInstance, args: { projectId?: string }) {
+async function listProjectDocs(evolu: EvoluInstance, args: { projectId?: string; includeContent?: boolean }) {
   const query = evolu.createQuery((db: any) => {
     let q = db
       .selectFrom("localProjectNote")
@@ -173,9 +215,27 @@ async function listProjectDocs(evolu: EvoluInstance, args: { projectId?: string 
   return {
     count: result.length,
     docs: result.map((n: any) => ({
-      id: n.id, projectId: n.projectId, title: n.title, content: n.content,
+      id: n.id, projectId: n.projectId, title: n.title,
+      ...contentField(n.content, args.includeContent),
       position: n.position, parentDocId: n.parentDocId,
     })),
+  };
+}
+
+async function getProjectDoc(evolu: EvoluInstance, args: { id: string }) {
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom("localProjectNote")
+      .select(["id", "projectId", "title", "content", "position", "parentDocId"])
+      .where("id", "=", args.id as LocalProjectNoteId)
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1)
+  );
+  const rows = await evolu.loadQuery(query);
+  if (rows.length === 0) return { error: "Document page not found" };
+  const n = rows[0] as any;
+  return {
+    id: n.id, projectId: n.projectId, title: n.title, content: n.content ?? null,
+    position: n.position, parentDocId: n.parentDocId,
   };
 }
 
@@ -243,7 +303,7 @@ async function deleteProjectDoc(evolu: EvoluInstance, args: { id: string }) {
 
 // --- Shared project docs ---
 
-async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret?: string; projectId?: string }) {
+async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret?: string; projectId?: string; includeContent?: boolean }) {
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -275,9 +335,39 @@ async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret?
     return {
       count: filtered.length,
       docs: filtered.map((n: any) => ({
-        id: n.id, projectId: n.projectId, title: n.title, content: n.content,
+        id: n.id, projectId: n.projectId, title: n.title,
+        ...contentField(n.content, args.includeContent),
         createdBy: n.createdBy, position: n.position, parentDocId: n.parentDocId,
       })),
+    };
+  } finally {
+    stopUsingSharedOwner(owner);
+  }
+}
+
+async function getSharedProjectDoc(args: { sharedOwnerId: string; ownerSecret?: string; id: string }) {
+  const projectEvolu = getProjectEvolu();
+  if (!projectEvolu) {
+    throw new Error("Project Evolu not initialized");
+  }
+  const owner = await resolveSharedOwner(args, "read");
+  useSharedOwner(owner);
+  try {
+    const query = projectEvolu.createQuery((db: any) =>
+      db.selectFrom("projectNote")
+        .select(["id", "ownerId", "projectId", "title", "content", "createdBy", "position", "parentDocId"])
+        .where("id", "=", args.id as ProjectNoteId)
+        .where("isDeleted", "is not", SQLITE_TRUE)
+        .where("ownerId", "=", owner.id as string)
+        .limit(1)
+    );
+    const rows = ((await projectEvolu.loadQuery(query)) as any[])
+      .filter((n) => (n.ownerId as string | undefined) === (owner.id as string));
+    if (rows.length === 0) return { error: "Document page not found" };
+    const n = rows[0];
+    return {
+      id: n.id, projectId: n.projectId, title: n.title, content: n.content ?? null,
+      createdBy: n.createdBy, position: n.position, parentDocId: n.parentDocId,
     };
   } finally {
     stopUsingSharedOwner(owner);

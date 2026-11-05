@@ -174,7 +174,7 @@ Instalátor:
 
 3. Restartujte Claude Desktop / Claude Code
 
-## Dostupné nástroje (157)
+## Dostupné nástroje (161)
 
 ### Projekty
 
@@ -353,7 +353,8 @@ Sdílené projekty (TODO-235):
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_project_notes` | Seznam lokálních poznámek projektu |
+| `td_list_project_notes` | Seznam lokálních poznámek projektu (rejstřík: titulek a `contentLength`, obsah až na `includeContent`) |
+| `td_get_project_note` | Jedna lokální poznámka včetně obsahu |
 | `td_create_project_note` | Vytvoření lokální poznámky |
 | `td_update_project_note` | Aktualizace lokální poznámky |
 | `td_delete_project_note` | Smazání lokální poznámky (soft delete) |
@@ -365,7 +366,8 @@ Dokumenty jsou poznámky s `isDoc`, takže mohou být zanořené pod jiný dokum
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_project_docs` | Seznam dokumentů projektu |
+| `td_list_project_docs` | Seznam dokumentů projektu (rejstřík: titulek, hierarchie a `contentLength`, obsah až na `includeContent`) |
+| `td_get_project_doc` | Jedna stránka dokumentace včetně obsahu |
 | `td_create_project_doc` | Vytvoření dokumentu |
 | `td_update_project_doc` | Aktualizace dokumentu |
 | `td_delete_project_doc` | Smazání dokumentu (soft delete) |
@@ -441,7 +443,8 @@ neposílá přes nešifrované `http://` jinam než na localhost. (TODO-441)
 | `td_create_shared_repository_link` | Vytvoření repozitářového linku ve sdíleném projektu |
 | `td_update_shared_repository_link` | Aktualizace repozitářového linku ve sdíleném projektu |
 | `td_delete_shared_repository_link` | Smazání repozitářového linku ve sdíleném projektu |
-| `td_list_shared_project_notes` | Seznam poznámek sdíleného projektu |
+| `td_list_shared_project_notes` | Seznam poznámek sdíleného projektu (rejstřík, obsah až na `includeContent`) |
+| `td_get_shared_project_note` | Jedna poznámka sdíleného projektu včetně obsahu |
 | `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
@@ -451,7 +454,8 @@ neposílá přes nešifrované `http://` jinam než na localhost. (TODO-441)
 | `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
 | `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
 | `td_delete_shared_note_attachment` | Smazání přílohy poznámky sdíleného projektu |
-| `td_list_shared_project_docs` | Seznam dokumentů sdíleného projektu |
+| `td_list_shared_project_docs` | Seznam dokumentů sdíleného projektu (rejstřík, obsah až na `includeContent`) |
+| `td_get_shared_project_doc` | Jedna stránka dokumentace sdíleného projektu včetně obsahu |
 | `td_create_shared_project_doc` | Vytvoření dokumentu ve sdíleném projektu |
 | `td_update_shared_project_doc` | Aktualizace dokumentu ve sdíleném projektu |
 | `td_delete_shared_project_doc` | Smazání dokumentu ve sdíleném projektu |
@@ -1001,7 +1005,7 @@ The installer will:
 
 3. Restart Claude Desktop / Claude Code
 
-## Available Tools (157)
+## Available Tools (161)
 
 ### Projects
 
@@ -1180,7 +1184,8 @@ Shared projects (TODO-235):
 
 | Tool | Description |
 |------|-------------|
-| `td_list_project_notes` | List local project notes |
+| `td_list_project_notes` | List local project notes (index: title and `contentLength`; content via `includeContent`) |
+| `td_get_project_note` | Read one local project note, with its content |
 | `td_create_project_note` | Create a local project note |
 | `td_update_project_note` | Update a local project note |
 | `td_delete_project_note` | Delete a local project note (soft delete) |
@@ -1214,7 +1219,8 @@ Shared projects (TODO-235):
 | `td_create_shared_deployment_stage` | Create a deployment stage in a shared project |
 | `td_list_shared_repository_links` | List repository links for a shared project |
 | `td_create_shared_repository_link` | Create a repository link in a shared project |
-| `td_list_shared_project_notes` | List notes for a shared project |
+| `td_list_shared_project_notes` | List notes for a shared project (index; content via `includeContent`) |
+| `td_get_shared_project_note` | Read one note from a shared project, with its content |
 | `td_create_shared_project_note` | Create a note in a shared project |
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
@@ -1224,7 +1230,8 @@ Shared projects (TODO-235):
 | `td_list_shared_note_attachments` | List attachments of a shared project note |
 | `td_download_shared_note_attachment` | Download a shared note attachment |
 | `td_delete_shared_note_attachment` | Delete a shared note attachment |
-| `td_list_shared_project_docs` | List document pages from a shared project |
+| `td_list_shared_project_docs` | List document pages from a shared project (index; content via `includeContent`) |
+| `td_get_shared_project_doc` | Read one document page from a shared project, with its content |
 | `td_create_shared_project_doc` | Create a document page in a shared project |
 | `td_update_shared_project_doc` | Update a document page in a shared project |
 | `td_delete_shared_project_doc` | Delete a document page in a shared project (soft delete) |
@@ -1297,7 +1304,8 @@ Documents are notes with `isDoc`, so they can nest under another document via `p
 
 | Tool | Description |
 |------|-------------|
-| `td_list_project_docs` | List local project document pages (not synced to shared projects) |
+| `td_list_project_docs` | List local project document pages (index: title, hierarchy and `contentLength`; content via `includeContent`) |
+| `td_get_project_doc` | Read one local project document page, with its content |
 | `td_create_project_doc` | Create a local project document page |
 | `td_update_project_doc` | Update a local project document page |
 | `td_delete_project_doc` | Delete a local project document page (soft delete) |
