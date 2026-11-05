@@ -3,7 +3,7 @@ import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
 import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
 import { createMutationWaiter, assertMutation, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
-import { effectiveCreatedAt } from "./pure.js";
+import { effectiveCreatedAt, resolveCompletedAt } from "./pure.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
 import { assertCopyCanNumberTasks } from "../utils/syncFreshness.js";
@@ -231,6 +231,12 @@ export const taskTools: Tool[] = [
         parentTaskId: {
           type: "string",
           description: "Parent task ID, or null to detach from parent",
+        },
+        completedAt: {
+          type: "string",
+          description:
+            "Completion timestamp, or null to clear it. Normally left out: it follows the status by itself. " +
+            "Pass it when backfilling an import, where the real completion time is known.",
         },
         isDeleted: {
           type: "boolean",
@@ -913,6 +919,7 @@ async function updateTask(
     recurrenceDay?: string | null;
     sprintNumber?: number | null;
     parentTaskId?: string | null;
+    completedAt?: string | null;
     isDeleted?: boolean;
   }
 ) {
@@ -942,12 +949,8 @@ async function updateTask(
     updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
   }
   if (args.status !== undefined) {
+    // completedAt is decided below, once the task's previous status is known.
     updates.status = args.status;
-    if (args.status === "done") {
-      updates.completedAt = new Date().toISOString();
-    } else {
-      updates.completedAt = null;
-    }
   }
   if (args.priority !== undefined) {
     updates.priority = args.priority;
@@ -1010,6 +1013,19 @@ async function updateTask(
     // ignore — activity log just won't have diff
   }
 
+  // The app's rule (TODO-437, ported in TODO-112): a status write is not
+  // always a status change, and rewriting the column would move the
+  // completion time and add a message to the owner's history for nothing.
+  // A failed `oldTask` load leaves it alone, which is the safe direction.
+  const settleCompletedAt = (): void => {
+    const completedAt = resolveCompletedAt({
+      status: updates.status as string | undefined,
+      previousStatus: (oldTask.status as string) ?? null,
+      completedAt: args.completedAt,
+    });
+    if (completedAt !== undefined) updates.completedAt = completedAt;
+  };
+
   // Guard the task's own project and any project it is being moved into:
   // moving a personal task into a shared project is the same fault arriving
   // from the other side. `projectId` is not in TRACKED_TASK_FIELDS, so the
@@ -1053,10 +1069,13 @@ async function updateTask(
       recurrenceDay: pick<number>("recurrenceDay"),
       deadline: pick<string>("deadline"),
     });
-    applyDoneOutcome(updates, outcome, { personal: true });
+    applyDoneOutcome(updates, outcome);
     if (outcome.kind === "reset") recurrenceNote = `Recurring task reset to ${outcome.nextDeadline}`;
     if (outcome.kind === "expired") recurrenceNote = "Recurrence has ended, the task stays done";
   }
+
+  // After the recurrence block, which may settle the status on "recurring".
+  settleCompletedAt();
 
   const waiter = createMutationWaiter();
   const updateResult = evolu.update("task", updates as any, { onComplete: waiter.onComplete });
@@ -1202,12 +1221,8 @@ async function bulkUpdateTasks(
       };
 
       if (args.status !== undefined) {
+        // Decided below, once this task's previous status is known.
         updates.status = args.status;
-        if (args.status === "done") {
-          updates.completedAt = new Date().toISOString();
-        } else {
-          updates.completedAt = null;
-        }
       }
       if (args.priority !== undefined) {
         updates.priority = args.priority;
@@ -1268,9 +1283,15 @@ async function bulkUpdateTasks(
           recurrenceDay: (rec.recurrenceDay as number) ?? null,
           deadline: (rec.deadline as string) ?? null,
         });
-        applyDoneOutcome(updates, outcome, { personal: true });
+        applyDoneOutcome(updates, outcome);
         if (outcome.kind === "reset") recurringReset++;
       }
+
+      const completedAt = resolveCompletedAt({
+        status: updates.status as string | undefined,
+        previousStatus: (oldTask.status as string) ?? null,
+      });
+      if (completedAt !== undefined) updates.completedAt = completedAt;
 
       evolu.update("task", updates as any);
       logTaskUpdate(evolu, taskId, oldTask, updates);

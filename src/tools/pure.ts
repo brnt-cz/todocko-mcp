@@ -1032,3 +1032,29 @@ export function effectiveCreatedAt(row: {
   }
   return typeof row.createdAt === "string" && row.createdAt !== "" ? row.createdAt : null;
 }
+
+/**
+ * What to write into `task.completedAt`, or undefined to leave it alone.
+ *
+ * Ported from the app's `src/db/taskCompletedAt.ts` (TODO-437) in round XI.
+ * MCP rewrote the column on every status write, so re-sending the status a
+ * task already had moved its completion time, and every such write was
+ * another message in the owner's history forever.
+ *
+ * - An explicit `completedAt` always wins.
+ * - Without `previousStatus`, or when the status did not change, the column
+ *   is left alone.
+ * - A task leaving `done` loses its completion time; one entering `done` gets
+ *   the current time.
+ */
+export function resolveCompletedAt(
+  change: { status?: string; previousStatus?: string | null; completedAt?: string | null },
+  now: () => string = () => new Date().toISOString(),
+): string | null | undefined {
+  if (change.completedAt !== undefined) return change.completedAt;
+  if (change.status === undefined) return undefined;
+  if (change.previousStatus === undefined || change.previousStatus === null) return undefined;
+  if (change.previousStatus === change.status) return undefined;
+  if (change.status !== "done") return change.previousStatus === "done" ? null : undefined;
+  return now();
+}

@@ -30,7 +30,7 @@ import {
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
-import { safeLoadQuery, effectiveCreatedAt, type SharedProjectRefLite } from "./pure.js";
+import { safeLoadQuery, effectiveCreatedAt, resolveCompletedAt, type SharedProjectRefLite } from "./pure.js";
 import { resolveSharedOwner, loadSharedProjectRef, logSharedActivity, logSharedTaskChanges, logSharedProjectChanges, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 import { loadOwnerSideRecords, recordMemberGrant } from "./ownerGrants.js";
 import { resolveVerifiedPermission, effectivePermission } from "../memberVerification.js";
@@ -283,6 +283,12 @@ export const sharedTools: Tool[] = [
         parentTaskId: {
           type: "string",
           description: "Parent task ID, or null to detach from parent",
+        },
+        completedAt: {
+          type: "string",
+          description:
+            "Completion timestamp, or null to clear it. Normally left out: it follows the status by itself. " +
+            "Pass it when backfilling an import, where the real completion time is known.",
         },
         isDeleted: {
           type: "boolean",
@@ -1481,6 +1487,7 @@ async function updateSharedTask(
     recurrenceDay?: string | null;
     sprintNumber?: number | null;
     parentTaskId?: string | null;
+    completedAt?: string | null;
     isDeleted?: boolean;
   }
 ) {
@@ -1511,12 +1518,8 @@ async function updateSharedTask(
       updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
     }
     if (args.status !== undefined) {
+      // completedAt is settled below, once the task's previous status is known.
       updates.status = args.status;
-      if (args.status === "done") {
-        updates.completedAt = new Date().toISOString();
-      } else {
-        updates.completedAt = null;
-      }
     }
     if (args.priority !== undefined) {
       updates.priority = args.priority;
@@ -1575,7 +1578,7 @@ async function updateSharedTask(
     let recurrenceNote: string | null = null;
     if (args.status === "done") {
       const outcome = await recurrenceOutcomeFor(projectEvolu, args.id, sharedOwner.id as string, updates);
-      applyDoneOutcome(updates, outcome, { personal: false });
+      applyDoneOutcome(updates, outcome);
       if (outcome.kind === "reset") recurrenceNote = `Recurring task reset to ${outcome.nextDeadline}`;
       if (outcome.kind === "expired") recurrenceNote = "Recurrence has ended, the task stays done";
     }
@@ -1583,6 +1586,16 @@ async function updateSharedTask(
     // Read before writing, so the history shows what the field was. (TODO-434)
     const oldTask =
       (await loadOwnedRow(projectEvolu, "task", args.id, sharedOwner.id as string, [...TRACKED_TASK_FIELDS])) ?? {};
+
+    // The app's rule (TODO-437, ported in TODO-112): a status write is not
+    // always a status change, and rewriting the column would move the
+    // completion time and add a message to the project's history for nothing.
+    const settledCompletedAt = resolveCompletedAt({
+      status: updates.status as string | undefined,
+      previousStatus: (oldTask.status as string) ?? null,
+      completedAt: args.completedAt,
+    });
+    if (settledCompletedAt !== undefined) updates.completedAt = settledCompletedAt;
 
     const waiter = createMutationWaiter();
     assertMutation("updateSharedTask", projectEvolu.update("task", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
@@ -3651,8 +3664,8 @@ async function bulkUpdateSharedTasks(
 
         const updates: Record<string, unknown> = { id: taskId as TaskId };
         if (args.status !== undefined) {
+          // Settled below, once this task's previous status is known.
           updates.status = args.status;
-          updates.completedAt = args.status === "done" ? new Date().toISOString() : null;
         }
         if (args.priority !== undefined) {
           updates.priority = args.priority;
@@ -3672,8 +3685,15 @@ async function bulkUpdateSharedTasks(
         // The last way past the fix: bulk-closing shared tasks. (TODO-420)
         if (args.status === "done") {
           const outcome = await recurrenceOutcomeFor(projectEvolu, taskId, ownerId, updates);
-          applyDoneOutcome(updates, outcome, { personal: false });
+          applyDoneOutcome(updates, outcome);
         }
+
+        // On the settled status, after the recurrence reset may have changed it.
+        const settled = resolveCompletedAt({
+          status: updates.status as string | undefined,
+          previousStatus: (existing[0]?.status as string) ?? null,
+        });
+        if (settled !== undefined) updates.completedAt = settled;
 
         pending.push(updates);
         // Kept for the history entries written once the update is made.
