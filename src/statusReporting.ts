@@ -43,11 +43,12 @@ function isEnabled(): boolean {
 const SETTING_TTL_MS = 30_000;
 let settingValue = false;
 let settingCheckedAt = 0;
+let settingInFlight: Promise<void> | null = null;
 
-function refreshSetting(): void {
+function refreshSetting(): Promise<void> {
+  if (settingInFlight) return settingInFlight;
   const evolu = getEvolu();
-  if (!evolu) return;
-  settingCheckedAt = Date.now();
+  if (!evolu) return Promise.resolve();
   const query = evolu.createQuery((db: any) =>
     db
       .selectFrom("appSetting")
@@ -56,18 +57,34 @@ function refreshSetting(): void {
       .where("isDeleted", "is not", SQLITE_TRUE)
       .limit(1),
   );
-  void evolu
+  settingInFlight = evolu
     .loadQuery(query)
     .then((rows) => {
       settingValue = ((rows?.[0] as { value?: unknown } | undefined)?.value as string) === "true";
+      settingCheckedAt = Date.now();
     })
     .catch(() => {
       settingValue = false;
+      settingCheckedAt = Date.now();
+    })
+    .finally(() => {
+      settingInFlight = null;
     });
+  return settingInFlight;
 }
 
-function userWantsIt(): boolean {
-  if (Date.now() - settingCheckedAt > SETTING_TTL_MS) refreshSetting();
+/**
+ * Zapnul si to uživatel? Čeká na načtení, když je hodnota stará.
+ *
+ * Čekat tady nic nestojí: celé hlášení běží mimo volání nástroje, které už
+ * dávno vrátilo výsledek. Dřív se vracela hodnota z mezipaměti hned a načtení
+ * se jen rozjelo na pozadí, takže první volání po startu vidělo výchozí
+ * `false` a jeho řádka nevznikla. Na čerstvé databázi to bylo ještě horší:
+ * než se nastavení stáhlo z relaye, bylo stejně nepravdivé i to, co přišlo
+ * potom. (TODO-454)
+ */
+async function userWantsIt(): Promise<boolean> {
+  if (Date.now() - settingCheckedAt > SETTING_TTL_MS) await refreshSetting();
   return settingValue;
 }
 
@@ -128,6 +145,18 @@ export function startStatusReporting(): void {
   const ownerId = getAppOwnerId();
   const mnemonic = process.env.TODOCKO_MNEMONIC;
   if (ownerId && mnemonic) void ensureKeyRegistered(ownerId, mnemonic);
+
+  // Načíst nastavení hned, ne až při prvním volání nástroje (TODO-454).
+  //
+  // `userWantsIt` vrací hodnotu z mezipaměti a tu první si bere asynchronně,
+  // takže první volání po startu vidělo ještě výchozí false a jeho řádka
+  // nevznikla. Na produkci to bylo vidět: hned po reconnectu měl relay nula
+  // položek a jednu až po druhém volání.
+  //
+  // Schválně se na to NEČEKÁ. Evolu dotaz se umí zaseknout a blokovat tím
+  // start serveru by bylo horší než ztracená jedna řádka; mezi startem
+  // a prvním voláním je vždycky aspoň inicializace Evolu.
+  refreshSetting();
 }
 
 /**
@@ -139,11 +168,11 @@ export function startStatusReporting(): void {
  */
 export function reportToolCall(tool: string, args: unknown): void {
   if (!reporter || !keyBytes) return;
-  if (!userWantsIt()) return;
-  const line = summarize(tool, args);
-  void encryptStatusLine(keyBytes, line)
-    .then((blob) => reporter?.push(blob))
-    .catch(() => {});
+  void (async () => {
+    if (!(await userWantsIt())) return;
+    const blob = await encryptStatusLine(keyBytes!, summarize(tool, args));
+    reporter?.push(blob);
+  })().catch(() => {});
 }
 
 /** Pro testy a pro ukončení procesu: pošle, co je ve frontě. */
