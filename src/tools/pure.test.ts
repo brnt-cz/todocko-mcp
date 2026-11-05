@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { assertMutation, resolveCompletedAt, effectiveCreatedAt, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
+import { assertMutation, resolveCompletedAt, effectiveCreatedAt, MAX_RICH_TEXT_LENGTH, richTextLimitFromEvolu, resolveUploadPath, relayHttpBase, assertRequiredArgs, assertRowExists, judgeSyncFreshness, isSocketUnanswered, loadQueryWithTimeout, withLoadQueryTimeout, describeDefect, assertNotSharedProject, sharedCounterpartTool, assertArgTypes } from "./pure.js";
 
 /**
  * These guard the v7 -> v8 change in what a mutation returns (TODO-88).
@@ -764,5 +764,17 @@ describe("effectiveCreatedAt", () => {
   it("answers null rather than a non-date", () => {
     expect(effectiveCreatedAt({})).toBeNull();
     expect(effectiveCreatedAt({ createdAt: 17 })).toBeNull();
+  });
+});
+
+describe("MAX_RICH_TEXT_LENGTH", () => {
+  // Spelled out because Evolu's maxLength brands the type with the number and
+  // needs a literal. If Evolu's mutation limit moves, this is where it shows.
+  it("is the number Evolu's own limit implies", () => {
+    expect(MAX_RICH_TEXT_LENGTH).toBe(richTextLimitFromEvolu());
+  });
+
+  it("is the app's limit, not the old flat 10 000", () => {
+    expect(MAX_RICH_TEXT_LENGTH).toBe(200_000);
   });
 });

@@ -2,7 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
 import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
-import { createMutationWaiter, assertMutation, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
+import { createMutationWaiter, assertMutation, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, RichTextString, MAX_RICH_TEXT_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
 import { effectiveCreatedAt, resolveCompletedAt } from "./pure.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
@@ -727,7 +727,7 @@ async function createTask(
 ) {
   // Validate field lengths up-front for clear errors (Evolu caps these).
   assertMaxLength(args.name, 100, "name");
-  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
+  assertMaxLength(args.description, MAX_RICH_TEXT_LENGTH, "description");
 
   // Get project to generate task code
   const projectQuery = evolu.createQuery((db: any) =>
@@ -806,7 +806,7 @@ async function createTask(
       projectId: args.projectId as ProjectId,
       title: NonEmptyTrimmedString100.orThrow(taskCode),
       name: args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null,
-      description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
+      description: args.description ? RichTextString.orThrow(args.description) : null,
       status: args.status || "todo",
       priority: args.priority || "medium",
       deadline: args.deadline || null,
@@ -928,7 +928,7 @@ async function updateTask(
 
   // Validate field lengths up-front for clear errors (Evolu caps these).
   assertMaxLength(args.name, 100, "name");
-  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
+  assertMaxLength(args.description, MAX_RICH_TEXT_LENGTH, "description");
   assertMaxLength(args.blockedReason, 1000, "blockedReason");
 
   const updates: Record<string, unknown> = {
@@ -946,7 +946,7 @@ async function updateTask(
     updates.name = args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null;
   }
   if (args.description !== undefined) {
-    updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
+    updates.description = args.description ? RichTextString.orThrow(args.description) : null;
   }
   if (args.status !== undefined) {
     // completedAt is decided below, once the task's previous status is known.

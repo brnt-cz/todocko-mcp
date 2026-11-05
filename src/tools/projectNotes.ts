@@ -10,7 +10,7 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists, RichTextString, assertMaxLength, MAX_RICH_TEXT_LENGTH } from "./helpers.js";
 import { resolveSharedOwner, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 
 export const projectNoteTools: Tool[] = [
@@ -178,6 +178,9 @@ async function createProjectNote(
   evolu: EvoluInstance,
   args: { projectId: string; title: string; content?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("localProjectNote").select(["position"])
       .where("projectId", "=", args.projectId as ProjectId)
@@ -191,7 +194,7 @@ async function createProjectNote(
   const result = evolu.insert("localProjectNote", {
     projectId: args.projectId as ProjectId,
     title: NonEmptyTrimmedString100.orThrow(args.title),
-    content: args.content ? EvoluString.orThrow(args.content) : null,
+    content: args.content ? RichTextString.orThrow(args.content) : null,
     position: Int.orThrow(maxPos + 1),
   }, { onComplete: waiter.onComplete });
 
@@ -204,12 +207,15 @@ async function updateProjectNote(
   evolu: EvoluInstance,
   args: { id: string; title?: string; content?: string; position?: number }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "localProjectNote", args.id, "Note");
 
   const updates: Record<string, unknown> = { id: args.id as LocalProjectNoteId };
   if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
-  if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
+  if (args.content !== undefined) updates.content = args.content ? RichTextString.orThrow(args.content) : null;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
@@ -272,6 +278,9 @@ async function listSharedProjectNotes(args: { sharedOwnerId: string; ownerSecret
 async function createSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -296,7 +305,7 @@ async function createSharedProjectNote(
     const result = projectEvolu.insert("projectNote", {
       projectId: args.projectId as ProjectId,
       title: NonEmptyTrimmedString100.orThrow(args.title),
-      content: args.content ? EvoluString.orThrow(args.content) : null,
+      content: args.content ? RichTextString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
     }, { owner: owner, onComplete: waiter.onComplete });
@@ -312,6 +321,9 @@ async function createSharedProjectNote(
 async function updateSharedProjectNote(
   args: { sharedOwnerId: string; ownerSecret?: string; id: string; title?: string; content?: string; position?: number }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -326,7 +338,7 @@ async function updateSharedProjectNote(
   try {
     const updates: Record<string, unknown> = { id: args.id as ProjectNoteId };
     if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
-    if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
+    if (args.content !== undefined) updates.content = args.content ? RichTextString.orThrow(args.content) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
     // `{ ownerId }` is what puts the row in the shared project's partition.

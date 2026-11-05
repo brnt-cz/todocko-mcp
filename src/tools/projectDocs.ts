@@ -10,7 +10,7 @@ import {
   useSharedOwner,
   stopUsingSharedOwner,
 } from "../evolu.js";
-import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
+import { createMutationWaiter , assertMutation, assertRowExists, RichTextString, assertMaxLength, MAX_RICH_TEXT_LENGTH } from "./helpers.js";
 import { resolveSharedOwner, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 
 export const projectDocTools: Tool[] = [
@@ -183,6 +183,9 @@ async function createProjectDoc(
   evolu: EvoluInstance,
   args: { projectId: string; title: string; content?: string; parentDocId?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const posQuery = evolu.createQuery((db: any) =>
     db.selectFrom("localProjectNote").select(["position"])
       .where("projectId", "=", args.projectId as ProjectId)
@@ -197,7 +200,7 @@ async function createProjectDoc(
   const result = evolu.insert("localProjectNote", {
     projectId: args.projectId as ProjectId,
     title: NonEmptyTrimmedString100.orThrow(args.title),
-    content: args.content ? EvoluString.orThrow(args.content) : null,
+    content: args.content ? RichTextString.orThrow(args.content) : null,
     position: Int.orThrow(maxPos + 1),
     isDoc: SQLITE_TRUE,
     parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
@@ -212,12 +215,15 @@ async function updateProjectDoc(
   evolu: EvoluInstance,
   args: { id: string; title?: string; content?: string; position?: number; parentDocId?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   // An id nobody has is not an error for Evolu, it is an insert. (TODO-292)
   await assertRowExists(evolu, "localProjectNote", args.id, "Document");
 
   const updates: Record<string, unknown> = { id: args.id as LocalProjectNoteId };
   if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
-  if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
+  if (args.content !== undefined) updates.content = args.content ? RichTextString.orThrow(args.content) : null;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
 
@@ -281,6 +287,9 @@ async function listSharedProjectDocs(args: { sharedOwnerId: string; ownerSecret?
 async function createSharedProjectDoc(
   args: { sharedOwnerId: string; ownerSecret?: string; projectId: string; title: string; content?: string; parentDocId?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -306,7 +315,7 @@ async function createSharedProjectDoc(
     const result = projectEvolu.insert("projectNote", {
       projectId: args.projectId as ProjectId,
       title: NonEmptyTrimmedString100.orThrow(args.title),
-      content: args.content ? EvoluString.orThrow(args.content) : null,
+      content: args.content ? RichTextString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
       isDoc: SQLITE_TRUE,
@@ -324,6 +333,9 @@ async function createSharedProjectDoc(
 async function updateSharedProjectDoc(
   args: { sharedOwnerId: string; ownerSecret?: string; id: string; title?: string; content?: string; position?: number; parentDocId?: string }
 ) {
+  // A text over the mutation limit makes Evolu raise in the middle of
+  // saving, so it is refused here with a readable message. (TODO-112)
+  assertMaxLength(args.content, MAX_RICH_TEXT_LENGTH, "content");
   const projectEvolu = getProjectEvolu();
   if (!projectEvolu) {
     throw new Error("Project Evolu not initialized");
@@ -338,7 +350,7 @@ async function updateSharedProjectDoc(
   try {
     const updates: Record<string, unknown> = { id: args.id as ProjectNoteId };
     if (args.title !== undefined) updates.title = NonEmptyTrimmedString100.orThrow(args.title);
-    if (args.content !== undefined) updates.content = args.content ? EvoluString.orThrow(args.content) : null;
+    if (args.content !== undefined) updates.content = args.content ? RichTextString.orThrow(args.content) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
 

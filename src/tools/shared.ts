@@ -34,7 +34,7 @@ import { safeLoadQuery, effectiveCreatedAt, resolveCompletedAt, type SharedProje
 import { resolveSharedOwner, loadSharedProjectRef, logSharedActivity, logSharedTaskChanges, logSharedProjectChanges, OWNER_SECRET_DESCRIPTION } from "./sharedAccess.js";
 import { loadOwnerSideRecords, recordMemberGrant } from "./ownerGrants.js";
 import { resolveVerifiedPermission, effectivePermission } from "../memberVerification.js";
-import { createMutationWaiter, assertMutation, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertValidProjectCode, nextTaskCode, assertTaskCodeForProject, withTaskCodeLock, pickSharedProjectRow } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertMaxLength, RichTextString, MAX_RICH_TEXT_LENGTH, resolveDownloadPath, resolveUploadPath, assertAttachmentSize, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertValidProjectCode, nextTaskCode, assertTaskCodeForProject, withTaskCodeLock, pickSharedProjectRow } from "./helpers.js";
 
 export const sharedTools: Tool[] = [
   {
@@ -1504,7 +1504,7 @@ async function updateSharedTask(
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   // Clear, actionable errors before the opaque Evolu orThrow (TODO-181)
-  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
+  assertMaxLength(args.description, MAX_RICH_TEXT_LENGTH, "description");
 
   try {
     const updates: Record<string, unknown> = {
@@ -1515,7 +1515,7 @@ async function updateSharedTask(
       updates.name = args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null;
     }
     if (args.description !== undefined) {
-      updates.description = args.description ? NonEmptyString10000.orThrow(args.description) : null;
+      updates.description = args.description ? RichTextString.orThrow(args.description) : null;
     }
     if (args.status !== undefined) {
       // completedAt is settled below, once the task's previous status is known.
@@ -1646,7 +1646,7 @@ async function createSharedTask(
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
   // Clear, actionable error before the opaque Evolu orThrow (TODO-181)
-  assertMaxLength(args.description, MAX_DESCRIPTION_LENGTH, "description");
+  assertMaxLength(args.description, MAX_RICH_TEXT_LENGTH, "description");
 
   try {
     // Resolve the project (scoped to this shared owner) to derive the task code.
@@ -1717,7 +1717,7 @@ async function createSharedTask(
           projectId: args.projectId as ProjectId,
           title: NonEmptyTrimmedString100.orThrow(taskCode),
           name: args.name ? NonEmptyTrimmedString100.orThrow(args.name) : null,
-          description: args.description ? NonEmptyString10000.orThrow(args.description) : null,
+          description: args.description ? RichTextString.orThrow(args.description) : null,
           status: args.status || "todo",
           priority: args.priority || "medium",
           deadline: args.deadline || null,

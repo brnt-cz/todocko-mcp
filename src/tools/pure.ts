@@ -1,3 +1,4 @@
+import { maxMutationSize } from "@evolu/common";
 /**
  * Helpers with no Evolu dependency.
  *
@@ -199,7 +200,36 @@ export function assertAttachmentSize(base64: string): void {
   }
 }
 
-export const MAX_DESCRIPTION_LENGTH = 10000;
+/**
+ * How long a text written into one row may be. (TODO-112)
+ *
+ * Ported from the app's `src/utils/mutationSize.ts` (TODO-441). Evolu refuses
+ * a mutation over `maxMutationSize` by raising synchronously, so an oversized
+ * write does not come back as an error, it blows up in the middle of saving.
+ *
+ * MCP used a flat 10 000 instead, picked when the app had no limit at all
+ * (TODO-181). That was a guardrail against megabyte payloads, but it also
+ * refused descriptions the app stores without blinking, and nothing guarded
+ * note or document content at all. Both now use the app's number.
+ *
+ * Counted in characters, not bytes: Evolu budgets the worst case of three
+ * bytes per UTF-16 code unit. The rest of the row gets a reserve, so the
+ * limit holds for a task with every field filled in.
+ */
+export const ROW_RESERVE_BYTES = 40_000;
+export const MAX_BYTES_PER_CODE_UNIT = 3;
+
+/**
+ * Written out rather than computed, because Evolu's `maxLength` brands the
+ * type with the number and needs a literal. `richTextLimitFromEvolu` recomputes
+ * it from Evolu's own constant and a test holds the two together, so a change
+ * in Evolu fails here instead of passing unnoticed.
+ */
+export const MAX_RICH_TEXT_LENGTH = 200_000;
+
+export function richTextLimitFromEvolu(): number {
+  return Math.floor((maxMutationSize - ROW_RESERVE_BYTES) / MAX_BYTES_PER_CODE_UNIT);
+}
 
 /** Gap between neighbouring positions, matching the app's renumbering step. */
 export const POSITION_STEP = 10;
