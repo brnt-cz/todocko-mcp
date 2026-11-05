@@ -183,7 +183,7 @@ Instalátor:
 | `td_list_projects` | Seznam všech projektů |
 | `td_get_project` | Detail projektu podle ID nebo kódu |
 | `td_create_project` | Vytvoření nového projektu (kód jen `A-Z` a `0-9`, jako v appce) |
-| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters; kód jen `A-Z` a `0-9`) |
+| `td_update_project` | Aktualizace projektu (name, code, color, isArchived, isHiddenFromFilters; kód jen `A-Z` a `0-9`). `autoApproveMembers` patří sdílenému projektu, tady se odmítne, viz `td_update_shared_project` |
 | `td_delete_project` | Smazání projektu (soft delete) |
 
 ### Úkoly
@@ -445,8 +445,8 @@ neposílá přes nešifrované `http://` jinam než na localhost. (TODO-441)
 | `td_create_shared_project_note` | Vytvoření poznámky ve sdíleném projektu |
 | `td_update_shared_project_note` | Aktualizace poznámky ve sdíleném projektu |
 | `td_delete_shared_project_note` | Smazání poznámky ve sdíleném projektu |
-| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav, `isPending` = čeká na schválení) |
-| `td_update_shared_member` | Jen admin. Změna oprávnění mezi `write` a `admin`, schválení čekajícího nebo odblokování (jen dokud projekt nemá rotovaný klíč); block, kick, zamítnutí a snížení na `read` odmítne, ty patří do appky |
+| `td_list_shared_members` | Seznam členů sdíleného projektu (jméno, oprávnění, kicked/blocked stav, `isPending` = čeká na schválení). Vlastníkovi navíc `verifiedPermission` (co udělil) a `effectivePermission` (to nižší z obojího, rozhoduje o write key) |
+| `td_update_shared_member` | Jen admin. Změna oprávnění mezi `write` a `admin`, schválení čekajícího nebo odblokování (jen dokud projekt nemá rotovaný klíč); block, kick, zamítnutí a snížení na `read` odmítne, ty patří do appky. Oprávnění nastavené vlastníkem se zapíše i jako jeho `memberGrant`, což teprve rozdává write key; admin bez vlastnictví změní jen členův nárok |
 | `td_upload_shared_note_attachment` | Nahrání přílohy k poznámce sdíleného projektu |
 | `td_list_shared_note_attachments` | Seznam příloh poznámky sdíleného projektu |
 | `td_download_shared_note_attachment` | Stažení přílohy poznámky sdíleného projektu |
@@ -705,6 +705,27 @@ MCP server si nový klíč načte ze sloupce `projectRef.writeKey`, který do je
 databáze přiteče běžným syncem AppOwnera. Kontrola běží při startu a pak každou
 minutu, takže po rotaci může být zhruba minuta, kdy zápisy do toho jednoho
 projektu relay odmítá a řádky čekají lokálně. Čtení rotace neovlivňuje.
+
+### Komu klíč patří: nárok versus grant (TODO-440)
+
+`projectMember.permission` si zapisuje sám člen, takže o tom, kdo dostane
+zapisovací klíč, rozhodovat nemůže. Vlastník si vede vlastní záznam ve své
+osobní instanci, kam žádný člen nedosáhne:
+
+- `shareInvite` na každý vygenerovaný odkaz, její id cestuje v tokenu,
+- `memberGrant` na každého člena, jehož oprávnění vlastník nastavil ručně,
+  a ten pozvánku přebíjí.
+
+Člen si id pozvánky neukládá, ten řádek čtou i ostatní členové a mohli by si ho
+opsat. Ukládá si do `projectMember.inviteProof` HMAC vlastní identity klíčovaný
+id pozvánky; vlastník, který id má, ho ověří, cizí člen si ho pro sebe nevyrobí.
+Skutečné oprávnění je to nižší z nároku a záznamu.
+
+`td_list_shared_members` proto vlastníkovi vrací navíc `verifiedPermission`
+a `effectivePermission` a `td_update_shared_member` zapisuje `memberGrant`
+spolu se změnou nároku. Dokud to MCP neumělo, změnilo povýšení přes MCP jen
+nárok: člen zapisovací klíč nedostal a appka u něj začala hlásit, že si
+nárokuje víc, než má potvrzeno.
 
 ## Umístění dat
 
@@ -981,7 +1002,7 @@ The installer will:
 | `td_list_projects` | List all projects |
 | `td_get_project` | Get project details by ID or code |
 | `td_create_project` | Create a new project (code: `A-Z` and `0-9` only, as in the app) |
-| `td_update_project` | Update a project (name, code, color, isArchived, autoApproveMembers, isHiddenFromFilters; code `A-Z` and `0-9` only) |
+| `td_update_project` | Update a project (name, code, color, isArchived, isHiddenFromFilters; code `A-Z` and `0-9` only). `autoApproveMembers` belongs to the shared project and is refused here, see `td_update_shared_project` |
 | `td_delete_project` | Delete a project (soft delete) |
 
 ### Tasks
@@ -1189,8 +1210,8 @@ Shared projects (TODO-235):
 | `td_create_shared_project_note` | Create a note in a shared project |
 | `td_update_shared_project_note` | Update a note in a shared project |
 | `td_delete_shared_project_note` | Delete a note in a shared project |
-| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval) |
-| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app |
+| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval). The owner also gets `verifiedPermission` (what they granted) and `effectivePermission` (the lower of the two, which decides the write key) |
+| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app. A permission set by the owner is also recorded as their `memberGrant`, which is what hands out the write key; an admin who does not own the project changes only the member's claim |
 | `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
 | `td_list_shared_note_attachments` | List attachments of a shared project note |
 | `td_download_shared_note_attachment` | Download a shared note attachment |
