@@ -9,7 +9,7 @@
  * nebo se nepovede zašifrovat, řádka se prostě zahodí: je to ambientní
  * informace, ne data.
  */
-import { getAppOwnerEncryptionKey, getAppOwnerId } from "./evolu.js";
+import { getAppOwnerEncryptionKey, getAppOwnerId, getEvolu, appSettingRowId, SQLITE_TRUE } from "./evolu.js";
 import { relayHttpBase } from "./tools/pure.js";
 import { signOwnerRequest } from "./utils/ownerSignature.js";
 import {
@@ -27,6 +27,48 @@ let keyBytes: Uint8Array | null = null;
 
 function isEnabled(): boolean {
   return (process.env.TODOCKO_AGENT_STATUS || "").toLowerCase() !== "off";
+}
+
+/**
+ * Zapnul si to uživatel v aplikaci? Výchozí stav je vypnuto (TODO-451).
+ *
+ * Nastavení je účtové, takže ho vidí i tenhle proces. Kdyby se nečetlo,
+ * posílalo by MCP stavy i tomu, kdo si je nikdy nezapnul, a relay by o nich
+ * věděl zbytečně.
+ *
+ * Hodnota se drží v mezipaměti, protože se čte po každém volání nástroje,
+ * zatímco se mění jednou za rok. Přepnutí se projeví nejpozději za
+ * SETTING_TTL_MS, ne až po restartu serveru.
+ */
+const SETTING_TTL_MS = 30_000;
+let settingValue = false;
+let settingCheckedAt = 0;
+
+function refreshSetting(): void {
+  const evolu = getEvolu();
+  if (!evolu) return;
+  settingCheckedAt = Date.now();
+  const query = evolu.createQuery((db: any) =>
+    db
+      .selectFrom("appSetting")
+      .select(["value"])
+      .where("id", "=", appSettingRowId("todocko_agent_status"))
+      .where("isDeleted", "is not", SQLITE_TRUE)
+      .limit(1),
+  );
+  void evolu
+    .loadQuery(query)
+    .then((rows) => {
+      settingValue = ((rows?.[0] as { value?: unknown } | undefined)?.value as string) === "true";
+    })
+    .catch(() => {
+      settingValue = false;
+    });
+}
+
+function userWantsIt(): boolean {
+  if (Date.now() - settingCheckedAt > SETTING_TTL_MS) refreshSetting();
+  return settingValue;
 }
 
 /**
@@ -69,6 +111,7 @@ export function startStatusReporting(): void {
  */
 export function reportToolCall(tool: string, args: unknown): void {
   if (!reporter || !keyBytes) return;
+  if (!userWantsIt()) return;
   const line = summarize(tool, args);
   void encryptStatusLine(keyBytes, line)
     .then((blob) => reporter?.push(blob))

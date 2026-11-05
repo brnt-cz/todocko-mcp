@@ -98,25 +98,25 @@ describe("šifrování", () => {
 describe("fronta", () => {
   it("pošle dávku až po odkladu, ne na každé volání", async () => {
     vi.useFakeTimers();
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_items: { at: number; sessionId: string; blob: string }[]) => {});
     const reporter = createStatusReporter({ send });
     reporter.push("a");
     reporter.push("b");
     expect(send).not.toHaveBeenCalled();
     vi.advanceTimersByTime(FLUSH_DELAY_MS);
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send.mock.calls[0][0]).toHaveLength(2);
+    expect(send.mock.calls[0]?.[0]).toHaveLength(2);
     vi.useRealTimers();
   });
 
   it("drží strop fronty a zahazuje nejstarší", () => {
     vi.useFakeTimers();
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_items: { at: number; sessionId: string; blob: string }[]) => {});
     const reporter = createStatusReporter({ send });
     for (let i = 0; i < MAX_QUEUE + 5; i++) reporter.push(`b${i}`);
     expect(reporter.pendingForTests()).toBe(MAX_QUEUE);
     reporter.flushNow();
-    expect(send.mock.calls[0][0][0].blob).toBe("b5");
+    expect(send.mock.calls[0]?.[0]?.[0]?.blob).toBe("b5");
     vi.useRealTimers();
   });
 
@@ -131,16 +131,16 @@ describe("fronta", () => {
   });
 
   it("prázdná fronta nic neposílá", () => {
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_items: { at: number; sessionId: string; blob: string }[]) => {});
     createStatusReporter({ send }).flushNow();
     expect(send).not.toHaveBeenCalled();
   });
 
   it("každá řádka nese sezení, aby šlo poznat dva agenty", () => {
-    const send = vi.fn(async () => {});
+    const send = vi.fn(async (_items: { at: number; sessionId: string; blob: string }[]) => {});
     const reporter = createStatusReporter({ send });
     reporter.push("a");
     reporter.flushNow();
-    expect(send.mock.calls[0][0][0].sessionId).toBe(reporter.sessionId);
+    expect(send.mock.calls[0]?.[0]?.[0]?.sessionId).toBe(reporter.sessionId);
   });
 });

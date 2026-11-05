@@ -28,6 +28,8 @@ const SYNCED_SETTING_KEYS = [
   "todocko_hide_done_after_days",
   "todocko_locale",
   "todocko_last_export",
+  // Mini obrazovka se stavy AI, výchozí stav vypnuto (TODO-451).
+  "todocko_agent_status",
 ] as const;
 
 export const appSettingTools: Tool[] = [
