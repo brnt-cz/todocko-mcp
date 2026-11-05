@@ -37,9 +37,18 @@ export const MAX_DETAIL_LENGTH = 60;
  * Co v seznamu není, se do řádky nedostane, i kdyby to nástroj přijímal.
  */
 const ALLOWED_ARG_KEYS = [
-  "code", "id", "taskId", "projectId", "projectCode", "noteId", "tagId",
-  "worklogId", "sharedOwnerId", "query", "status", "key", "type",
+  // Nejdřív to, co něco říká člověku. Pořadí je úmyslné: "zakládá Napsat
+  // mini obrazovku" je k něčemu, "zakládá bTvJzZWYJkZEWHvgxM7O9g" ne.
+  "code", "projectCode", "name", "title", "query", "status", "key", "type",
+  // Identifikátory až nakonec a zkrácené, viz SHORT_ID_KEYS.
+  "id", "taskId", "projectId", "noteId", "tagId", "worklogId", "sharedOwnerId",
 ] as const;
+
+/** Klíče, jejichž hodnota je náhodné id. Do řádky jdou zkrácené. */
+const SHORT_ID_KEYS = new Set(["id", "taskId", "projectId", "noteId", "tagId", "worklogId", "sharedOwnerId"]);
+
+/** Kolik znaků z id stačí, aby šlo poznat, že jde pořád o tutéž věc. */
+export const SHORT_ID_LENGTH = 8;
 
 /**
  * Co se do řádky nedostane nikdy, ani kdyby to někdo přidal do seznamu výš.
@@ -104,7 +113,9 @@ export function summarize(tool: string, args: unknown): StatusLine {
     if (NEVER_ARG_KEYS.has(key)) continue;
     const value = record[key];
     if (typeof value === "string" && value.length > 0) {
-      detail = value.slice(0, MAX_DETAIL_LENGTH);
+      detail = SHORT_ID_KEYS.has(key)
+        ? `${value.slice(0, SHORT_ID_LENGTH)}…`
+        : value.slice(0, MAX_DETAIL_LENGTH);
       break;
     }
     if (typeof value === "number" && Number.isFinite(value)) {

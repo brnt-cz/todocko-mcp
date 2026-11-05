@@ -11,7 +11,7 @@
  */
 import { getAppOwnerEncryptionKey, getAppOwnerId, getEvolu, appSettingRowId, SQLITE_TRUE } from "./evolu.js";
 import { relayHttpBase } from "./tools/pure.js";
-import { signOwnerRequest } from "./utils/ownerSignature.js";
+import { signOwnerRequest, deriveOwnerPublicKeyBase64Url } from "./utils/ownerSignature.js";
 import {
   createStatusReporter,
   deriveStatusKeyBytes,
@@ -91,6 +91,30 @@ async function send(items: { at: number; sessionId: string; blob: string }[]): P
   });
 }
 
+/**
+ * Zaregistruje podpisový klíč u relaye, pokud tam ještě není.
+ *
+ * Relay podepsané požadavky odmítá, dokud veřejný klíč ownera nezná, a zatím
+ * ho registrovala jen aplikace. Na produkci to vycházelo, protože appka běží
+ * dřív. U čerstvé relaye ale MCP dostávalo 401 `owner_not_registered`
+ * a hlášení tiše mizelo, aniž by cokoliv řeklo. Registrace je idempotentní
+ * a první zápis vyhrává, takže opakování ani souběh s appkou nevadí.
+ * (TODO-451)
+ */
+async function ensureKeyRegistered(ownerId: string, mnemonic: string): Promise<void> {
+  try {
+    const publicKey = await deriveOwnerPublicKeyBase64Url(mnemonic);
+    await fetch(`${relayHttpBase(process.env.TODOCKO_RELAY_URL)}/api/stripe/register-owner-key`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ownerId, publicKey }),
+      signal: AbortSignal.timeout(POST_TIMEOUT_MS * 3),
+    });
+  } catch {
+    // Nevadí: nejhorší následek je, že se stavy neukážou.
+  }
+}
+
 /** Připraví reportér. Volá se po initEvolu, kdy už je owner k dispozici. */
 export function startStatusReporting(): void {
   if (!isEnabled()) return;
@@ -100,6 +124,10 @@ export function startStatusReporting(): void {
   })();
   if (!keyBytes) return;
   reporter = createStatusReporter({ send });
+
+  const ownerId = getAppOwnerId();
+  const mnemonic = process.env.TODOCKO_MNEMONIC;
+  if (ownerId && mnemonic) void ensureKeyRegistered(ownerId, mnemonic);
 }
 
 /**

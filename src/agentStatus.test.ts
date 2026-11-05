@@ -35,6 +35,16 @@ describe("summarize", () => {
     });
   });
 
+  // "zakládá Napsat mini obrazovku" je k něčemu, "zakládá bTvJzZWYJkZEWHvgxM7O9g" ne.
+  it("dá přednost názvu před náhodným id", () => {
+    expect(summarize("td_create_task", { projectId: "bTvJzZWYJkZEWHvgxM7O9g", name: "Napsat mini obrazovku" }).detail)
+      .toBe("Napsat mini obrazovku");
+  });
+
+  it("samotné id zkrátí, aby řádka zůstala čitelná", () => {
+    expect(summarize("td_get_task", { id: "bTvJzZWYJkZEWHvgxM7O9g" }).detail).toBe("bTvJzZWY…");
+  });
+
   it("bez povoleného argumentu ukáže aspoň předmět", () => {
     expect(summarize("td_list_projects", {}).detail).toBe("projects");
   });
