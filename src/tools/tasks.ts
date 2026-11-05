@@ -2,7 +2,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type TaskId, type TagId, type ProjectId, type UserId, type DeploymentStageId, type EvoluInstance, getSyncHealth, getAppOwnerId } from "../evolu.js";
 import { onMarkedDone, applyDoneOutcome } from "../utils/recurrenceTransition.js";
-import { createMutationWaiter, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
+import { createMutationWaiter, assertMutation, waitForSync, safeLoadQuery, withTaskCodeLock, nextTaskCode, assertTaskCodeForProject, assertMaxLength, NonEmptyString10000, MAX_DESCRIPTION_LENGTH, topPositionForNewTask, defaultTagIdsForProject, assertRowExists, assertNotSharedProject } from "./helpers.js";
 import { effectiveCreatedAt } from "./pure.js";
 import { freeTierNote } from "./tierWarning.js";
 import { logTaskCreate, logTaskDelete, logTaskUpdate, TRACKED_TASK_FIELDS } from "../utils/activityLog.js";
@@ -1426,7 +1426,7 @@ async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
   await cascadeDeleteTaskChildren(evolu, args.id);
 
   const waiter = createMutationWaiter();
-  const result = evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteTask", evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onComplete: waiter.onComplete }));
   logTaskDelete(evolu, args.id);
 
   await waiter.waitForSync();

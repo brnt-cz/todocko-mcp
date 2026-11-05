@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, NonEmptyTrimmedString1000, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type RepositoryLinkId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter , assertMutation, assertRowExists } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertRowExists } from "./helpers.js";
 
 export const repositoryLinkTools: Tool[] = [
   {
@@ -199,7 +199,7 @@ async function updateRepositoryLink(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
-  const result = evolu.update("repositoryLink", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateRepositoryLink", evolu.update("repositoryLink", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Repository link updated successfully" };
 }

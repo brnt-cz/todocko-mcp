@@ -1585,7 +1585,7 @@ async function updateSharedTask(
       (await loadOwnedRow(projectEvolu, "task", args.id, sharedOwner.id as string, [...TRACKED_TASK_FIELDS])) ?? {};
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("task", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedTask", projectEvolu.update("task", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedTaskChanges(sharedOwner, args.id, oldTask, updates);
     await waiter.waitForSync();
 
@@ -1845,11 +1845,11 @@ async function deleteSharedTask(
     }
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update(
+    assertMutation("deleteSharedTask", projectEvolu.update(
       "task",
       { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any,
       { owner: sharedOwner, onComplete: waiter.onComplete }
-    );
+    ));
 
     logSharedActivity(sharedOwner, {
       taskId: args.id,
@@ -1967,7 +1967,7 @@ async function deleteSharedWorklog(
     // already in the bin counts as absent. (TODO-434)
     await assertRowExists(projectEvolu, "worklog", args.id, "Worklog", sharedOwner.id as string, true);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("worklog", { id: args.id as WorklogId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedWorklog", projectEvolu.update("worklog", { id: args.id as WorklogId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     await waiter.waitForSync();
     return { success: true, message: "Shared worklog deleted successfully" };
   } finally {
@@ -2080,7 +2080,7 @@ async function updateSharedChecklistItem(
       : null;
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("checklistItem", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedChecklistItem", projectEvolu.update("checklistItem", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     if (before && args.isChecked !== undefined && (before.isChecked === SQLITE_TRUE) !== args.isChecked) {
       logSharedActivity(sharedOwner, {
         taskId: (before.taskId as string) ?? null,
@@ -2110,7 +2110,7 @@ async function deleteSharedChecklistItem(
     // already in the bin counts as absent. (TODO-434)
     await assertRowExists(projectEvolu, "checklistItem", args.id, "Checklist item", sharedOwner.id as string, true);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("checklistItem", { id: args.id as ChecklistItemId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedChecklistItem", projectEvolu.update("checklistItem", { id: args.id as ChecklistItemId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     await waiter.waitForSync();
     return { success: true, message: "Shared checklist item deleted successfully" };
   } finally {
@@ -2199,11 +2199,11 @@ async function updateSharedTaskComment(
   await new Promise((resolve) => setTimeout(resolve, 1000));
   try {
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update(
+    assertMutation("updateSharedTaskComment", projectEvolu.update(
       "taskComment",
       { id: args.id as TaskCommentId, content: EvoluString.orThrow(args.content) } as any,
       { owner: sharedOwner, onComplete: waiter.onComplete }
-    );
+    ));
     await waiter.waitForSync();
     return { success: true, message: "Shared comment updated successfully" };
   } finally {
@@ -2225,7 +2225,7 @@ async function deleteSharedTaskComment(
     // already in the bin counts as absent. (TODO-434)
     await assertRowExists(projectEvolu, "taskComment", args.id, "Comment", sharedOwner.id as string, true);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("taskComment", { id: args.id as TaskCommentId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedTaskComment", projectEvolu.update("taskComment", { id: args.id as TaskCommentId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     await waiter.waitForSync();
     return { success: true, message: "Shared comment deleted successfully" };
   } finally {
@@ -2412,7 +2412,7 @@ async function updateSharedRepositoryLink(
     if (args.label !== undefined) updates.label = args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("repositoryLink", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedRepositoryLink", projectEvolu.update("repositoryLink", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, { taskId: null, action: "updated", entityType: "repositoryLink", newValue: args.label || args.url || null });
     await waiter.waitForSync();
     return { success: true, message: "Shared repository link updated successfully" };
@@ -2436,7 +2436,7 @@ async function deleteSharedRepositoryLink(
     await assertRowExists(projectEvolu, "repositoryLink", args.id, "Repository link", sharedOwner.id as string, true);
     const row = await loadOwnedRow(projectEvolu, "repositoryLink", args.id, sharedOwner.id as string, ["label", "url"]);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("repositoryLink", { id: args.id as RepositoryLinkId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedRepositoryLink", projectEvolu.update("repositoryLink", { id: args.id as RepositoryLinkId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, { taskId: null, action: "deleted", entityType: "repositoryLink", newValue: ((row?.label || row?.url) ?? null) as string | null });
     await waiter.waitForSync();
     return { success: true, message: "Shared repository link deleted successfully" };
@@ -2462,7 +2462,7 @@ async function updateSharedDeploymentStage(
     if (args.color !== undefined) updates.color = args.color;
     if (args.position !== undefined) updates.position = Int.orThrow(args.position);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("deploymentStage", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedDeploymentStage", projectEvolu.update("deploymentStage", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, { taskId: null, action: "updated", entityType: "deploymentStage", newValue: args.name ?? null });
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage updated successfully" };
@@ -2555,7 +2555,7 @@ async function updateSharedTag(
     if (args.color !== undefined) updates.color = args.color;
     if (args.isDefault !== undefined) updates.isDefault = args.isDefault ? SQLITE_TRUE : null;
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("tag", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedTag", projectEvolu.update("tag", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, { taskId: null, action: "updated", entityType: "tag", newValue: args.name ?? null });
     await waiter.waitForSync();
     return { success: true, message: "Shared tag updated successfully" };
@@ -2577,7 +2577,7 @@ async function deleteSharedTag(args: { sharedOwnerId: string; ownerSecret?: stri
     await assertRowExists(projectEvolu, "tag", args.id, "Tag", sharedOwner.id as string, true);
     const row = await loadOwnedRow(projectEvolu, "tag", args.id, sharedOwner.id as string, ["name"]);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("tag", { id: args.id as TagId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedTag", projectEvolu.update("tag", { id: args.id as TagId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, { taskId: null, action: "deleted", entityType: "tag", newValue: (row?.name ?? null) as string | null });
     await waiter.waitForSync();
     return { success: true, message: "Shared tag deleted successfully" };
@@ -2653,7 +2653,7 @@ async function removeSharedTagFromTask(
     // otherwise survive an apparent removal.
     const waiter = createMutationWaiter();
     for (const row of mine) {
-      const result = projectEvolu.update("taskTag", { id: row.id as TaskTagId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+      assertMutation("removeSharedTagFromTask", projectEvolu.update("taskTag", { id: row.id as TaskTagId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     }
     await waiter.waitForSync();
     return { success: true, removed: mine.length, message: "Tag removed successfully" };
@@ -2677,7 +2677,7 @@ async function deleteSharedDeploymentStage(
     await assertRowExists(projectEvolu, "deploymentStage", args.id, "Deployment stage", sharedOwner.id as string, true);
     const row = await loadOwnedRow(projectEvolu, "deploymentStage", args.id, sharedOwner.id as string, ["name"]);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedDeploymentStage", projectEvolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, { taskId: null, action: "deleted", entityType: "deploymentStage", newValue: (row?.name ?? null) as string | null });
     await waiter.waitForSync();
     return { success: true, message: "Shared deployment stage deleted successfully" };
@@ -2743,7 +2743,7 @@ async function updateSharedProject(
     }
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("project", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedProject", projectEvolu.update("project", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedProjectChanges(sharedOwner, project, updates);
     await waiter.waitForSync();
     return { success: true, projectId: project.id, message: "Shared project updated successfully" };
@@ -2932,7 +2932,7 @@ async function updateSharedMember(
     }
 
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("projectMember", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("updateSharedMember", projectEvolu.update("projectMember", updates as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
 
     // The entries the app writes for the changes still allowed here: a
     // permission change, and a member let in by approval or unblock.
@@ -3371,7 +3371,7 @@ async function deleteSharedAttachment(
     await assertRowExists(projectEvolu, "attachment", args.id, "Attachment", sharedOwner.id as string, true);
     const row = await loadOwnedRow(projectEvolu, "attachment", args.id, sharedOwner.id as string, ["taskId", "filename"]);
     const waiter = createMutationWaiter();
-    const result = projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete });
+    assertMutation("deleteSharedAttachment", projectEvolu.update("attachment", { id: args.id as AttachmentId, data: null, isDeleted: SQLITE_TRUE } as any, { owner: sharedOwner, onComplete: waiter.onComplete }));
     logSharedActivity(sharedOwner, {
       taskId: (row?.taskId as string) ?? null,
       action: "removed",

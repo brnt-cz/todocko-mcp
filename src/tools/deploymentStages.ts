@@ -1,7 +1,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import { NonEmptyTrimmedString100, Int } from "@evolu/common";
 import { SQLITE_TRUE, type ProjectId, type DeploymentStageId, type EvoluInstance } from "../evolu.js";
-import { createMutationWaiter, assertRowExists } from "./helpers.js";
+import { createMutationWaiter, assertMutation, assertRowExists } from "./helpers.js";
 
 export const deploymentStageTools: Tool[] = [
   {
@@ -112,14 +112,14 @@ async function updateDeploymentStage(
   if (args.color !== undefined) updates.color = args.color;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   const waiter = createMutationWaiter();
-  const result = evolu.update("deploymentStage", updates as any, { onComplete: waiter.onComplete });
+  assertMutation("updateDeploymentStage", evolu.update("deploymentStage", updates as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Deployment stage updated successfully" };
 }
 
 async function deleteDeploymentStage(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  const result = evolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete });
+  assertMutation("deleteDeploymentStage", evolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
   await waiter.waitForSync();
   return { success: true, message: "Deployment stage deleted successfully" };
 }
