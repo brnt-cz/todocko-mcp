@@ -361,6 +361,14 @@ export const Schema = {
     mimeType: String,
     data: nullOr(String),
     size: Int,
+    /**
+     * Kde leží obsah, když ne u AppOwnera (TODO-450).
+     *
+     * `null` je stará příloha, tedy kusy pod AppOwnerem. Neprázdná hodnota je
+     * cesta k shardu. Musí sedět se schématem aplikace, jinak by příloha
+     * nahraná tady měla obsah, ke kterému se aplikace nedostane.
+     */
+    contentShard: nullOr(String),
   },
   /**
    * Obsah přílohy po kusech, binárně (TODO-396).
@@ -787,6 +795,20 @@ let evoluInstance: EvoluInstance | null = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let appOwnerForProcess: any = null;
 
+/**
+ * Stav synchronizace hlavní instance, pro toho, kdo potřebuje počkat na ownera
+ * jiného než AppOwnera. (TODO-450)
+ */
+let appSyncStateStore: { get: () => unknown; subscribe: (listener: () => void) => () => void } | null = null;
+
+/** Jak Evolu vidí synchronizaci téhle databáze, nebo null před startem. */
+export function getAppSyncState(): { name: string; get: () => any; subscribe: (listener: () => void) => () => void } | null {
+  const store = appSyncStateStore;
+  const evolu = evoluInstance as any;
+  if (!store || !evolu) return null;
+  return { name: evolu.name as string, get: () => store.get(), subscribe: (listener) => store.subscribe(listener) };
+}
+
 /** The throwaway owner of the shared instance. See deriveProjectInstanceOwner. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let projectAppOwnerForProcess: any = null;
@@ -804,6 +826,18 @@ function getAppOwnerForProjectInstance() {
  */
 export function getAppOwnerEncryptionKey(): Uint8Array | null {
   return (appOwnerForProcess?.encryptionKey as Uint8Array) ?? null;
+}
+
+/**
+ * AppOwner tohohle procesu, nebo null před initEvolu.
+ *
+ * Jen pro odvození shardů (viz attachmentShards.ts): `deriveShardOwner` chce
+ * celého ownera, protože z jeho tajemství odvozuje. Nikam se neposílá.
+ * (TODO-450)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAppOwner(): any {
+  return appOwnerForProcess;
 }
 
 /**
@@ -1185,7 +1219,14 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     appOwnerForProcess = appOwner;
     projectAppOwnerForProcess = deriveProjectInstanceOwner(mnemonicResult.value);
 
-    const run = createRun(createNodeEvoluDeps());
+    // Deps se drží, ne zahazují: nese je `syncState` (TODO-450). Obsah
+    // přílohy leží pod vlastním ownerem, který se registruje na vyžádání,
+    // a „je ten owner nahraný" se jinak zjistit nedá než od Evolu. Zbytek
+    // MCP si vystačí s odhadem času, protože čeká na AppOwnera, který je
+    // registrovaný pořád; u shardu by odhad znamenal tichou ztrátu obsahu.
+    const appEvoluDeps = createNodeEvoluDeps();
+    appSyncStateStore = appEvoluDeps.syncState;
+    const run = createRun(appEvoluDeps);
     const created = await run(createEvolu(Schema, {
       appName: AppName.orThrow(DB_NAME),
       appOwner,
@@ -1266,6 +1307,11 @@ export async function initEvolu(mnemonic: string): Promise<EvoluInstance | null>
     if (evoluReadyReject) evoluReadyReject(error instanceof Error ? error : new Error(globalThis.String(error)));
     throw error;
   }
+}
+
+/** Relaye, se kterými se synchronizuje. Shardy potřebují tytéž. (TODO-450) */
+export function getRelayServers(): RelayUrl[] {
+  return RELAY_SERVERS;
 }
 
 export function getEvolu(): EvoluInstance | null {
