@@ -79,6 +79,97 @@ const VERBS: ReadonlyArray<readonly [string, string]> = [
   ["td_force_", "vynucuje"],
 ];
 
+/**
+ * Co se dá z id dohledat, aby v řádce stálo jméno místo náhodných znaků.
+ *
+ * Seznam je úmyslně krátký a drží se věcí, které mají jméno, jaké by člověk
+ * sám řekl. Komentář ani worklog tu nejsou: jméno nemají, takže by dohledání
+ * jen stálo dotaz a vrátilo prázdno.
+ */
+export type LookupKind = "task" | "project" | "note" | "attachment" | "tag" | "user";
+
+export interface LookupTarget {
+  kind: LookupKind;
+  id: string;
+}
+
+/**
+ * Argument, který nese id, a co za ním stojí.
+ *
+ * `taskId` je tu schválně i u nástrojů, které zakládají něco jiného:
+ * "přidává komentář k TODO-450" je k užitku, zatímco id toho komentáře
+ * nikomu nic neřekne.
+ */
+const ID_ARG_KINDS: ReadonlyArray<readonly [string, LookupKind]> = [
+  ["taskId", "task"],
+  ["projectId", "project"],
+  ["noteId", "note"],
+  ["tagId", "tag"],
+];
+
+/**
+ * Předmět názvu nástroje a co znamená jeho `id`.
+ *
+ * Co v mapě není, se nedohledává. Platí to hlavně pro předměty, jejichž `id`
+ * patří něčemu jinému než tomu, co je ve jméně: `td_delete_task_comment`
+ * dostane id komentáře, ne úkolu, takže tabulka úkolů by k němu nic nenašla.
+ */
+const OBJECT_KINDS: ReadonlyArray<readonly [string, LookupKind]> = [
+  ["task", "task"],
+  ["tasks", "task"],
+  ["project", "project"],
+  ["projects", "project"],
+  ["project_note", "note"],
+  ["project_notes", "note"],
+  ["project_doc", "note"],
+  ["project_docs", "note"],
+  ["attachment", "attachment"],
+  ["attachments", "attachment"],
+  ["note_attachment", "attachment"],
+  ["tag", "tag"],
+  ["tags", "tag"],
+  ["user", "user"],
+  ["users", "user"],
+];
+
+/**
+ * Co by šlo u tohohle volání dohledat, nebo `null`.
+ *
+ * Čistá funkce schválně: rozhodnutí "co se smí dohledat" patří sem vedle
+ * seznamu povolených polí, zatímco samotný dotaz do databáze patří do
+ * `statusReporting.ts`. (TODO-458)
+ */
+export function lookupTarget(tool: string, args: unknown): LookupTarget | null {
+  const record = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+
+  for (const [key, kind] of ID_ARG_KINDS) {
+    const value = record[key];
+    if (typeof value === "string" && value.length > 0) return { kind, id: value };
+  }
+
+  const id = record["id"];
+  if (typeof id !== "string" || id.length === 0) return null;
+
+  const { object } = describeTool(tool);
+  const plain = object.replace(/^shared_/, "");
+  for (const [name, kind] of OBJECT_KINDS) {
+    if (plain === name) return { kind, id };
+  }
+  return null;
+}
+
+/**
+ * Nahradí detail dohledaným jménem.
+ *
+ * Strop na délku platí stejně jako u argumentů: dohledané jméno je další
+ * cesta, kterou se text dostane do řádky, a nesmí být volnější než ta první.
+ */
+export function withResolvedDetail(line: StatusLine, label: string): StatusLine {
+  const trimmed = label.trim();
+  if (trimmed.length === 0) return line;
+  return { ...line, detail: trimmed.slice(0, MAX_DETAIL_LENGTH) };
+}
+
 export interface StatusLine {
   /** Název nástroje, tak jak přišel. */
   tool: string;

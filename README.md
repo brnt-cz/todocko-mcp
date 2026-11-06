@@ -78,6 +78,13 @@ Sedm věcí, na kterých se to dá snadno rozbít:
   tiše: příloha nahraná tady by se tam otevřela prázdná. Shard se registruje
   jen na dobu nahrání nebo čtení, protože adresa transportu nese owner id
   a trvale registrovaný shard by znamenal jeden WebSocket na každou přílohu.
+- **Hlášení stavů dohledává jména k identifikátorům** (`src/statusReporting.ts`,
+  TODO-458). Pilulka v aplikaci ukazovala u volání, která dostanou jen id,
+  zkrácený identifikátor, což člověku neříká nic. Tabulky i sloupce, ze kterých
+  se jméno bere, jsou vyjmenované vedle seznamu povolených polí, ne odvozené
+  z názvu nástroje. Dohledání běží uvnitř téhož pošli a nečekej jako celé
+  hlášení a má vlastní strop, takže zaseknutý dotaz nedrží frontu; když se nic
+  nenajde, zůstane zkrácené id.
 
 
 - **`installPolyfills()` je povinné** a musí proběhnout dřív než cokoli
