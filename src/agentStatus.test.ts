@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  lookupTarget,
+  withResolvedDetail,
   summarize,
   describeTool,
   encryptStatusLine,
@@ -152,5 +154,51 @@ describe("fronta", () => {
     reporter.push("a");
     reporter.flushNow();
     expect(send.mock.calls[0]?.[0]?.[0]?.sessionId).toBe(reporter.sessionId);
+  });
+});
+
+describe("lookupTarget", () => {
+  it("pozná úkol podle předmětu nástroje", () => {
+    expect(lookupTarget("td_update_task", { id: "abc", status: "done" })).toEqual({ kind: "task", id: "abc" });
+    expect(lookupTarget("td_get_shared_task", { id: "abc" })).toEqual({ kind: "task", id: "abc" });
+  });
+
+  // "přidává komentář k TODO-450" je k užitku, id toho komentáře ne.
+  it("u komentáře vezme úkol, ke kterému patří", () => {
+    expect(lookupTarget("td_create_task_comment", { taskId: "t1", content: "x" })).toEqual({ kind: "task", id: "t1" });
+  });
+
+  it("nedohledává tam, kde id patří něčemu jinému než předmět říká", () => {
+    // Tohle je id komentáře, ne úkolu: tabulka úkolů by k němu nic nenašla.
+    expect(lookupTarget("td_delete_task_comment", { id: "c1" })).toBeNull();
+    expect(lookupTarget("td_delete_worklog", { id: "w1" })).toBeNull();
+  });
+
+  it("bez id nemá co dohledávat", () => {
+    expect(lookupTarget("td_list_tasks", {})).toBeNull();
+    expect(lookupTarget("td_list_tasks", null)).toBeNull();
+  });
+
+  it("vezme přílohu i projekt", () => {
+    expect(lookupTarget("td_download_attachment", { id: "a1" })).toEqual({ kind: "attachment", id: "a1" });
+    expect(lookupTarget("td_update_project", { id: "p1" })).toEqual({ kind: "project", id: "p1" });
+  });
+});
+
+describe("withResolvedDetail", () => {
+  it("nahradí zkrácené id jménem", () => {
+    const line = summarize("td_update_task", { id: "bTvJzZWYJkZEWHvgxM7O9g" });
+    expect(line.detail).toBe("bTvJzZWY…");
+    expect(withResolvedDetail(line, "TODO-450 Pilot: nové přílohy").detail).toBe("TODO-450 Pilot: nové přílohy");
+  });
+
+  it("drží stejný strop jako argumenty, dohledané jméno není volnější cesta", () => {
+    const line = summarize("td_update_task", { id: "x" });
+    expect(withResolvedDetail(line, "y".repeat(500)).detail).toHaveLength(MAX_DETAIL_LENGTH);
+  });
+
+  it("prázdné jméno nechá řádku, jak byla", () => {
+    const line = summarize("td_update_task", { id: "bTvJzZWYJkZEWHvgxM7O9g" });
+    expect(withResolvedDetail(line, "   ").detail).toBe("bTvJzZWY…");
   });
 });

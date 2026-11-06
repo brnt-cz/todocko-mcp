@@ -9,16 +9,19 @@
  * nebo se nepovede zašifrovat, řádka se prostě zahodí: je to ambientní
  * informace, ne data.
  */
-import { getAppOwnerEncryptionKey, getAppOwnerId, getEvolu, appSettingRowId, SQLITE_TRUE } from "./evolu.js";
+import { getAppOwnerEncryptionKey, getAppOwnerId, getEvolu, getProjectEvolu, appSettingRowId, SQLITE_TRUE } from "./evolu.js";
 import { relayHttpBase } from "./tools/pure.js";
 import { signOwnerRequest, deriveOwnerPublicKeyBase64Url } from "./utils/ownerSignature.js";
 import {
   createStatusReporter,
   deriveStatusKeyBytes,
   encryptStatusLine,
+  lookupTarget,
   summarize,
+  withResolvedDetail,
   POST_TIMEOUT_MS,
 } from "./agentStatus.js";
+import type { LookupKind, LookupTarget } from "./agentStatus.js";
 
 const PATH = "/api/agent-status";
 
@@ -160,6 +163,113 @@ export function startStatusReporting(): void {
 }
 
 /**
+ * Z čeho se dohledává jméno k id. (TODO-458)
+ *
+ * Tabulka a sloupce jsou vyjmenované, ne odvozené z názvu nástroje: do řádky
+ * se tak nemůže dostat sloupec, o kterém tu nikdo nerozhodl. Stejný důvod,
+ * proč se shrnutí skládá ze seznamu povolených polí.
+ *
+ * `label` dostane řádek a vyrobí z něj větu pro člověka. U úkolu je `title`
+ * jeho kód (TODO-450) a `name` název, proto obojí: samotný kód je sice
+ * jednoznačný, ale nepoví, o co jde.
+ */
+interface LookupSpec {
+  table: string;
+  columns: readonly string[];
+  label: (row: Record<string, unknown>) => string | null;
+}
+
+const text = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const joined = (...parts: Array<string | null>): string | null => {
+  const kept = parts.filter((part): part is string => part !== null);
+  return kept.length > 0 ? kept.join(" ") : null;
+};
+
+const TASK_SPEC: LookupSpec = {
+  table: "task",
+  columns: ["title", "name"],
+  label: (row) => joined(text(row.title), text(row.name)),
+};
+
+const PROJECT_SPEC: LookupSpec = {
+  table: "project",
+  columns: ["code", "name"],
+  label: (row) => joined(text(row.code), text(row.name)),
+};
+
+const ATTACHMENT_SPEC: LookupSpec = {
+  table: "attachment",
+  columns: ["filename"],
+  label: (row) => text(row.filename),
+};
+
+const TAG_SPEC: LookupSpec = {
+  table: "tag",
+  columns: ["name"],
+  label: (row) => text(row.name),
+};
+
+/** Osobní instance. */
+export const APP_LOOKUP_SPECS: Readonly<Record<LookupKind, LookupSpec | null>> = {
+  task: TASK_SPEC,
+  project: PROJECT_SPEC,
+  note: { table: "localProjectNote", columns: ["title"], label: (row) => text(row.title) },
+  attachment: ATTACHMENT_SPEC,
+  tag: TAG_SPEC,
+  user: { table: "user", columns: ["name"], label: (row) => text(row.name) },
+};
+
+/**
+ * Sdílená instance. Stejné věci, jiná jména tabulek, a uživatel tu není.
+ *
+ * Bez tohohle by u sdílených projektů zůstalo id, a právě tam je nejhůř
+ * k poznání: id sdíleného úkolu nemá člověk kde vidět.
+ */
+export const SHARED_LOOKUP_SPECS: Readonly<Record<LookupKind, LookupSpec | null>> = {
+  task: TASK_SPEC,
+  project: PROJECT_SPEC,
+  note: { table: "projectNote", columns: ["title"], label: (row) => text(row.title) },
+  attachment: ATTACHMENT_SPEC,
+  tag: TAG_SPEC,
+  user: null,
+};
+
+/** Déle než tohle se na jméno nečeká; řádka je i bez něj použitelná. */
+const LOOKUP_TIMEOUT_MS = 500;
+
+async function labelFrom(evolu: any, spec: LookupSpec | null, id: string): Promise<string | null> {
+  if (!evolu || !spec) return null;
+  // Smazaný řádek se schválně nevyfiltrovává: hlášení běží až po doběhnutí
+  // nástroje, takže zrovna u mazání je řádek v tu chvíli už označený jako
+  // smazaný a filtr by sebral jméno přesně tomu volání, kde se hodí nejvíc.
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom(spec.table).select([...spec.columns]).where("id", "=", id).limit(1),
+  );
+  const rows = await evolu.loadQuery(query);
+  const row = rows?.[0] as Record<string, unknown> | undefined;
+  return row ? spec.label(row) : null;
+}
+
+/**
+ * Jméno k id, nebo `null`, když se nenašlo.
+ *
+ * Nejdřív osobní instance, pak sdílená. Nenalezení není chyba: sdílený projekt
+ * nemusí být připojený a smazaný řádek se nenajde vůbec. V řádce pak zůstane
+ * zkrácené id, tedy dnešní chování.
+ */
+async function resolveLabel(target: LookupTarget): Promise<string | null> {
+  const lookup = (async () => {
+    const own = await labelFrom(getEvolu(), APP_LOOKUP_SPECS[target.kind], target.id);
+    if (own) return own;
+    return labelFrom(getProjectEvolu(), SHARED_LOOKUP_SPECS[target.kind], target.id);
+  })();
+  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), LOOKUP_TIMEOUT_MS));
+  return Promise.race([lookup.catch(() => null), timeout]);
+}
+
+/**
  * Ohlásí jedno volání nástroje. Nikdy nevyhodí výjimku a na nic nečeká.
  *
  * Šifrování je asynchronní, proto to končí `void` promisou se spolknutou
@@ -170,7 +280,10 @@ export function reportToolCall(tool: string, args: unknown): void {
   if (!reporter || !keyBytes) return;
   void (async () => {
     if (!(await userWantsIt())) return;
-    const blob = await encryptStatusLine(keyBytes!, summarize(tool, args));
+    const line = summarize(tool, args);
+    const target = lookupTarget(tool, args);
+    const label = target ? await resolveLabel(target) : null;
+    const blob = await encryptStatusLine(keyBytes!, label ? withResolvedDetail(line, label) : line);
     reporter?.push(blob);
   })().catch(() => {});
 }
