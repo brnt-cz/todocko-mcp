@@ -28,8 +28,14 @@ export const POST_TIMEOUT_MS = 1000;
 /** Kolik řádek si držíme ve frontě, než začneme zahazovat ty nejstarší. */
 export const MAX_QUEUE = 20;
 
-/** Nejdelší detail v řádce. Není to datový kanál. */
-export const MAX_DETAIL_LENGTH = 60;
+/**
+ * Nejdelší detail v řádce. Není to datový kanál.
+ *
+ * Šedesát znaků bylo málo: název úkolu smí mít sto a s kódem před ním se
+ * věta utnula uprostřed, takže rozbalený výpis končil třeba na "(Sh".
+ * Sto třicet pokryje kód i celý název a strop zůstává strop. (TODO-459)
+ */
+export const MAX_DETAIL_LENGTH = 130;
 
 /**
  * Argumenty, které smí do shrnutí. Jsou to identifikátory a volby, ne obsah.
