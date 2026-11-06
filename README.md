@@ -61,7 +61,7 @@ Vyšel krátce, protože Node 24 má potřebná web API nativně. Oba workery b�
 fallbacky Evolu „pro platformy bez podpory workerů"; `worker_threads` by přinesly
 izolaci, kterou jednoprocesový CLI nepotřebuje.
 
-Šest věcí, na kterých se to dá snadno rozbít:
+Sedm věcí, na kterých se to dá snadno rozbít:
 
 - **Mutace má strop 640 000 bajtů** (od 8.12). Větší zápis vyhodí výjimku ještě
   před uložením, takže se ani nenasynchronizuje. Přílohy se proto ukládají
@@ -69,6 +69,15 @@ izolaci, kterou jednoprocesový CLI nepotřebuje.
   v aplikaci; velikost kusu musí sedět s ní, jinak se příloha nahraná tady
   otevře jinde useknutá. Čtení umí i starý tvar, base64 v `attachment.data`,
   protože schéma je append-only.
+- **Obsah nové přílohy leží ve vlastním shardu** (`src/attachmentShards.ts`,
+  TODO-450), ne pod AppOwnerem. Jednotlivou změnu v CRDT smazat nejde, jen
+  označit jako smazanou, takže owner je jediná jednotka skutečného smazání.
+  Cesta `attachment/<id>` se odvozuje z id přílohy, a tedy se nikam neukládá;
+  v řádku je jen značka `contentShard`. Odvození i pořadí při mazání, nejdřív
+  relay a pak lokálně, musí sedět s aplikací, jinak se obě poloviny rozejdou
+  tiše: příloha nahraná tady by se tam otevřela prázdná. Shard se registruje
+  jen na dobu nahrání nebo čtení, protože adresa transportu nese owner id
+  a trvale registrovaný shard by znamenal jeden WebSocket na každou přílohu.
 
 
 - **`installPolyfills()` je povinné** a musí proběhnout dřív než cokoli

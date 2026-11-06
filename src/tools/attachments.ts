@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { basename, dirname } from "path";
 import { lookup } from "mime-types";
 import { joinChunks, splitIntoChunks } from "./attachmentChunks.js";
+import { attachmentShardPath, deleteShard, publishShard, shardOwnerOf, withShardContent } from "../attachmentShards.js";
 import { createMutationWaiter, assertMutation, resolveDownloadPath, resolveUploadPath, assertAttachmentSize } from "./helpers.js";
 
 export const attachmentTools: Tool[] = [
@@ -192,18 +193,31 @@ async function uploadAttachment(
     // Prázdné: obsah je v kusech. Sloupec zůstává kvůli starým přílohám.
     data: null,
     size: Int.orThrow(size),
+    contentShard: null,
   }, { onComplete: waiter.onComplete });
 
   const attachmentId = result.id as AttachmentId;
+  // Obsah jde do vlastního shardu, hlavička zůstává u AppOwnera (TODO-450):
+  // jedině celého ownera jde doopravdy smazat, jednotlivou změnu v CRDT ne.
+  // Musí to být stejně jako v aplikaci, jinak by se obě poloviny rozešly.
+  const contentShard = attachmentShardPath(attachmentId as string);
+  const shardOwner = shardOwnerOf(contentShard);
   chunks.forEach((bytes, index) => {
     evolu.insert("attachmentChunk", {
       attachmentId,
       index: Int.orThrow(index),
       bytes,
-    });
+    }, { owner: shardOwner } as any);
   });
+  assertMutation("uploadAttachment", evolu.update("attachment", {
+    id: attachmentId,
+    contentShard,
+  } as any));
 
   await waiter.waitForSync();
+  // Na rozdíl od aplikace se tu čeká: MCP nástroj skončí a proces může mezitím
+  // usnout, takže „nahráno" se nesmí tvrdit dřív, než to relay potvrdí.
+  const published = await publishShard(contentShard);
 
   return {
     success: true,
@@ -211,7 +225,10 @@ async function uploadAttachment(
     filename,
     mimeType,
     size,
-    message: `Attachment "${filename}" uploaded successfully`,
+    contentSynced: published,
+    message: published
+      ? `Attachment "${filename}" uploaded successfully`
+      : `Attachment "${filename}" was stored locally, but its content has not reached the relay yet`,
   };
 }
 
@@ -246,6 +263,32 @@ async function deleteAttachment(
   evolu: EvoluInstance,
   args: { id: string }
 ) {
+  // Obsah ve shardu se maže smazáním celého ownera, tady i na relayi: to je
+  // jediný způsob, jak místo opravdu uvolnit. Přepsat kusy by uvolnilo jen
+  // tenhle stroj a relay by si obsah nechala navždy. (TODO-450)
+  const contentShard = await attachmentContentShard(evolu, args.id);
+  if (contentShard) {
+    const deleted = await deleteShard(contentShard);
+    if (!deleted) {
+      console.error(`[attachments] shard ${contentShard} could not be deleted`);
+    }
+    const shardWaiter = createMutationWaiter();
+    assertMutation("deleteAttachment", evolu.update("attachment", {
+      id: args.id as AttachmentId,
+      data: null,
+      contentShard: null,
+      isDeleted: SQLITE_TRUE,
+    } as any, { onComplete: shardWaiter.onComplete }));
+    await shardWaiter.waitForSync();
+    return {
+      success: true,
+      contentDeleted: deleted,
+      message: deleted
+        ? "Attachment deleted successfully"
+        : "Attachment deleted, but its content could not be removed from the relay",
+    };
+  }
+
   // Kusy musí odejít s přílohou, jinak zůstane obsah ležet v datech a
   // tombstone uvolní jen hlavičku (TODO-396).
   const chunkQuery = evolu.createQuery((db: any) =>
@@ -287,7 +330,7 @@ async function downloadAttachment(
   const query = evolu.createQuery((db: any) =>
     db
       .selectFrom("attachment")
-      .select(["id", "filename", "mimeType", "data", "size"])
+      .select(["id", "filename", "mimeType", "data", "size", "contentShard"])
       .where("id", "=", args.id as AttachmentId)
       .where("isDeleted", "is not", SQLITE_TRUE)
       .limit(1)
@@ -310,7 +353,15 @@ async function downloadAttachment(
       .where("isDeleted", "is not", SQLITE_TRUE)
       .orderBy("index", "asc")
   );
-  const chunkRows = (await evolu.loadQuery(chunkQuery)) as unknown as Array<{ index: number; bytes: Uint8Array }>;
+  const readChunks = async () =>
+    (await evolu.loadQuery(chunkQuery)) as unknown as Array<{ index: number; bytes: Uint8Array }>;
+  // Kusy ze shardu leží v téže tabulce, jen pod jiným ownerem, takže dotaz je
+  // pro obě místa stejný. Lokálně se zkouší první: na stroji, který přílohu
+  // nahrál, by čekání na synchronizaci bylo čekání pro nic. (TODO-450)
+  let chunkRows = await readChunks();
+  if (chunkRows.length === 0 && typeof a.contentShard === "string" && a.contentShard) {
+    chunkRows = await withShardContent(a.contentShard as string, readChunks);
+  }
   const joined = chunkRows.length > 0 ? joinChunks(chunkRows.map((r) => ({ index: r.index, bytes: r.bytes }))) : null;
 
   if (chunkRows.length > 0 && !joined) {
@@ -347,4 +398,15 @@ async function downloadAttachment(
     data: base64,
     size: a.size,
   };
+}
+
+
+/** Kde obsah přílohy leží, nebo null, když u AppOwnera. (TODO-450) */
+async function attachmentContentShard(evolu: EvoluInstance, id: string): Promise<string | null> {
+  const query = evolu.createQuery((db: any) =>
+    db.selectFrom("attachment").select(["contentShard"]).where("id", "=", id as AttachmentId).limit(1)
+  );
+  const rows = (await evolu.loadQuery(query)) as unknown as Array<{ contentShard: string | null }>;
+  const value = rows[0]?.contentShard;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
