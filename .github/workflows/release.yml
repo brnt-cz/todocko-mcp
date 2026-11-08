@@ -4,6 +4,9 @@ on:
     tags: ['v*']
 permissions:
   contents: write
+  # Pro npm provenance: podepíše balíček tímhle během, takže na npm je vidět,
+  # z jakého commitu a workflow vznikl. Repo je veřejné, tak to jde.
+  id-token: write
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -12,7 +15,36 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
+          # Bez registry-url si setup-node nepřipraví .npmrc a NODE_AUTH_TOKEN
+          # se nikam nepropíše. Publikace pak spadne na 401 a vypadá to na
+          # špatný token.
+          registry-url: 'https://registry.npmjs.org'
       - run: npm install && npm run build
+
+      # Publikace je prakticky nevratná: odvolat verzi jde jen do 72 hodin
+      # a číslo se už nikdy nedá použít znovu. Proto se testy pouští tady,
+      # i když je CI workflow pustilo nad commitem.
+      - run: npm test
+
+      # Tag a package.json se musí shodovat. Bez téhle kontroly by `git tag
+      # v3.11.0` nad nezvýšeným package.json buď vydal starou verzi znovu
+      # (chyba 403), nebo tiše vydal něco jiného, než co tag slibuje.
+      - name: Check the tag matches package.json
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "Tag $tag != package.json $pkg"
+            exit 1
+          fi
+          echo "Verze sedí: $pkg"
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
