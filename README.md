@@ -1,6 +1,798 @@
 # Todocko MCP Server
 
-> **English version below** / [Jump to English](#english)
+> [Česká verze níže](#česky) / Czech version below
+
+MCP (Model Context Protocol) server for working with [Todocko](https://app.todocko.cz) app data from AI assistants.
+
+## Support
+
+- **Claude Desktop** - full support
+- **Claude Code (CLI)** - full support (same configuration)
+
+## Requirements
+
+- **Node.js 24.20+** – required by Evolu v8's `engines`, and not merely formally:
+  v8 relies on `navigator.locks`, `MessageChannel`, `BroadcastChannel` and
+  `WebSocket`, which Node only has natively from 24 on
+- Todocko account with data synchronized via Evolu
+
+## Installation
+
+### From npm
+
+Nothing to clone and nothing to build. Point Claude at the published package
+and it fetches it on first run:
+
+**Claude Desktop** (`~/.config/Claude/claude_desktop_config.json` on Linux or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "todocko": {
+      "command": "npx",
+      "args": ["-y", "todocko-mcp"],
+      "env": {
+        "TODOCKO_MNEMONIC": "your 24 word backup phrase"
+      }
+    }
+  }
+}
+```
+
+**Claude Code (CLI)** - add the same block to `~/.claude/settings.json`, then
+restart Claude.
+
+Pin a version with `todocko-mcp@3.10.2` instead of `todocko-mcp` if you would
+rather decide yourself when to move. To get the `todo` command line tool on your
+`PATH` as well, install the package globally:
+
+```bash
+npm install -g todocko-mcp
+```
+
+Note that `TODOCKO_MNEMONIC` is the private key to all of your data. Keep it in
+the configuration file and nowhere else: never on a command line, never in a
+shell history, never in a repository. See [Security](#security).
+
+### From source
+
+#### 1. Download
+
+**Using git:**
+```bash
+git clone https://github.com/brnt-cz/todocko-mcp.git
+cd todocko-mcp
+```
+
+**Or download ZIP** from [Releases](https://github.com/brnt-cz/todocko-mcp/releases) and extract.
+
+#### 2. Run the installer
+
+**Linux/macOS:**
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+.\install.ps1
+```
+
+The installer will:
+1. Install dependencies and build the project
+2. Ask whether to configure Claude Desktop, Claude Code, or both
+3. Create a configuration file with a placeholder
+4. **Manually add** your 24-word backup phrase to the configuration file
+5. Restart Claude
+
+#### Manual installation
+
+1. Install dependencies:
+   ```bash
+   npm install
+   npm run build
+   ```
+
+2. Add to configuration:
+
+**Claude Desktop** (`~/.config/Claude/claude_desktop_config.json` on Linux or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "todocko": {
+      "command": "node",
+      "args": ["/path/to/mcp-server/dist/index.js"],
+      "env": {
+        "TODOCKO_MNEMONIC": "your 24 word backup phrase"
+      }
+    }
+  }
+}
+```
+
+**Claude Code (CLI)** - add to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "todocko": {
+      "command": "node",
+      "args": ["/path/to/mcp-server/dist/index.js"],
+      "env": {
+        "TODOCKO_MNEMONIC": "your 24 word backup phrase"
+      }
+    }
+  }
+}
+```
+
+3. Restart Claude Desktop / Claude Code
+
+## Available Tools (161)
+
+### Projects
+
+| Tool | Description |
+|------|-------------|
+| `td_list_projects` | List all projects |
+| `td_get_project` | Get project details by ID or code |
+| `td_create_project` | Create a new project (code: `A-Z` and `0-9` only, as in the app) |
+| `td_update_project` | Update a project (name, code, color, isArchived, isHiddenFromFilters; code `A-Z` and `0-9` only). `autoApproveMembers` belongs to the shared project and is refused here, see `td_update_shared_project` |
+| `td_delete_project` | Delete a project (soft delete) |
+
+### Tasks
+
+| Tool | Description |
+|------|-------------|
+| `td_list_tasks` | List tasks with filters (project, status, priority, assignee) |
+| `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`), recurrence settings included |
+| `td_create_task` | Create a new task (with recurrence, sprint, parentTaskId support) |
+| `td_update_task` | Update an existing task (with recurrence, sprint, parentTaskId support) |
+| `td_search_tasks` | Search tasks by text |
+| `td_bulk_update_tasks` | Bulk update multiple tasks |
+| `td_bulk_delete_tasks` | Bulk delete multiple tasks |
+| `td_delete_task` | Soft-delete a single personal task (cascades to its worklogs and attachments). |
+| `td_list_git_events` | List git events (push, PR opened/merged/closed) for a task by its code. |
+
+### Users
+
+| Tool | Description |
+|------|-------------|
+| `td_list_users` | List all users |
+| `td_get_user` | Get user details |
+| `td_create_user` | Create a new user |
+| `td_update_user` | Update a user |
+| `td_delete_user` | Delete a user (soft delete) |
+
+### Worklogs
+
+| Tool | Description |
+|------|-------------|
+| `td_list_worklogs` | List worklogs for a task |
+| `td_add_worklog` | Add a worklog to a task |
+| `td_update_worklog` | Update a worklog |
+| `td_delete_worklog` | Delete a worklog (soft delete) |
+
+### Attachments
+
+| Tool | Description |
+|------|-------------|
+| `td_upload_attachment` | Upload an attachment to a task (from file or base64) |
+| `td_list_attachments` | List attachments for a task |
+| `td_download_attachment` | Download an attachment |
+| `td_delete_attachment` | Delete an attachment |
+| `td_upload_note_attachment` | Upload an attachment to a local project note |
+| `td_list_note_attachments` | List attachments of a local note |
+| `td_download_note_attachment` | Download a note attachment |
+| `td_delete_note_attachment` | Delete a note attachment |
+
+### Comments
+
+| Tool | Description |
+|------|-------------|
+| `td_list_task_comments` | List comments for a task |
+| `td_create_task_comment` | Add a comment to a task |
+| `td_update_task_comment` | Update a comment |
+| `td_delete_task_comment` | Delete a comment (soft delete) |
+
+### Checklist
+
+| Tool | Description |
+|------|-------------|
+| `td_list_checklist_items` | List checklist items for a task |
+| `td_create_checklist_item` | Add a checklist item |
+| `td_update_checklist_item` | Update a checklist item (check, reposition) |
+| `td_delete_checklist_item` | Delete a checklist item (soft delete) |
+
+### Mentions
+
+| Tool | Description |
+|------|-------------|
+| `td_list_mentions` | List mentions for a user |
+| `td_create_mention` | Create a mention |
+| `td_mark_mention_read` | Mark a mention as read |
+| `td_mark_all_mentions_read` | Mark all mentions as read |
+| `td_delete_mention` | Delete a mention (soft delete) |
+
+### Task Links
+
+| Tool | Description |
+|------|-------------|
+| `td_list_app_settings` | Account settings that follow the user across devices |
+| `td_set_app_setting` | Set one account setting |
+| `td_list_task_links` | List links for a task |
+| `td_create_task_link` | Create a link between tasks (`blocks`, `explicit`, `mention`, `relates`, `duplicate`) |
+| `td_delete_task_link` | Delete a task link (soft delete) |
+
+### Tags
+
+| Tool | Description |
+|------|-------------|
+| `td_list_tags` | List tags; returns `projectId`, filters by project or unassigned |
+| `td_create_tag` | Create a tag – **pass `projectId`**, see the note below |
+| `td_update_tag` | Rename, recolour, assign to a project, or mark default |
+| `td_delete_tag` | Delete a tag (soft delete) |
+| `td_list_task_tags` | List tags assigned to a task |
+| `td_add_tag_to_task` | Assign a tag to a task |
+| `td_remove_tag_from_task` | Remove a tag from a task |
+
+Shared projects (TODO-235):
+
+| Tool | Description |
+|------|-------------|
+| `td_list_shared_tags` | Tags in a shared project |
+| `td_create_shared_tag` | Create a tag in a shared project |
+| `td_update_shared_tag` | Rename / recolour |
+| `td_delete_shared_tag` | Delete (soft delete) |
+| `td_add_shared_tag_to_task` | Assign to a task in a shared project |
+| `td_remove_shared_tag_from_task` | Remove from a task |
+
+> **A tag without a project is never offered by the app.** Since TODO-227 tags
+> belong to a project; `td_create_tag` without `projectId` makes an **unassigned**
+> tag, which shows up only under "Nezařazené" in project settings with a button to
+> adopt it. The tool response says so. Fix it afterwards with `td_update_tag` and
+> a `projectId`.
+>
+> **Free-tier limits (TODO-243).** Tier caps belong to the app, not here.
+> `td_create_task` and `td_create_project` append a warning with the real count
+> when the owner is on the free tier and above its cap (1 project, 50 **active**
+> tasks), so that it is learned at creation time rather than later in the app, and
+> so that the text makes clear nothing was lost. **Nothing is blocked**, and with
+> an unknown tier (unreachable relay) it stays silent – a false alarm is worse
+> than none.
+
+> **Default tags (TODO-239).** `isDefault` on `td_create_tag` / `td_update_tag`
+> (and the shared variants) means every task newly created in the project gets the
+> tag. Both `td_create_task` and `td_create_shared_task` apply them and report them
+> back in `appliedTags` – the app pre-ticks them in its form, so without this the
+> result would depend on where the task was created. Existing tasks are untouched.
+>
+> Shared projects write to a **different Evolu instance**, hence the separate set
+> – `td_add_tag_to_task` does not work on a shared task.
+
+### Task Templates
+
+| Tool | Description |
+|------|-------------|
+| `td_list_task_templates` | List task templates |
+| `td_create_task_template` | Create a task template (optional `checklistItems` and `tagIds`) |
+| `td_update_task_template` | Update a task template (`checklistItems`, `tagIds`; empty array clears) |
+| `td_delete_task_template` | Delete a task template (soft delete) |
+
+### Kanban Columns
+
+| Tool | Description |
+|------|-------------|
+| `td_list_kanban_columns` | List kanban columns |
+| `td_create_kanban_column` | Create a kanban column (optional `wipLimit`, max tasks per user in In progress before the header warns) |
+| `td_update_kanban_column` | Update a kanban column (`wipLimit: null` clears the limit) |
+| `td_delete_kanban_column` | Delete a kanban column (soft delete) |
+
+### Saved Views
+
+| Tool | Description |
+|------|-------------|
+| `td_list_saved_views` | List saved views |
+| `td_create_saved_view` | Create a saved view |
+| `td_update_saved_view` | Update a saved view |
+| `td_delete_saved_view` | Delete a saved view (soft delete) |
+
+### Activity Log
+
+| Tool | Description |
+|------|-------------|
+| `td_list_activity_log` | List activity log entries with filters (task, actor, action, entityType, date from/to) – read-only |
+
+### Project Notes
+
+| Tool | Description |
+|------|-------------|
+| `td_list_project_notes` | List local project notes (index: title and `contentLength`; content via `includeContent`) |
+| `td_get_project_note` | Read one local project note, with its content |
+| `td_create_project_note` | Create a local project note |
+| `td_update_project_note` | Update a local project note |
+| `td_delete_project_note` | Delete a local project note (soft delete) |
+
+### Deployment Stages
+
+| Tool | Description |
+|------|-------------|
+| `td_list_deployment_stages` | List deployment stages for a project |
+| `td_create_deployment_stage` | Create a deployment stage for a personal project. |
+| `td_update_deployment_stage` | Update a deployment stage in a personal project. |
+| `td_delete_deployment_stage` | Soft-delete a deployment stage in a personal project. |
+
+### Repository Links
+
+| Tool | Description |
+|------|-------------|
+| `td_list_repository_links` | List repository links |
+| `td_create_repository_link` | Create a repository link |
+| `td_delete_repository_link` | Delete a repository link |
+| `td_update_repository_link` | Update a repository link for a project. |
+
+### Shared Projects
+
+| Tool | Description |
+|------|-------------|
+| `td_list_shared_projects` | List shared projects with your permission (no longer returns `ownerSecret`) |
+| `td_list_shared_tasks` | List tasks from a shared project |
+| `td_update_shared_task` | Update a task in a shared project |
+| `td_list_shared_deployment_stages` | List deployment stages for a shared project |
+| `td_create_shared_deployment_stage` | Create a deployment stage in a shared project |
+| `td_list_shared_repository_links` | List repository links for a shared project |
+| `td_create_shared_repository_link` | Create a repository link in a shared project |
+| `td_list_shared_project_notes` | List notes for a shared project (index; content via `includeContent`) |
+| `td_get_shared_project_note` | Read one note from a shared project, with its content |
+| `td_create_shared_project_note` | Create a note in a shared project |
+| `td_update_shared_project_note` | Update a note in a shared project |
+| `td_delete_shared_project_note` | Delete a note in a shared project |
+| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval). The owner also gets `verifiedPermission` (what they granted) and `effectivePermission` (the lower of the two, which decides the write key) |
+| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app. A permission set by the owner is also recorded as their `memberGrant`, which is what hands out the write key; an admin who does not own the project changes only the member's claim |
+| `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
+| `td_list_shared_note_attachments` | List attachments of a shared project note |
+| `td_download_shared_note_attachment` | Download a shared note attachment |
+| `td_delete_shared_note_attachment` | Delete a shared note attachment |
+| `td_list_shared_project_docs` | List document pages from a shared project (index; content via `includeContent`) |
+| `td_get_shared_project_doc` | Read one document page from a shared project, with its content |
+| `td_create_shared_project_doc` | Create a document page in a shared project |
+| `td_update_shared_project_doc` | Update a document page in a shared project |
+| `td_delete_shared_project_doc` | Delete a document page in a shared project (soft delete) |
+| `td_create_shared_task` | Create a task in a shared project. |
+| `td_delete_shared_task` | Soft-delete a task in a shared project (cascades to its checklist items and comments). |
+| `td_list_shared_worklogs` | List worklogs for a task in a shared project. |
+| `td_add_shared_worklog` | Add a worklog to a task in a shared project. |
+| `td_delete_shared_worklog` | Soft-delete a worklog in a shared project. |
+| `td_list_shared_checklist_items` | List checklist items for a task in a shared project. |
+| `td_create_shared_checklist_item` | Create a checklist item on a task in a shared project. |
+| `td_update_shared_checklist_item` | Update a checklist item in a shared project (toggle done, rename, reorder). |
+| `td_delete_shared_checklist_item` | Soft-delete a checklist item in a shared project. |
+| `td_list_shared_task_links` | List dependency links for a task in a shared project. |
+| `td_create_shared_task_link` | Create a dependency link between tasks in a shared project. |
+| `td_delete_shared_task_link` | Delete a dependency link in a shared project (soft delete). |
+| `td_list_shared_task_comments` | List comments for a task in a shared project. |
+| `td_create_shared_task_comment` | Add a comment to a task in a shared project. |
+| `td_update_shared_task_comment` | Update a comment in a shared project. |
+| `td_delete_shared_task_comment` | Soft-delete a comment in a shared project. |
+| `td_update_shared_repository_link` | Update a repository link in a shared project. |
+| `td_delete_shared_repository_link` | Soft-delete a repository link in a shared project. |
+| `td_update_shared_deployment_stage` | Update a deployment stage in a shared project. |
+| `td_delete_shared_deployment_stage` | Soft-delete a deployment stage in a shared project. |
+| `td_update_shared_project` | Update shared-project metadata (archive / hide from filters). |
+| `td_upload_shared_attachment` | Upload a file attachment to a task in a shared project. |
+| `td_list_shared_attachments` | List file attachments of a task in a shared project (metadata only, no data). |
+| `td_download_shared_attachment` | Download a task attachment from a shared project. |
+| `td_delete_shared_attachment` | Soft-delete a task attachment in a shared project. |
+| `td_get_shared_task` | Get one task in a shared project by ID or code, with its worklog total, checklist and comment counts. |
+| `td_list_shared_task_tags` | List the tags on a task in a shared project. |
+| `td_bulk_update_shared_tasks` | Update several tasks in a shared project at once. |
+| `td_bulk_delete_shared_tasks` | Soft-delete several tasks in a shared project at once, cascading their checklist items and comments. |
+| `td_update_shared_worklog` | Update a worklog in a shared project. |
+| `td_list_shared_activity_log` | List activity log entries for a shared project. |
+
+> **Permissions, `ownerSecret` and history in shared projects (TODO-434).**
+>
+> - **`ownerSecret` is optional; leave it out.** Every shared tool looks it up
+>   from your `projectRef` by `sharedOwnerId`, and `td_list_shared_projects` no
+>   longer returns it. The secret is the key to the whole project, so it used
+>   to sit in the model's context and every transcript. Passing it still works
+>   and is checked against `sharedOwnerId`.
+> - **Writes are gated by permission, as in the app** (`src/permissions.ts`, a
+>   port of the app's `permissions.ts`). Tasks, worklogs, checklist items,
+>   comments, attachments, links, tag assignment, notes and documents need
+>   `write` or `admin`. Project settings (`td_update_shared_project`, delete and
+>   restore included), deployment stages, repository links, tag management and
+>   members need the owner or `admin`. Without a `projectRef` writes are
+>   refused, reads still work. A refusal is an error and nothing is written.
+> - **Member management is partial.** After every member change the app rotates
+>   the write key or hands the current one over, otherwise a blocked member keeps
+>   writing. The MCP cannot rotate, so changes that leave the member unable to
+>   write (block, kick, reject, downgrade to `read`) are refused with a pointer
+>   to the app. Approving, unblocking and upgrading pass only while the project
+>   has no rotated write key.
+> - **Shared writes record history** in the shared instance, the same entries
+>   the app writes (task created / updated per field / deleted, worklog,
+>   checklist, comment, attachment, tag, stage, repository link, project,
+>   member), with your account as `actorId` and `source: "mcp"` in metadata.
+> - **Deleting an unknown id** is an error instead of `success`, and bulk delete
+>   counts it as skipped. `td_update_shared_project` picks the project row the
+>   way the app does (oldest live row) and can restore it from the Trash.
+> - **Project codes** may contain only `A-Z` and `0-9`, and concurrent
+>   `td_create_task` / `td_create_shared_task` calls for one project no longer
+>   get the same code.
+
+### Project Documentation
+
+Documents are notes with `isDoc`, so they can nest under another document via `parentDocId`.
+
+| Tool | Description |
+|------|-------------|
+| `td_list_project_docs` | List local project document pages (index: title, hierarchy and `contentLength`; content via `includeContent`) |
+| `td_get_project_doc` | Read one local project document page, with its content |
+| `td_create_project_doc` | Create a local project document page |
+| `td_update_project_doc` | Update a local project document page |
+| `td_delete_project_doc` | Delete a local project document page (soft delete) |
+
+### System Notifications (relay)
+
+Broadcast notices for every user. Writing, and listing expired ones, needs `TODOCKO_RELAY_ADMIN_KEY`.
+
+Without `TODOCKO_RELAY_ADMIN_KEY`, `td_create_system_notification` and
+`td_delete_system_notification` are not offered to the client at all (a 401 is
+the only answer they could give) and the listing drops its `admin` flag. The key
+is never sent over plain `http://` to anything but localhost. (TODO-441)
+
+| Tool | Description |
+|------|-------------|
+| `td_list_system_notifications` | List active system/broadcast notifications from the relay server. |
+| `td_create_system_notification` | Create a broadcast notification visible to all Todocko users. |
+| `td_delete_system_notification` | Delete a system notification by ID. |
+
+### User Messages (relay)
+
+What users send from the app: bug reports, feature requests, notes. Listing and deleting are admin-owner only and the request is signed with the configured mnemonic; submitting needs no admin rights.
+
+| Tool | Description |
+|------|-------------|
+| `td_list_user_messages` | List messages users have sent from the app (bug reports, feature requests, notes). |
+| `td_submit_user_message` | Send a message to the Todocko admins (bug report, feature request or note), the same way the app's feedback form does. |
+| `td_delete_user_message` | Delete one user message from the relay. |
+
+### Analytics & Reports
+
+| Tool | Description |
+|------|-------------|
+| `td_get_dashboard_summary` | Overview: tasks today, overdue, this week's worklog, upcoming deadlines |
+| `td_get_team_workload` | Team workload: logged vs estimate vs capacity per user for a period |
+| `td_list_recurring_tasks` | List recurring tasks with recurrence configuration |
+| `td_list_overdue_tasks` | Overdue tasks (sorted oldest first) |
+
+> **Before v1.6.0 these three tools always returned nothing.**
+> `td_list_recurring_tasks`, `td_list_overdue_tasks` and
+> `td_list_tasks_by_date_range` read `result.rows`, while `evolu.loadQuery`
+> resolves to the array itself – so `count: 0` for every input, with no error to
+> notice. Fixed in TODO-242 behind a shared `queryRows`. `td_get_task` now returns
+> the recurrence settings too, so a schedule can be read the obvious way.
+| `td_list_tasks_by_date_range` | Tasks filtered by scheduledDate or deadline within a date range |
+| `td_analyze_dependencies` | Dependency analysis: blocked tasks, blocking chains, critical path |
+
+### Diagnostics
+
+| Tool | Description |
+|------|-------------|
+| `td_sync_status` | Sync status |
+| `td_force_sync` | Force a sync round-trip with the relay (useful when you want to make sure you're reading the latest data from another device) |
+
+## Usage Examples
+
+### List projects
+```
+Show me all projects in Todocko
+```
+
+### List tasks
+```
+What tasks do I have with status "todo"?
+Show tasks for project TODO
+```
+
+### Task details
+```
+What are the details of task TODO-15?
+```
+
+### Create task
+```
+Create a new task in project PROJ with title "Fix login bug" and priority high
+Create a task with deadline 2026-03-15 and scheduledDate 2026-03-10
+```
+
+### Update task
+```
+Mark task PROJ-5 as completed
+Assign task TODO-10 to user with ID xyz
+Set scheduledDate of task TODO-10 to tomorrow
+```
+
+### Log time
+```
+Log 2 hours of work on task TODO-15 with description "Feature implementation"
+```
+
+### Working with attachments
+```
+Upload file /home/user/report.pdf as attachment to task TODO-15
+What attachments does task TODO-15 have?
+Delete attachment with ID xyz
+```
+
+### Shared projects
+```
+Show shared projects
+What tasks are in the shared project?
+Mark task as deployed to production
+```
+
+### Deployment stages
+```
+What deployment stages does the project have?
+Create a new deployment stage "Staging" for the shared project
+```
+
+### Sub-tasks
+```
+Create a sub-task for task TODO-15 in project TODO
+Detach task TODO-20 from its parent (parentTaskId: null)
+```
+
+### Analytics & Reports
+```
+What's my dashboard summary for today?
+How is the team's workload this week?
+What tasks are overdue?
+Show tasks scheduled for next week
+Analyze dependencies in project TODO
+What recurring tasks do I have?
+```
+
+## Command line (`todo`)
+
+The package also ships a `todo` command line tool for quick personal use from a
+terminal. It shares the same database and the same `TODOCKO_MNEMONIC` as the MCP
+server, and a global install (`npm install -g todocko-mcp`) puts it on your
+`PATH`.
+
+📖 **Full guide: [CLI.md](CLI.md)**
+
+```bash
+# Add a task (without -p it uses the first project)
+todo add "Fix the login"
+todo add "Fix the login" -p TODO --priority high --scheduled today
+
+# Change status (tasks are addressed by their code)
+todo done TODO-160          # status=done
+todo start TODO-160         # status=in_progress
+todo mv TODO-160 review     # backlog|todo|in_progress|review|done|recurring
+
+# Worklog
+todo log TODO-160 1h30m "debugging OAuth"
+todo worklogs TODO-160      # worklog table
+
+# Machine readable output on every command
+todo add "X" --json
+```
+
+- **Sync:** after a mutation it waits about 3 s for the relay. Offline it prints
+  `⚠ uloženo lokálně` and exits 0, because the data is safe locally either way.
+- **Exit codes:** `0` success, `1` user or business error (unknown code, bad
+  status or duration), `2` configuration (missing mnemonic).
+- **Colors** only on a TTY and only when `NO_COLOR` is unset.
+- **Note:** it runs as its own process against the same SQLite database as the
+  MCP server. A write that collides with the MCP server can rarely raise
+  `SQLITE_BUSY`; repeat the command when it does. Out of scope for v1:
+  `list`/`today`, editing descriptions, projects, tags, checklists and shared
+  projects.
+
+## Security
+
+**Important:** Your backup phrase (mnemonic) is sensitive data!
+
+- Never share it directly in conversation with AI
+- The MCP server never exposes the phrase through a tool: nothing in Todocko can read or print it
+- That is not the same as the AI having no access to it. An agent that can run commands or
+  read files (Claude Code and the like) reads `~/.claude.json` or `~/.claude/settings.json`
+  like any other file. The configuration keeps the phrase away from MCP tools, not from a
+  shell. (TODO-441)
+- Anyone with your phrase has full access to your data
+
+### Argument and path checks (TODO-441)
+
+- Argument values are checked against the type the tool declares. `isBlocked: "false"`
+  used to be stored as `true` (a non-empty string is truthy); it is an error now.
+- Date arguments (`deadline`, `scheduledDate`, `loggedAt`, `recurrenceEndDate`,
+  `startDate`, `endDate`, ...) must be `YYYY-MM-DD`; where the schema says datetime
+  (`completedAt`, `expiresAt`, activity-log `from`/`to`) an ISO datetime is accepted too.
+  `deadline: "zitra"` used to be stored verbatim with nothing reporting it.
+- Attachments: paths are judged after symlinks are resolved, so a link inside the allowed
+  directory no longer leads out of it. Downloads now refuse dotfiles (as uploads already
+  did) and never replace an existing file unless `overwrite: true` is passed.
+
+### Shared project write key rotation (TODO-268)
+
+When the owner of a shared project removes a member, the app swaps the
+project's write key on the relay. The key derived from `ownerSecret` stops
+being valid and the relay refuses every write made with it.
+
+This server picks the new key up from the `projectRef.writeKey` column, which
+reaches its database through the ordinary AppOwner sync. It checks at start and
+then once a minute, so a rotation can leave about a minute in which writes to
+that one project are refused and the rows wait locally. Reading is unaffected.
+
+## Data Location
+
+Databases are stored in the `~/.todocko/` directory:
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.todocko/` |
+| macOS | `~/.todocko/` |
+| Windows | `C:\Users\<user>\.todocko\` |
+
+Files:
+- `todocko.db` - your personal data (tasks, projects)
+- `todocko-shared.db` - shared projects
+
+## Configuration Changes
+
+### Claude Code (CLI)
+
+After changing configuration in `~/.claude/settings.json` (e.g., changing mnemonic), run the command:
+```
+/mcp
+```
+This will restart the MCP server with the new configuration.
+
+### Switching to a Different Account
+
+When changing the mnemonic to a **different Todocko account**, you need to delete the local database:
+
+```bash
+# Linux/macOS
+rm ~/.todocko/todocko.db
+
+# Windows
+del %USERPROFILE%\.todocko\todocko.db
+```
+
+The database contains the owner ID from the previous mnemonic. After deletion, a new database will be created on the next startup and data from the new account will be downloaded.
+
+## Troubleshooting
+
+### Server won't start
+- Check that you have Node.js 24.20 or newer (Evolu v8 requires it)
+- Check that you ran `npm run build`
+- Check logs in Claude Desktop
+
+### Data not syncing
+- Verify the backup phrase is correct (24 words)
+- Check internet connection
+- Wait a few seconds for synchronization
+- Try deleting `~/.todocko/todocko.db` and restart
+
+### Tools not visible
+- Restart Claude Desktop
+- In Claude Code, use `/mcp` for reload
+- Check the configuration file
+- Check the path to dist/index.js
+
+### `project ... is a shared project` on a write
+A shared project keeps its data in the **shared instance**, so the personal
+tools (`td_create_task`, `td_update_task`, `td_bulk_update_tasks`) refuse a
+write aimed at one and point at the `td_*_shared_*` counterpart.
+
+Such a write used to be stored quietly in the personal instance beside the real
+row, leaving the same task in two instances, free to drift: the app reads the
+shared side and `td_list_tasks` reads the personal one, so the two disagreed
+with nothing reporting it. (TODO-318)
+
+**Deletes are still allowed** on a shared project, because otherwise old
+personal copies could never be cleaned up. `td_search_tasks` with
+`includeShared` shows both copies side by side and is the quickest way to spot
+a split task.
+
+### `Todocko MCP už nad touto databází běží` (TODO-341)
+A second instance over the same backup phrase refuses to start. The client
+database runs with `journal_mode=delete` and a zero `busy_timeout`, so the
+second process gets SQLITE_BUSY immediately, Evolu turns it into
+`PanicAbortReason: database is locked`, and the **first** process loses its
+dbWorker. Until TODO-341 a new window silently killed the one you were working
+in.
+
+The lock is `~/.todocko/todocko-<owner>.lock` next to the database. It holds the
+owning pid; after a crash the next start detects it as stale
+(`process.kill(pid, 0)`) and takes it over.
+
+If you really need a second instance (the `todo` CLI next to the MCP, say), give
+it its own database name:
+```bash
+TODOCKO_INSTANCE=cli todo ...
+```
+It gets `~/.todocko/todocko-cli-<owner>.db`, a separate local copy that
+reconciles with the first one through the relay. Allowed characters are
+`a-z0-9-`; anything else is dropped and an empty value means the default
+database.
+
+### Every `loadQuery` ends with a timeout (`loadQuery timed out after 15000ms`)
+
+There are two causes, told apart by what the server says.
+
+**1. A dead dbWorker after two processes raced (TODO-316).** Two MCP processes
+creating the schema of the same database at the same time race each other. The
+loser gets `SqliteError: table evolu_version already exists` and its dbWorker
+stays dead for the life of the process. Typically on the first starts after an
+MCP upgrade that adds a table.
+
+Since TODO-316 the server detects this at startup and **refuses to start**:
+every tool call returns `Evolu dbWorker never answered` immediately. Since
+TODO-317 the reason the worker died is recorded too, in `workerDefects` from
+`td_sync_status` and on stderr as `FATAL: Evolu dbWorker defect: ...`. It used to
+look healthy while every query hung until the client gave up 1800s later. The
+fix is a `/mcp` reconnect in Claude Code.
+
+**2. A mismatched native binding.** The `better-sqlite3` native binding was compiled against a different Node.js ABI than the one running the MCP server. `new Database()` fails with `ERR_DLOPEN_FAILED`, the Evolu dbWorker init never completes, and every `loadQuery` hangs forever. Mutations (insert/update) report success but are silently lost.
+
+Typical symptoms: `td_sync_status` reports `ok` with `errorCount: 0`, but `td_get_task`, `td_list_*`, etc. all time out.
+
+Fix – rebuild the native binding against the current Node:
+```bash
+cd ~/.todocko-mcp # or wherever todocko-mcp is installed
+cd node_modules/better-sqlite3
+npx node-gyp rebuild --release
+```
+Then `/mcp` reconnect in Claude Code.
+
+This mismatch typically appears after upgrading Node.js (e.g. v22 → v25) or switching between nvm and linuxbrew/brew Node, because the installer builds the binding against the `node` from `PATH`, but `claude` may later spawn the MCP with a different node binary.
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Watch mode for development
+npm run dev
+
+# Tests
+npm test
+
+# Manual run
+TODOCKO_MNEMONIC="your phrase" npm start
+```
+
+### Tests
+
+Vitest, 406 tests across 28 files. **They run in CI** (`ci.yml`, on pushes and
+pull requests to `main`) since TODO-229. Before that CI only built, so nobody
+learned that `helpers.test.ts` **does not even survive the import** on Node
+18/20: through `helpers.ts` it pulled in `../evolu.js`, whose module-level
+initialization dies on `crypto.getRandomValues must be defined`.
+
+That is why the functions with no Evolu dependency live in
+**`src/tools/pure.ts`** and are tested from there. `helpers.ts` re-exports them,
+so callers do not change. A helper that does not need Evolu belongs in
+`pure.ts`, otherwise it cannot be tested without a running database.
+
+The required version is **Node 24.20 or newer**: it is in `engines` and Evolu v8
+does not run on anything older. `ci.yml` and `release.yml` both use it.
+
+---
+
+# Česky
 
 MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todocko.cz) aplikace z AI asistentů.
 
@@ -11,7 +803,7 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Požadavky
 
-- **Node.js 24.20+** — Evolu v8 to má v `engines`, a není to formalita: v8 stojí
+- **Node.js 24.20+** – Evolu v8 to má v `engines`, a není to formalita: v8 stojí
   na `navigator.locks`, `MessageChannel`, `BroadcastChannel` a `WebSocket`, které
   má Node nativně teprve od 24
 - Todocko účet s daty synchronizovanými přes Evolu
@@ -57,7 +849,7 @@ jedinou kompletní klientskou platformu má upstream pro web. `src/evoluPlatform
 je protějšek pro Node, poskládaný ze stejných dílů.
 
 Vyšel krátce, protože Node 24 má potřebná web API nativně. Oba workery běží
-**in-process** přes `createWorker` / `createSharedWorker` — to jsou vlastní
+**in-process** přes `createWorker` / `createSharedWorker` – to jsou vlastní
 fallbacky Evolu „pro platformy bez podpory workerů"; `worker_threads` by přinesly
 izolaci, kterou jednoprocesový CLI nepotřebuje.
 
@@ -93,7 +885,7 @@ Sedm věcí, na kterých se to dá snadno rozbít:
 - **Databáze patří jednomu mnemonicu.** v7 při neshodě volal `restoreAppOwner`,
   který lokální databázi resetoval. v8 obnovu nemá, takže by v souboru zůstala
   data starého ownera zašifrovaná klíčem, který nový nemá. Server proto neshodu
-  **ohlásí a odmítne nastartovat** — smaž `~/.todocko/todocko.db` a nech ho
+  **ohlásí a odmítne nastartovat** – smaž `~/.todocko/todocko.db` a nech ho
   stáhnout data znovu.
 - **`createNodeEvoluDeps()` musí být singleton na proces.** Shared worker drží
   jediný `tabLeaderPortStore` a `initDbWorker` každého tenanta předpokládá, že
@@ -116,7 +908,45 @@ Sedm věcí, na kterých se to dá snadno rozbít:
 
 ## Instalace
 
-### 1. Stažení
+### Z npm
+
+Není co klonovat ani sestavovat. Stačí Clauda nasměrovat na vydaný balíček,
+který si při prvním spuštění sám stáhne:
+
+**Claude Desktop** (`~/.config/Claude/claude_desktop_config.json` na Linuxu nebo `~/Library/Application Support/Claude/claude_desktop_config.json` na macOS):
+
+```json
+{
+  "mcpServers": {
+    "todocko": {
+      "command": "npx",
+      "args": ["-y", "todocko-mcp"],
+      "env": {
+        "TODOCKO_MNEMONIC": "vaše 24slovná zálohovací fráze"
+      }
+    }
+  }
+}
+```
+
+**Claude Code (CLI)** - tentýž blok přidejte do `~/.claude/settings.json`
+a restartujte Clauda.
+
+Místo `todocko-mcp` můžete napsat `todocko-mcp@3.10.2` a držet si tak verzi pod
+kontrolou. Pokud chcete mít v `PATH` i nástroj `todo` pro příkazovou řádku,
+nainstalujte balíček globálně:
+
+```bash
+npm install -g todocko-mcp
+```
+
+Pozor, `TODOCKO_MNEMONIC` je privátní klíč ke všem vašim datům. Patří do
+konfiguračního souboru a nikam jinam: nikdy na příkazovou řádku, nikdy do
+historie shellu, nikdy do repozitáře. Viz [Bezpečnost](#bezpečnost).
+
+### Ze zdrojových kódů
+
+#### 1. Stažení
 
 **Pomocí git:**
 ```bash
@@ -126,7 +956,7 @@ cd todocko-mcp
 
 **Nebo stáhněte ZIP** z [Releases](https://github.com/brnt-cz/todocko-mcp/releases) a rozbalte.
 
-### 2. Spuštění instalátoru
+#### 2. Spuštění instalátoru
 
 **Linux/macOS:**
 ```bash
@@ -146,7 +976,7 @@ Instalátor:
 4. **Ručně doplňte** svou 24slovnou zálohovací frázi do konfiguračního souboru
 5. Restartujte Claude
 
-### Manuální instalace
+#### Manuální instalace
 
 1. Nainstalujte závislosti:
    ```bash
@@ -291,7 +1121,7 @@ Instalátor:
 | Nástroj | Popis |
 |---------|-------|
 | `td_list_tags` | Seznam štítků; vrací `projectId`, umí filtrovat podle projektu i na nezařazené |
-| `td_create_tag` | Vytvoření štítku — **předej `projectId`**, viz poznámku níž |
+| `td_create_tag` | Vytvoření štítku – **předej `projectId`**, viz poznámku níž |
 | `td_update_tag` | Přejmenování, změna barvy, přiřazení projektu, nebo příznak výchozího štítku |
 | `td_delete_tag` | Smazání štítku (soft delete) |
 | `td_list_task_tags` | Seznam štítků přiřazených k úkolu |
@@ -320,17 +1150,17 @@ Sdílené projekty (TODO-235):
 > s reálným počtem, když je owner na free tarifu a je nad limitem (1 projekt,
 > 50 **aktivních** úkolů). Jde o to, aby se to člověk dozvěděl při zakládání, ne až
 > zpětně v appce, a aby z textu bylo jasné, že o nic nepřišel. **Nic to neblokuje**
-> a při neznámém tarifu (nedostupný relay) radši mlčí — falešný poplach je horší
+> a při neznámém tarifu (nedostupný relay) radši mlčí – falešný poplach je horší
 > než žádný.
 
 > **Výchozí štítky (TODO-239).** `isDefault` u `td_create_tag` / `td_update_tag`
 > (a sdílených variant) znamená, že štítek dostane **každý nově zakládaný úkol**
 > projektu. `td_create_task` i `td_create_shared_task` je přidávají samy a vrátí
-> je v `appliedTags` — appka je předzaškrtává v modalu, takže bez toho by výsledek
+> je v `appliedTags` – appka je předzaškrtává v modalu, takže bez toho by výsledek
 > závisel na tom, odkud úkol vznikne. Existujících úkolů se to nedotkne.
 >
 > Ve sdílených projektech se zapisuje do **jiné Evolu instance**, proto samostatná
-> sada nástrojů — `td_add_tag_to_task` na sdílený úkol nefunguje.
+> sada nástrojů – `td_add_tag_to_task` na sdílený úkol nefunguje.
 
 ### Šablony úkolů
 
@@ -363,7 +1193,7 @@ Sdílené projekty (TODO-235):
 
 | Nástroj | Popis |
 |---------|-------|
-| `td_list_activity_log` | Seznam zápisů aktivity s filtry (úkol, aktor, akce, typ entity, datum od/do) — read-only |
+| `td_list_activity_log` | Seznam zápisů aktivity s filtry (úkol, aktor, akce, typ entity, datum od/do) – read-only |
 
 ### Poznámky k projektu
 
@@ -539,7 +1369,7 @@ neposílá přes nešifrované `http://` jinam než na localhost. (TODO-441)
 
 Zprávy, které uživatelé posílají z aplikace (hlášení vad, návrhy, vzkazy).
 Výpis a mazání umí jen **admin owner** a relay od TODO-90 H2 nevěří samotnému
-`ownerId` — požadavek se podepisuje Ed25519 klíčem odvozeným z nastaveného
+`ownerId` – požadavek se podepisuje Ed25519 klíčem odvozeným z nastaveného
 mnemoniku. Odesílání relay nechává nepřihlášené, stejně jako formulář v appce.
 
 | Nástroj | Popis |
@@ -559,7 +1389,7 @@ mnemoniku. Odesílání relay nechává nepřihlášené, stejně jako formulá�
 
 > **Do v1.6.0 tyhle tři nástroje vracely vždy prázdno.** `td_list_recurring_tasks`,
 > `td_list_overdue_tasks` a `td_list_tasks_by_date_range` čtly `result.rows`,
-> zatímco `evolu.loadQuery` vrací pole samo — takže `count: 0` na jakýkoli vstup,
+> zatímco `evolu.loadQuery` vrací pole samo – takže `count: 0` na jakýkoli vstup,
 > bez chyby, které by šlo si všimnout. Opraveno v TODO-242 přes společný
 > `queryRows`. Recurrence pole navíc vrací i `td_get_task`, takže nastavení
 > opakování jde přečíst tou nejpřímější cestou.
@@ -659,7 +1489,7 @@ Jaké mám opakující se úkoly?
 
 ## Linux CLI (`todo`) (TODO-160)
 
-Vedle MCP serveru je v balíčku i CLI `todo` pro rychlé osobní ovládání z terminálu — sdílí stejnou databázi i `TODOCKO_MNEMONIC` jako MCP. Po `npm link` (nebo globální instalaci) je dostupné jako `todo`.
+Vedle MCP serveru je v balíčku i CLI `todo` pro rychlé osobní ovládání z terminálu – sdílí stejnou databázi i `TODOCKO_MNEMONIC` jako MCP. Po `npm link` (nebo globální instalaci) je dostupné jako `todo`.
 
 📖 **Podrobný návod: [CLI.md](CLI.md)**
 
@@ -685,7 +1515,7 @@ todo add "X" --json
 - **Sync:** po mutaci čeká ~3 s na relay; když je offline, vypíše `⚠ uloženo lokálně` a skončí s kódem 0 (data jsou lokálně bezpečně).
 - **Exit kódy:** `0` úspěch, `1` user/business chyba (neznámý kód, špatný stav/čas), `2` config (chybí mnemonic).
 - **Barvy** jen v TTY a při nenastaveném `NO_COLOR`.
-- **Pozn.:** běží jako samostatný proces nad stejnou SQLite DB jako MCP; při souběžném zápisu s MCP může (vzácně) nastat `SQLITE_BUSY` — v takovém případě příkaz zopakuj. Mimo rozsah v1: `list`/`today`, editace popisu, projekty/tagy/checklist, sdílené projekty.
+- **Pozn.:** běží jako samostatný proces nad stejnou SQLite DB jako MCP; při souběžném zápisu s MCP může (vzácně) nastat `SQLITE_BUSY` – v takovém případě příkaz zopakuj. Mimo rozsah v1: `list`/`today`, editace popisu, projekty/tagy/checklist, sdílené projekty.
 
 ## Bezpečnost
 
@@ -923,722 +1753,25 @@ npm run build
 # Watch mode pro vývoj
 npm run dev
 
-# Ruční spuštění
-TODOCKO_MNEMONIC="vaše fráze" npm start
-```
-
----
-
-# English
-
-MCP (Model Context Protocol) server for working with [Todocko](https://app.todocko.cz) app data from AI assistants.
-
-## Support
-
-- **Claude Desktop** - full support
-- **Claude Code (CLI)** - full support (same configuration)
-
-## Requirements
-
-- **Node.js 24.20+** — required by Evolu v8's `engines`, and not merely formally:
-  v8 relies on `navigator.locks`, `MessageChannel`, `BroadcastChannel` and
-  `WebSocket`, which Node only has natively from 24 on
-- Todocko account with data synchronized via Evolu
-
-## Installation
-
-### 1. Download
-
-**Using git:**
-```bash
-git clone https://github.com/brnt-cz/todocko-mcp.git
-cd todocko-mcp
-```
-
-**Or download ZIP** from [Releases](https://github.com/brnt-cz/todocko-mcp/releases) and extract.
-
-### 2. Run the installer
-
-**Linux/macOS:**
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-**Windows (PowerShell):**
-```powershell
-.\install.ps1
-```
-
-The installer will:
-1. Install dependencies and build the project
-2. Ask whether to configure Claude Desktop, Claude Code, or both
-3. Create a configuration file with a placeholder
-4. **Manually add** your 24-word backup phrase to the configuration file
-5. Restart Claude
-
-### Manual installation
-
-1. Install dependencies:
-   ```bash
-   npm install
-   npm run build
-   ```
-
-2. Add to configuration:
-
-**Claude Desktop** (`~/.config/Claude/claude_desktop_config.json` on Linux or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
-
-```json
-{
-  "mcpServers": {
-    "todocko": {
-      "command": "node",
-      "args": ["/path/to/mcp-server/dist/index.js"],
-      "env": {
-        "TODOCKO_MNEMONIC": "your 24 word backup phrase"
-      }
-    }
-  }
-}
-```
-
-**Claude Code (CLI)** - add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "todocko": {
-      "command": "node",
-      "args": ["/path/to/mcp-server/dist/index.js"],
-      "env": {
-        "TODOCKO_MNEMONIC": "your 24 word backup phrase"
-      }
-    }
-  }
-}
-```
-
-3. Restart Claude Desktop / Claude Code
-
-## Available Tools (161)
-
-### Projects
-
-| Tool | Description |
-|------|-------------|
-| `td_list_projects` | List all projects |
-| `td_get_project` | Get project details by ID or code |
-| `td_create_project` | Create a new project (code: `A-Z` and `0-9` only, as in the app) |
-| `td_update_project` | Update a project (name, code, color, isArchived, isHiddenFromFilters; code `A-Z` and `0-9` only). `autoApproveMembers` belongs to the shared project and is refused here, see `td_update_shared_project` |
-| `td_delete_project` | Delete a project (soft delete) |
-
-### Tasks
-
-| Tool | Description |
-|------|-------------|
-| `td_list_tasks` | List tasks with filters (project, status, priority, assignee) |
-| `td_get_task` | Get task details by ID or code (e.g., `PROJ-123`), recurrence settings included |
-| `td_create_task` | Create a new task (with recurrence, sprint, parentTaskId support) |
-| `td_update_task` | Update an existing task (with recurrence, sprint, parentTaskId support) |
-| `td_search_tasks` | Search tasks by text |
-| `td_bulk_update_tasks` | Bulk update multiple tasks |
-| `td_bulk_delete_tasks` | Bulk delete multiple tasks |
-| `td_delete_task` | Soft-delete a single personal task (cascades to its worklogs and attachments). |
-| `td_list_git_events` | List git events (push, PR opened/merged/closed) for a task by its code. |
-
-### Users
-
-| Tool | Description |
-|------|-------------|
-| `td_list_users` | List all users |
-| `td_get_user` | Get user details |
-| `td_create_user` | Create a new user |
-| `td_update_user` | Update a user |
-| `td_delete_user` | Delete a user (soft delete) |
-
-### Worklogs
-
-| Tool | Description |
-|------|-------------|
-| `td_list_worklogs` | List worklogs for a task |
-| `td_add_worklog` | Add a worklog to a task |
-| `td_update_worklog` | Update a worklog |
-| `td_delete_worklog` | Delete a worklog (soft delete) |
-
-### Attachments
-
-| Tool | Description |
-|------|-------------|
-| `td_upload_attachment` | Upload an attachment to a task (from file or base64) |
-| `td_list_attachments` | List attachments for a task |
-| `td_download_attachment` | Download an attachment |
-| `td_delete_attachment` | Delete an attachment |
-| `td_upload_note_attachment` | Upload an attachment to a local project note |
-| `td_list_note_attachments` | List attachments of a local note |
-| `td_download_note_attachment` | Download a note attachment |
-| `td_delete_note_attachment` | Delete a note attachment |
-
-### Comments
-
-| Tool | Description |
-|------|-------------|
-| `td_list_task_comments` | List comments for a task |
-| `td_create_task_comment` | Add a comment to a task |
-| `td_update_task_comment` | Update a comment |
-| `td_delete_task_comment` | Delete a comment (soft delete) |
-
-### Checklist
-
-| Tool | Description |
-|------|-------------|
-| `td_list_checklist_items` | List checklist items for a task |
-| `td_create_checklist_item` | Add a checklist item |
-| `td_update_checklist_item` | Update a checklist item (check, reposition) |
-| `td_delete_checklist_item` | Delete a checklist item (soft delete) |
-
-### Mentions
-
-| Tool | Description |
-|------|-------------|
-| `td_list_mentions` | List mentions for a user |
-| `td_create_mention` | Create a mention |
-| `td_mark_mention_read` | Mark a mention as read |
-| `td_mark_all_mentions_read` | Mark all mentions as read |
-| `td_delete_mention` | Delete a mention (soft delete) |
-
-### Task Links
-
-| Tool | Description |
-|------|-------------|
-| `td_list_app_settings` | Account settings that follow the user across devices |
-| `td_set_app_setting` | Set one account setting |
-| `td_list_task_links` | List links for a task |
-| `td_create_task_link` | Create a link between tasks (`blocks`, `explicit`, `mention`, `relates`, `duplicate`) |
-| `td_delete_task_link` | Delete a task link (soft delete) |
-
-### Tags
-
-| Tool | Description |
-|------|-------------|
-| `td_list_tags` | List tags; returns `projectId`, filters by project or unassigned |
-| `td_create_tag` | Create a tag — **pass `projectId`**, see the note below |
-| `td_update_tag` | Rename, recolour, assign to a project, or mark default |
-| `td_delete_tag` | Delete a tag (soft delete) |
-| `td_list_task_tags` | List tags assigned to a task |
-| `td_add_tag_to_task` | Assign a tag to a task |
-| `td_remove_tag_from_task` | Remove a tag from a task |
-
-Shared projects (TODO-235):
-
-| Tool | Description |
-|------|-------------|
-| `td_list_shared_tags` | Tags in a shared project |
-| `td_create_shared_tag` | Create a tag in a shared project |
-| `td_update_shared_tag` | Rename / recolour |
-| `td_delete_shared_tag` | Delete (soft delete) |
-| `td_add_shared_tag_to_task` | Assign to a task in a shared project |
-| `td_remove_shared_tag_from_task` | Remove from a task |
-
-> **A tag without a project is never offered by the app.** Since TODO-227 tags
-> belong to a project; `td_create_tag` without `projectId` makes an **unassigned**
-> tag, which shows up only under "Nezařazené" in project settings with a button to
-> adopt it. The tool response says so. Fix it afterwards with `td_update_tag` and
-> a `projectId`.
->
-> **Free-tier limits (TODO-243).** Tier caps belong to the app, not here.
-> `td_create_task` and `td_create_project` append a warning with the real count
-> when the owner is on the free tier and above its cap (1 project, 50 **active**
-> tasks), so that it is learned at creation time rather than later in the app, and
-> so that the text makes clear nothing was lost. **Nothing is blocked**, and with
-> an unknown tier (unreachable relay) it stays silent — a false alarm is worse
-> than none.
-
-> **Default tags (TODO-239).** `isDefault` on `td_create_tag` / `td_update_tag`
-> (and the shared variants) means every task newly created in the project gets the
-> tag. Both `td_create_task` and `td_create_shared_task` apply them and report them
-> back in `appliedTags` — the app pre-ticks them in its form, so without this the
-> result would depend on where the task was created. Existing tasks are untouched.
->
-> Shared projects write to a **different Evolu instance**, hence the separate set
-> — `td_add_tag_to_task` does not work on a shared task.
-
-### Task Templates
-
-| Tool | Description |
-|------|-------------|
-| `td_list_task_templates` | List task templates |
-| `td_create_task_template` | Create a task template (optional `checklistItems` and `tagIds`) |
-| `td_update_task_template` | Update a task template (`checklistItems`, `tagIds`; empty array clears) |
-| `td_delete_task_template` | Delete a task template (soft delete) |
-
-### Kanban Columns
-
-| Tool | Description |
-|------|-------------|
-| `td_list_kanban_columns` | List kanban columns |
-| `td_create_kanban_column` | Create a kanban column (optional `wipLimit`, max tasks per user in In progress before the header warns) |
-| `td_update_kanban_column` | Update a kanban column (`wipLimit: null` clears the limit) |
-| `td_delete_kanban_column` | Delete a kanban column (soft delete) |
-
-### Saved Views
-
-| Tool | Description |
-|------|-------------|
-| `td_list_saved_views` | List saved views |
-| `td_create_saved_view` | Create a saved view |
-| `td_update_saved_view` | Update a saved view |
-| `td_delete_saved_view` | Delete a saved view (soft delete) |
-
-### Activity Log
-
-| Tool | Description |
-|------|-------------|
-| `td_list_activity_log` | List activity log entries with filters (task, actor, action, entityType, date from/to) — read-only |
-
-### Project Notes
-
-| Tool | Description |
-|------|-------------|
-| `td_list_project_notes` | List local project notes (index: title and `contentLength`; content via `includeContent`) |
-| `td_get_project_note` | Read one local project note, with its content |
-| `td_create_project_note` | Create a local project note |
-| `td_update_project_note` | Update a local project note |
-| `td_delete_project_note` | Delete a local project note (soft delete) |
-
-### Deployment Stages
-
-| Tool | Description |
-|------|-------------|
-| `td_list_deployment_stages` | List deployment stages for a project |
-| `td_create_deployment_stage` | Create a deployment stage for a personal project. |
-| `td_update_deployment_stage` | Update a deployment stage in a personal project. |
-| `td_delete_deployment_stage` | Soft-delete a deployment stage in a personal project. |
-
-### Repository Links
-
-| Tool | Description |
-|------|-------------|
-| `td_list_repository_links` | List repository links |
-| `td_create_repository_link` | Create a repository link |
-| `td_delete_repository_link` | Delete a repository link |
-| `td_update_repository_link` | Update a repository link for a project. |
-
-### Shared Projects
-
-| Tool | Description |
-|------|-------------|
-| `td_list_shared_projects` | List shared projects with your permission (no longer returns `ownerSecret`) |
-| `td_list_shared_tasks` | List tasks from a shared project |
-| `td_update_shared_task` | Update a task in a shared project |
-| `td_list_shared_deployment_stages` | List deployment stages for a shared project |
-| `td_create_shared_deployment_stage` | Create a deployment stage in a shared project |
-| `td_list_shared_repository_links` | List repository links for a shared project |
-| `td_create_shared_repository_link` | Create a repository link in a shared project |
-| `td_list_shared_project_notes` | List notes for a shared project (index; content via `includeContent`) |
-| `td_get_shared_project_note` | Read one note from a shared project, with its content |
-| `td_create_shared_project_note` | Create a note in a shared project |
-| `td_update_shared_project_note` | Update a note in a shared project |
-| `td_delete_shared_project_note` | Delete a note in a shared project |
-| `td_list_shared_members` | List members of a shared project (name, permission, kicked/blocked state, `isPending` = waiting for approval). The owner also gets `verifiedPermission` (what they granted) and `effectivePermission` (the lower of the two, which decides the write key) |
-| `td_update_shared_member` | Admin only. Change permission between `write` and `admin`, approve a pending join or unblock (only while the project has no rotated write key); refuses block, kick, reject and downgrade to `read`, which belong in the app. A permission set by the owner is also recorded as their `memberGrant`, which is what hands out the write key; an admin who does not own the project changes only the member's claim |
-| `td_upload_shared_note_attachment` | Upload an attachment to a shared project note |
-| `td_list_shared_note_attachments` | List attachments of a shared project note |
-| `td_download_shared_note_attachment` | Download a shared note attachment |
-| `td_delete_shared_note_attachment` | Delete a shared note attachment |
-| `td_list_shared_project_docs` | List document pages from a shared project (index; content via `includeContent`) |
-| `td_get_shared_project_doc` | Read one document page from a shared project, with its content |
-| `td_create_shared_project_doc` | Create a document page in a shared project |
-| `td_update_shared_project_doc` | Update a document page in a shared project |
-| `td_delete_shared_project_doc` | Delete a document page in a shared project (soft delete) |
-| `td_create_shared_task` | Create a task in a shared project. |
-| `td_delete_shared_task` | Soft-delete a task in a shared project (cascades to its checklist items and comments). |
-| `td_list_shared_worklogs` | List worklogs for a task in a shared project. |
-| `td_add_shared_worklog` | Add a worklog to a task in a shared project. |
-| `td_delete_shared_worklog` | Soft-delete a worklog in a shared project. |
-| `td_list_shared_checklist_items` | List checklist items for a task in a shared project. |
-| `td_create_shared_checklist_item` | Create a checklist item on a task in a shared project. |
-| `td_update_shared_checklist_item` | Update a checklist item in a shared project (toggle done, rename, reorder). |
-| `td_delete_shared_checklist_item` | Soft-delete a checklist item in a shared project. |
-| `td_list_shared_task_links` | List dependency links for a task in a shared project. |
-| `td_create_shared_task_link` | Create a dependency link between tasks in a shared project. |
-| `td_delete_shared_task_link` | Delete a dependency link in a shared project (soft delete). |
-| `td_list_shared_task_comments` | List comments for a task in a shared project. |
-| `td_create_shared_task_comment` | Add a comment to a task in a shared project. |
-| `td_update_shared_task_comment` | Update a comment in a shared project. |
-| `td_delete_shared_task_comment` | Soft-delete a comment in a shared project. |
-| `td_update_shared_repository_link` | Update a repository link in a shared project. |
-| `td_delete_shared_repository_link` | Soft-delete a repository link in a shared project. |
-| `td_update_shared_deployment_stage` | Update a deployment stage in a shared project. |
-| `td_delete_shared_deployment_stage` | Soft-delete a deployment stage in a shared project. |
-| `td_update_shared_project` | Update shared-project metadata (archive / hide from filters). |
-| `td_upload_shared_attachment` | Upload a file attachment to a task in a shared project. |
-| `td_list_shared_attachments` | List file attachments of a task in a shared project (metadata only, no data). |
-| `td_download_shared_attachment` | Download a task attachment from a shared project. |
-| `td_delete_shared_attachment` | Soft-delete a task attachment in a shared project. |
-| `td_get_shared_task` | Get one task in a shared project by ID or code, with its worklog total, checklist and comment counts. |
-| `td_list_shared_task_tags` | List the tags on a task in a shared project. |
-| `td_bulk_update_shared_tasks` | Update several tasks in a shared project at once. |
-| `td_bulk_delete_shared_tasks` | Soft-delete several tasks in a shared project at once, cascading their checklist items and comments. |
-| `td_update_shared_worklog` | Update a worklog in a shared project. |
-| `td_list_shared_activity_log` | List activity log entries for a shared project. |
-
-> **Permissions, `ownerSecret` and history in shared projects (TODO-434).**
->
-> - **`ownerSecret` is optional; leave it out.** Every shared tool looks it up
->   from your `projectRef` by `sharedOwnerId`, and `td_list_shared_projects` no
->   longer returns it. The secret is the key to the whole project, so it used
->   to sit in the model's context and every transcript. Passing it still works
->   and is checked against `sharedOwnerId`.
-> - **Writes are gated by permission, as in the app** (`src/permissions.ts`, a
->   port of the app's `permissions.ts`). Tasks, worklogs, checklist items,
->   comments, attachments, links, tag assignment, notes and documents need
->   `write` or `admin`. Project settings (`td_update_shared_project`, delete and
->   restore included), deployment stages, repository links, tag management and
->   members need the owner or `admin`. Without a `projectRef` writes are
->   refused, reads still work. A refusal is an error and nothing is written.
-> - **Member management is partial.** After every member change the app rotates
->   the write key or hands the current one over, otherwise a blocked member keeps
->   writing. The MCP cannot rotate, so changes that leave the member unable to
->   write (block, kick, reject, downgrade to `read`) are refused with a pointer
->   to the app. Approving, unblocking and upgrading pass only while the project
->   has no rotated write key.
-> - **Shared writes record history** in the shared instance, the same entries
->   the app writes (task created / updated per field / deleted, worklog,
->   checklist, comment, attachment, tag, stage, repository link, project,
->   member), with your account as `actorId` and `source: "mcp"` in metadata.
-> - **Deleting an unknown id** is an error instead of `success`, and bulk delete
->   counts it as skipped. `td_update_shared_project` picks the project row the
->   way the app does (oldest live row) and can restore it from the Trash.
-> - **Project codes** may contain only `A-Z` and `0-9`, and concurrent
->   `td_create_task` / `td_create_shared_task` calls for one project no longer
->   get the same code.
-
-### Project Documentation
-
-Documents are notes with `isDoc`, so they can nest under another document via `parentDocId`.
-
-| Tool | Description |
-|------|-------------|
-| `td_list_project_docs` | List local project document pages (index: title, hierarchy and `contentLength`; content via `includeContent`) |
-| `td_get_project_doc` | Read one local project document page, with its content |
-| `td_create_project_doc` | Create a local project document page |
-| `td_update_project_doc` | Update a local project document page |
-| `td_delete_project_doc` | Delete a local project document page (soft delete) |
-
-### System Notifications (relay)
-
-Broadcast notices for every user. Writing, and listing expired ones, needs `TODOCKO_RELAY_ADMIN_KEY`.
-
-Without `TODOCKO_RELAY_ADMIN_KEY`, `td_create_system_notification` and
-`td_delete_system_notification` are not offered to the client at all (a 401 is
-the only answer they could give) and the listing drops its `admin` flag. The key
-is never sent over plain `http://` to anything but localhost. (TODO-441)
-
-| Tool | Description |
-|------|-------------|
-| `td_list_system_notifications` | List active system/broadcast notifications from the relay server. |
-| `td_create_system_notification` | Create a broadcast notification visible to all Todocko users. |
-| `td_delete_system_notification` | Delete a system notification by ID. |
-
-### User Messages (relay)
-
-What users send from the app: bug reports, feature requests, notes. Listing and deleting are admin-owner only and the request is signed with the configured mnemonic; submitting needs no admin rights.
-
-| Tool | Description |
-|------|-------------|
-| `td_list_user_messages` | List messages users have sent from the app (bug reports, feature requests, notes). |
-| `td_submit_user_message` | Send a message to the Todocko admins (bug report, feature request or note), the same way the app's feedback form does. |
-| `td_delete_user_message` | Delete one user message from the relay. |
-
-### Analytics & Reports
-
-| Tool | Description |
-|------|-------------|
-| `td_get_dashboard_summary` | Overview: tasks today, overdue, this week's worklog, upcoming deadlines |
-| `td_get_team_workload` | Team workload: logged vs estimate vs capacity per user for a period |
-| `td_list_recurring_tasks` | List recurring tasks with recurrence configuration |
-| `td_list_overdue_tasks` | Overdue tasks (sorted oldest first) |
-
-> **Before v1.6.0 these three tools always returned nothing.**
-> `td_list_recurring_tasks`, `td_list_overdue_tasks` and
-> `td_list_tasks_by_date_range` read `result.rows`, while `evolu.loadQuery`
-> resolves to the array itself — so `count: 0` for every input, with no error to
-> notice. Fixed in TODO-242 behind a shared `queryRows`. `td_get_task` now returns
-> the recurrence settings too, so a schedule can be read the obvious way.
-| `td_list_tasks_by_date_range` | Tasks filtered by scheduledDate or deadline within a date range |
-| `td_analyze_dependencies` | Dependency analysis: blocked tasks, blocking chains, critical path |
-
-### Diagnostics
-
-| Tool | Description |
-|------|-------------|
-| `td_sync_status` | Sync status |
-| `td_force_sync` | Force a sync round-trip with the relay (useful when you want to make sure you're reading the latest data from another device) |
-
-## Usage Examples
-
-### List projects
-```
-Show me all projects in Todocko
-```
-
-### List tasks
-```
-What tasks do I have with status "todo"?
-Show tasks for project TODO
-```
-
-### Task details
-```
-What are the details of task TODO-15?
-```
-
-### Create task
-```
-Create a new task in project PROJ with title "Fix login bug" and priority high
-Create a task with deadline 2026-03-15 and scheduledDate 2026-03-10
-```
-
-### Update task
-```
-Mark task PROJ-5 as completed
-Assign task TODO-10 to user with ID xyz
-Set scheduledDate of task TODO-10 to tomorrow
-```
-
-### Log time
-```
-Log 2 hours of work on task TODO-15 with description "Feature implementation"
-```
-
-### Working with attachments
-```
-Upload file /home/user/report.pdf as attachment to task TODO-15
-What attachments does task TODO-15 have?
-Delete attachment with ID xyz
-```
-
-### Shared projects
-```
-Show shared projects
-What tasks are in the shared project?
-Mark task as deployed to production
-```
-
-### Deployment stages
-```
-What deployment stages does the project have?
-Create a new deployment stage "Staging" for the shared project
-```
-
-### Sub-tasks
-```
-Create a sub-task for task TODO-15 in project TODO
-Detach task TODO-20 from its parent (parentTaskId: null)
-```
-
-### Analytics & Reports
-```
-What's my dashboard summary for today?
-How is the team's workload this week?
-What tasks are overdue?
-Show tasks scheduled for next week
-Analyze dependencies in project TODO
-What recurring tasks do I have?
-```
-
-## Security
-
-**Important:** Your backup phrase (mnemonic) is sensitive data!
-
-- Never share it directly in conversation with AI
-- The MCP server never exposes the phrase through a tool: nothing in Todocko can read or print it
-- That is not the same as the AI having no access to it. An agent that can run commands or
-  read files (Claude Code and the like) reads `~/.claude.json` or `~/.claude/settings.json`
-  like any other file. The configuration keeps the phrase away from MCP tools, not from a
-  shell. (TODO-441)
-- Anyone with your phrase has full access to your data
-
-### Argument and path checks (TODO-441)
-
-- Argument values are checked against the type the tool declares. `isBlocked: "false"`
-  used to be stored as `true` (a non-empty string is truthy); it is an error now.
-- Date arguments (`deadline`, `scheduledDate`, `loggedAt`, `recurrenceEndDate`,
-  `startDate`, `endDate`, ...) must be `YYYY-MM-DD`; where the schema says datetime
-  (`completedAt`, `expiresAt`, activity-log `from`/`to`) an ISO datetime is accepted too.
-  `deadline: "zitra"` used to be stored verbatim with nothing reporting it.
-- Attachments: paths are judged after symlinks are resolved, so a link inside the allowed
-  directory no longer leads out of it. Downloads now refuse dotfiles (as uploads already
-  did) and never replace an existing file unless `overwrite: true` is passed.
-
-### Shared project write key rotation (TODO-268)
-
-When the owner of a shared project removes a member, the app swaps the
-project's write key on the relay. The key derived from `ownerSecret` stops
-being valid and the relay refuses every write made with it.
-
-This server picks the new key up from the `projectRef.writeKey` column, which
-reaches its database through the ordinary AppOwner sync. It checks at start and
-then once a minute, so a rotation can leave about a minute in which writes to
-that one project are refused and the rows wait locally. Reading is unaffected.
-
-## Data Location
-
-Databases are stored in the `~/.todocko/` directory:
-
-| Platform | Path |
-|----------|------|
-| Linux | `~/.todocko/` |
-| macOS | `~/.todocko/` |
-| Windows | `C:\Users\<user>\.todocko\` |
-
-Files:
-- `todocko.db` - your personal data (tasks, projects)
-- `todocko-shared.db` - shared projects
-
-## Configuration Changes
-
-### Claude Code (CLI)
-
-After changing configuration in `~/.claude/settings.json` (e.g., changing mnemonic), run the command:
-```
-/mcp
-```
-This will restart the MCP server with the new configuration.
-
-### Switching to a Different Account
-
-When changing the mnemonic to a **different Todocko account**, you need to delete the local database:
-
-```bash
-# Linux/macOS
-rm ~/.todocko/todocko.db
-
-# Windows
-del %USERPROFILE%\.todocko\todocko.db
-```
-
-The database contains the owner ID from the previous mnemonic. After deletion, a new database will be created on the next startup and data from the new account will be downloaded.
-
-## Troubleshooting
-
-### Server won't start
-- Check that you have Node.js 24.20 or newer (Evolu v8 requires it)
-- Check that you ran `npm run build`
-- Check logs in Claude Desktop
-
-### Data not syncing
-- Verify the backup phrase is correct (24 words)
-- Check internet connection
-- Wait a few seconds for synchronization
-- Try deleting `~/.todocko/todocko.db` and restart
-
-### Tools not visible
-- Restart Claude Desktop
-- In Claude Code, use `/mcp` for reload
-- Check the configuration file
-- Check the path to dist/index.js
-
-### `project ... is a shared project` on a write
-A shared project keeps its data in the **shared instance**, so the personal
-tools (`td_create_task`, `td_update_task`, `td_bulk_update_tasks`) refuse a
-write aimed at one and point at the `td_*_shared_*` counterpart.
-
-Such a write used to be stored quietly in the personal instance beside the real
-row, leaving the same task in two instances, free to drift: the app reads the
-shared side and `td_list_tasks` reads the personal one, so the two disagreed
-with nothing reporting it. (TODO-318)
-
-**Deletes are still allowed** on a shared project, because otherwise old
-personal copies could never be cleaned up. `td_search_tasks` with
-`includeShared` shows both copies side by side and is the quickest way to spot
-a split task.
-
-### `Todocko MCP už nad touto databází běží` (TODO-341)
-A second instance over the same backup phrase refuses to start. The client
-database runs with `journal_mode=delete` and a zero `busy_timeout`, so the
-second process gets SQLITE_BUSY immediately, Evolu turns it into
-`PanicAbortReason: database is locked`, and the **first** process loses its
-dbWorker. Until TODO-341 a new window silently killed the one you were working
-in.
-
-The lock is `~/.todocko/todocko-<owner>.lock` next to the database. It holds the
-owning pid; after a crash the next start detects it as stale
-(`process.kill(pid, 0)`) and takes it over.
-
-If you really need a second instance (the `todo` CLI next to the MCP, say), give
-it its own database name:
-```bash
-TODOCKO_INSTANCE=cli todo ...
-```
-It gets `~/.todocko/todocko-cli-<owner>.db`, a separate local copy that
-reconciles with the first one through the relay. Allowed characters are
-`a-z0-9-`; anything else is dropped and an empty value means the default
-database.
-
-### Every `loadQuery` ends with a timeout (`loadQuery timed out after 15000ms`)
-
-There are two causes, told apart by what the server says.
-
-**1. A dead dbWorker after two processes raced (TODO-316).** Two MCP processes
-creating the schema of the same database at the same time race each other. The
-loser gets `SqliteError: table evolu_version already exists` and its dbWorker
-stays dead for the life of the process. Typically on the first starts after an
-MCP upgrade that adds a table.
-
-Since TODO-316 the server detects this at startup and **refuses to start**:
-every tool call returns `Evolu dbWorker never answered` immediately. Since
-TODO-317 the reason the worker died is recorded too, in `workerDefects` from
-`td_sync_status` and on stderr as `FATAL: Evolu dbWorker defect: ...`. It used to
-look healthy while every query hung until the client gave up 1800s later. The
-fix is a `/mcp` reconnect in Claude Code.
-
-**2. A mismatched native binding.** The `better-sqlite3` native binding was compiled against a different Node.js ABI than the one running the MCP server. `new Database()` fails with `ERR_DLOPEN_FAILED`, the Evolu dbWorker init never completes, and every `loadQuery` hangs forever. Mutations (insert/update) report success but are silently lost.
-
-Typical symptoms: `td_sync_status` reports `ok` with `errorCount: 0`, but `td_get_task`, `td_list_*`, etc. all time out.
-
-Fix — rebuild the native binding against the current Node:
-```bash
-cd ~/.todocko-mcp # or wherever todocko-mcp is installed
-cd node_modules/better-sqlite3
-npx node-gyp rebuild --release
-```
-Then `/mcp` reconnect in Claude Code.
-
-This mismatch typically appears after upgrading Node.js (e.g. v22 → v25) or switching between nvm and linuxbrew/brew Node, because the installer builds the binding against the `node` from `PATH`, but `claude` may later spawn the MCP with a different node binary.
-
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Build
-npm run build
-
-# Watch mode for development
-npm run dev
-
-# Tests
+# Testy
 npm test
 
-# Manual run
-TODOCKO_MNEMONIC="your phrase" npm start
+# Ruční spuštění
+TODOCKO_MNEMONIC="vaše fráze" npm start
 ```
 
 ### Testy
 
 Vitest, 164 testů ve dvanácti souborech. **Běží v CI** (`ci.yml`, push i PR na `main`)
-od TODO-229 — do té doby CI spouštěla jen build, takže se nikdo nedozvěděl, že
+od TODO-229 – do té doby CI spouštěla jen build, takže se nikdo nedozvěděl, že
 `helpers.test.ts` na Node 18/20 **ani neprojde importem**: přes `helpers.ts`
 tahal `../evolu.js`, jehož inicializace při načtení modulu spadne na
 `crypto.getRandomValues must be defined`.
 
 Proto jsou funkce bez závislosti na Evolu v **`src/tools/pure.ts`** a testují se
 odtud. `helpers.ts` je re-exportuje, takže volající se nemění. Když píšeš helper,
-který Evolu nepotřebuje, patří do `pure.ts` — jinak ho nejde testovat bez
+který Evolu nepotřebuje, patří do `pure.ts` – jinak ho nejde testovat bez
 nastartované databáze.
 
-Závazná verze je **Node 24.20 nebo novější** — je v `engines` a Evolu v8 na
+Závazná verze je **Node 24.20 nebo novější** – je v `engines` a Evolu v8 na
 starším neběží. Na té jede `ci.yml` i `release.yml`.

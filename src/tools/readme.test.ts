@@ -7,7 +7,7 @@ import { allTools } from "./index.js";
 /**
  * Both README tool tables must list every tool, and only real tools (TODO-303).
  *
- * The README has a Czech table and an English one. Nothing checked either, and
+ * The README has an English table and a Czech one. Nothing checked either, and
  * the English one drifted 48 tools behind across several releases: at v3.0.0 it
  * listed 104 of 152, including almost the whole shared section. It was found by
  * counting rows by hand before tagging, which is not a method.
@@ -23,21 +23,22 @@ const README = readFileSync(
 
 const ROW = /^\| `(td_[a-z_]+)`/gm;
 
+/** The one heading that opens the Czech half. English is everything before it. */
+const CZECH_HEADING = "\n# Česky";
+
 /**
- * The English half starts at its own heading; everything above it is Czech.
- * Splitting on the heading rather than on a line number keeps this working
- * when either table grows.
+ * Split on the language heading, not on the tool table (TODO-471).
+ *
+ * This used to look for `## Available Tools` and call everything above it
+ * Czech, which silently encoded that Czech came first. npm shows the README as
+ * the whole package page, so English moved to the top and the old split started
+ * comparing the English preamble against the English table: a pass that proved
+ * nothing. The language heading is the thing actually being asked about.
  */
-function halves(): { czech: string; english: string; heading: string } {
-  const marker = README.indexOf("## Available Tools");
+function halves(): { czech: string; english: string } {
+  const marker = README.indexOf(CZECH_HEADING);
   expect(marker).toBeGreaterThan(-1);
-  const after = README.slice(marker);
-  const next = after.indexOf("\n## ", 1);
-  return {
-    czech: README.slice(0, marker),
-    english: next === -1 ? after : after.slice(0, next),
-    heading: after.slice(0, after.indexOf("\n")),
-  };
+  return { english: README.slice(0, marker), czech: README.slice(marker) };
 }
 
 function listed(section: string): Set<string> {
@@ -49,14 +50,24 @@ describe("README tool tables", () => {
   // tools are documented but only offered with TODOCKO_RELAY_ADMIN_KEY.
   // (TODO-441)
   const names = new Set(allTools.map((t) => t.name));
-  const { czech, english, heading } = halves();
+  const { czech, english } = halves();
 
   it("finds both tables, so an empty comparison cannot pass", () => {
-    expect(listed(czech).size).toBeGreaterThan(100);
     expect(listed(english).size).toBeGreaterThan(100);
+    expect(listed(czech).size).toBeGreaterThan(100);
   });
 
-  for (const [label, section] of [["Czech", czech], ["English", english]] as const) {
+  // The package page on npm opens with whatever comes first, and its readers
+  // are not Czech speakers. Nothing but this test holds that order.
+  it("opens in English", () => {
+    const first = README.indexOf("## Available Tools");
+    const second = README.indexOf("## Dostupné nástroje");
+    expect(first).toBeGreaterThan(-1);
+    expect(second).toBeGreaterThan(-1);
+    expect(first).toBeLessThan(second);
+  });
+
+  for (const [label, section] of [["English", english], ["Czech", czech]] as const) {
     it(`the ${label} table lists every tool`, () => {
       const rows = listed(section);
       expect([...names].filter((n) => !rows.has(n)).sort()).toEqual([]);
@@ -69,7 +80,7 @@ describe("README tool tables", () => {
   }
 
   it("the English heading states the real number", () => {
-    const stated = /## Available Tools \((\d+)\)/.exec(heading)?.[1];
+    const stated = /## Available Tools \((\d+)\)/.exec(english)?.[1];
     expect(stated).toBe(String(names.size));
   });
 
