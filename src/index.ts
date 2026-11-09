@@ -25,6 +25,7 @@ import { join } from "path";
 import { initEvolu, getEvolu, initProjectEvolu, startWriteKeyRefresh, waitForEvolu } from "./evolu.js";
 import { tools, handleToolCall } from "./tools/index.js";
 import { startStatusReporting, reportToolCall } from "./statusReporting.js";
+import { VERSION } from "./version.js";
 
 // Set working directory to ~/.todocko for database storage (cross-platform)
 const todockoDir = join(homedir(), ".todocko");
@@ -34,7 +35,7 @@ process.chdir(todockoDir);
 const server = new Server(
   {
     name: "todocko-mcp",
-    version: "1.0.0",
+    version: VERSION,
   },
   {
     capabilities: {
