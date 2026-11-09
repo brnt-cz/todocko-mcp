@@ -15,10 +15,23 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '24'
-          # Bez registry-url si setup-node nepřipraví .npmrc a NODE_AUTH_TOKEN
-          # se nikam nepropíše. Publikace pak spadne na 401 a vypadá to na
-          # špatný token.
+          # Trusted publishing si .npmrc nevyžaduje, ale registry-url ho
+          # nastaví na veřejný registry explicitně, takže se sem nepropíše
+          # žádný mirror z runneru.
           registry-url: 'https://registry.npmjs.org'
+
+      # `npm stage publish` přibylo až v npm 11.15, takže se na to, co s sebou
+      # veze obraz runneru, nedá spolehnout.
+      #
+      # Verze je schválně pevná, ne `@latest`. npm 12 má ve výchozím stavu
+      # vypnuté install skripty a tenhle balíček staví nativní vazbu, takže by
+      # `@latest` jednou tiše změnilo chování buildu uprostřed vydání.
+      - name: Ensure an npm that can stage over OIDC
+        run: |
+          set -euo pipefail
+          npm install -g npm@11.21.0
+          npm --version
+
       - run: npm install && npm run build
 
       # Publikace je prakticky nevratná: odvolat verzi jde jen do 72 hodin
@@ -40,10 +53,20 @@ jobs:
           fi
           echo "Verze sedí: $pkg"
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Stage, ne publish. Trusted publishing tu nahradilo NPM_TOKEN, takže
+      # v repozitáři žádné přihlašovací údaje k npm nejsou: runner si o
+      # krátkodobé oprávnění řekne svou identitou přes id-token.
+      #
+      # Záměrně se nepublikuje rovnou. Kdyby tenhle běh někdo ovládl, ať už
+      # přes workflow nebo přes závislost v buildu, poslal by verzi rovnou
+      # všem uživatelům. Takhle skončí ve frontě a čeká na schválení s 2FA,
+      # takže mezi útočníkem a registry zůstává člověk. Provenance se podepíše
+      # už tady, odloží se jen to potvrzení.
+      #
+      # Schválení: npmjs.com → Staged Packages → Approve, nebo
+      # `npm stage list todocko-mcp` a `npm stage approve <stage-id>`.
+      - name: Stage the release on npm
+        run: npm stage publish --provenance --access public
 
       - uses: softprops/action-gh-release@v2
         with:
