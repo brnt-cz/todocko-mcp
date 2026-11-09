@@ -776,7 +776,7 @@ TODOCKO_MNEMONIC="your phrase" npm start
 
 ### Tests
 
-Vitest, 406 tests across 28 files. **They run in CI** (`ci.yml`, on pushes and
+Vitest. **The suite runs in CI** (`ci.yml`, on pushes and
 pull requests to `main`) since TODO-229. Before that CI only built, so nobody
 learned that `helpers.test.ts` **does not even survive the import** on Node
 18/20: through `helpers.ts` it pulled in `../evolu.js`, whose module-level
@@ -789,6 +789,23 @@ so callers do not change. A helper that does not need Evolu belongs in
 
 The required version is **Node 24.20 or newer**: it is in `engines` and Evolu v8
 does not run on anything older. `ci.yml` and `release.yml` both use it.
+
+### Releasing
+
+```bash
+npm version patch        # or minor / major
+git push --follow-tags
+```
+
+The tag starts `release.yml`, which builds, runs the tests, checks that the tag
+matches `package.json` and then **stages** the release on npm with a signed
+provenance statement. It carries no npm credentials: the runner asks for a
+short-lived one through trusted publishing (OIDC).
+
+Staging is deliberate. A release does not reach anyone until it is approved on
+npmjs.com under **Staged Packages**, or with `npm stage list todocko-mcp` and
+`npm stage approve <stage-id>`. Approval needs 2FA, so a workflow run that
+someone else managed to steer cannot put a version in front of users on its own.
 
 ---
 
@@ -1762,7 +1779,7 @@ TODOCKO_MNEMONIC="vaše fráze" npm start
 
 ### Testy
 
-Vitest, 164 testů ve dvanácti souborech. **Běží v CI** (`ci.yml`, push i PR na `main`)
+Vitest. **Sada běží v CI** (`ci.yml`, push i PR na `main`)
 od TODO-229 – do té doby CI spouštěla jen build, takže se nikdo nedozvěděl, že
 `helpers.test.ts` na Node 18/20 **ani neprojde importem**: přes `helpers.ts`
 tahal `../evolu.js`, jehož inicializace při načtení modulu spadne na
@@ -1775,3 +1792,20 @@ nastartované databáze.
 
 Závazná verze je **Node 24.20 nebo novější** – je v `engines` a Evolu v8 na
 starším neběží. Na té jede `ci.yml` i `release.yml`.
+
+### Vydání
+
+```bash
+npm version patch        # nebo minor / major
+git push --follow-tags
+```
+
+Tag spustí `release.yml`: sestaví, pustí testy, ověří, že tag souhlasí
+s `package.json`, a vydání na npm **zařadí do fronty** i s podepsanou
+provenance. Žádné přihlašovací údaje k npm v repozitáři nejsou, runner si o
+krátkodobé oprávnění řekne sám přes trusted publishing (OIDC).
+
+Fronta je tam schválně. K nikomu se verze nedostane, dokud ji neschválíš na
+npmjs.com v **Staged Packages**, případně přes `npm stage list todocko-mcp`
+a `npm stage approve <stage-id>`. Schválení chce 2FA, takže ani ovládnutý běh
+workflow nedokáže poslat verzi uživatelům sám.
