@@ -20,5 +20,8 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // Testy patří do běhu vitestu, ne do balíčku. Negace v `files` je navíc
+  // nespolehlivá: npm si vynucuje všechno, co začíná na README*, takže
+  // `readme.test.js` se do tarballu dostal i přes `!dist/**/*.test.*`.
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
 }
