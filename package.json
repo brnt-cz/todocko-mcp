@@ -1,6 +1,6 @@
 {
   "name": "todocko-mcp",
-  "version": "3.10.3",
+  "version": "3.10.4",
   "description": "MCP Server for Todocko - local-first kanban todo app",
   "repository": {
     "type": "git",
