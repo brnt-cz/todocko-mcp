@@ -42,7 +42,7 @@ and it fetches it on first run:
 **Claude Code (CLI)** - add the same block to `~/.claude/settings.json`, then
 restart Claude.
 
-Pin a version with `todocko-mcp@3.10.2` instead of `todocko-mcp` if you would
+Pin a version with `todocko-mcp@<version>` instead of `todocko-mcp` if you would
 rather decide yourself when to move. To get the `todo` command line tool on your
 `PATH` as well, install the package globally:
 
@@ -932,7 +932,7 @@ který si při prvním spuštění sám stáhne:
 **Claude Code (CLI)** - tentýž blok přidejte do `~/.claude/settings.json`
 a restartujte Clauda.
 
-Místo `todocko-mcp` můžete napsat `todocko-mcp@3.10.2` a držet si tak verzi pod
+Místo `todocko-mcp` můžete napsat `todocko-mcp@<verze>` a držet si tak verzi pod
 kontrolou. Pokud chcete mít v `PATH` i nástroj `todo` pro příkazovou řádku,
 nainstalujte balíček globálně:
 
