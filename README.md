@@ -567,6 +567,14 @@ server, and a global install (`npm install -g todocko-mcp`) puts it on your
 📖 **Full guide: [CLI.md](CLI.md)**
 
 ```bash
+# What is on for today, and why each task is on the list
+todo today
+
+# List tasks (without --all it hides done and recurring ones)
+todo list
+todo list -p TODO --status review
+todo list --no-shared          # skip shared projects, which is faster
+
 # Add a task (without -p it uses the first project)
 todo add "Fix the login"
 todo add "Fix the login" -p TODO --priority high --scheduled today
@@ -589,11 +597,15 @@ todo add "X" --json
 - **Exit codes:** `0` success, `1` user or business error (unknown code, bad
   status or duration), `2` configuration (missing mnemonic).
 - **Colors** only on a TTY and only when `NO_COLOR` is unset.
+- **Reading covers shared projects too.** `todo list` and `todo today` merge
+  the personal instance with every joined shared project; a listing built on
+  the personal one alone would quietly omit part of the work. Skip it with
+  `--no-shared` when speed matters more.
 - **Note:** it runs as its own process against the same SQLite database as the
   MCP server. A write that collides with the MCP server can rarely raise
-  `SQLITE_BUSY`; repeat the command when it does. Out of scope for v1:
-  `list`/`today`, editing descriptions, projects, tags, checklists and shared
-  projects.
+  `SQLITE_BUSY`; repeat the command when it does. Out of scope: editing
+  descriptions, projects, tags, checklists, comments and attachments, plus any
+  writing to shared projects. Parity with the 161 MCP tools is not planned.
 
 ## Security
 
@@ -1511,6 +1523,14 @@ Vedle MCP serveru je v balíčku i CLI `todo` pro rychlé osobní ovládání z 
 📖 **Podrobný návod: [CLI.md](CLI.md)**
 
 ```bash
+# Co je na dnešek, a u každého úkolu proč tam je
+todo today
+
+# Výpis úkolů (bez --all skryje hotové a opakované)
+todo list
+todo list -p TODO --status review
+todo list --no-shared          # vynechat sdílené projekty, je to rychlejší
+
 # Přidání úkolu (bez -p použije první projekt)
 todo add "Opravit login"
 todo add "Opravit login" -p TODO --priority high --scheduled today
@@ -1532,7 +1552,8 @@ todo add "X" --json
 - **Sync:** po mutaci čeká ~3 s na relay; když je offline, vypíše `⚠ uloženo lokálně` a skončí s kódem 0 (data jsou lokálně bezpečně).
 - **Exit kódy:** `0` úspěch, `1` user/business chyba (neznámý kód, špatný stav/čas), `2` config (chybí mnemonic).
 - **Barvy** jen v TTY a při nenastaveném `NO_COLOR`.
-- **Pozn.:** běží jako samostatný proces nad stejnou SQLite DB jako MCP; při souběžném zápisu s MCP může (vzácně) nastat `SQLITE_BUSY` – v takovém případě příkaz zopakuj. Mimo rozsah v1: `list`/`today`, editace popisu, projekty/tagy/checklist, sdílené projekty.
+- **Čtení pokrývá i sdílené projekty.** `todo list` a `todo today` spojují osobní instanci se všemi připojenými sdílenými projekty; výpis postavený jen na osobní by tiše zamlčel část práce. Volbou `--no-shared` to jde vynechat, když víc záleží na rychlosti.
+- **Pozn.:** běží jako samostatný proces nad stejnou SQLite DB jako MCP; při souběžném zápisu s MCP může (vzácně) nastat `SQLITE_BUSY` – v takovém případě příkaz zopakuj. Mimo rozsah: editace popisu, projekty, štítky, checklist, komentáře a přílohy, a jakýkoliv zápis do sdílených projektů. Parita se 161 nástroji MCP se nechystá.
 
 ## Bezpečnost
 

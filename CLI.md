@@ -1,20 +1,24 @@
-# `todo` — Todocko CLI
+# `todo` – Todocko CLI
 
-Linuxové CLI pro rychlé osobní ovládání Todocko z terminálu — přidat úkol,
-změnit stav, zalogovat čas — bez otevírání webové appky kvůli drobnostem.
+Linuxové CLI pro rychlé osobní ovládání Todocko z terminálu – přidat úkol,
+změnit stav, zalogovat čas – bez otevírání webové appky kvůli drobnostem.
 
 Je součástí balíčku `todocko-mcp` a **sdílí stejnou databázi i `TODOCKO_MNEMONIC`
-jako MCP server** — žádná samostatná konfigurace.
+jako MCP server** – žádná samostatná konfigurace.
 
 ## Instalace
+
+```bash
+npm install -g todocko-mcp
+```
+
+Tím je `todo` v `PATH`. Ze zdrojových kódů to jde pořád taky:
 
 ```bash
 cd todocko-mcp
 npm install        # jednou
 npm run build      # zkompiluje dist/
-
-# Globální příkaz `todo` (symlink na dist/cli.js):
-npm link
+npm link           # globální příkaz todo (symlink na dist/cli.js)
 ```
 
 Mnemonic se bere z prostředí (stejná 24slovná fráze jako MCP):
@@ -29,6 +33,42 @@ tebe, `chmod 600`), ať ho nemusíš zadávat pokaždé.
 Bez `npm link` lze volat přímo: `node dist/cli.js <příkaz>`.
 
 ## Příkazy
+
+### `todo list [volby]`
+
+Výpis úkolů. Bez voleb skryje hotové a opakované, protože to není práce, která
+tě čeká.
+
+```bash
+todo list
+todo list -p TODO                 # jen jeden projekt
+todo list --status review
+todo list --all --limit 20        # včetně hotových
+todo list --no-shared             # vynechat sdílené projekty (rychlejší)
+```
+
+Řadí se podle termínu, pak podle priority, pak podle kódu. Úkol bez termínu jde
+až za ty s termínem: datum je závazek, priorita názor. Termín v minulosti je
+červeně, sdílený projekt má u kódu hvězdičku.
+
+### `todo today`
+
+Co je na dnešek. Spojuje čtyři věci a u každého úkolu říká, proč tam je:
+
+| důvod | znamená |
+| --- | --- |
+| `po termínu` | termín už uplynul a úkol není hotový |
+| `termín dnes` | termín je dnes |
+| `naplánováno` | `scheduledDate` je dnes nebo dřív |
+| `dělá se` | stav `in_progress`, bez ohledu na data |
+
+```bash
+todo today
+todo today -p TODO
+```
+
+Po termínu je vždycky nahoře, protože je to jediná skupina, kde čekání už něco
+stálo. Hotový úkol se neobjeví, ať je jeho termín jakkoliv starý.
 
 ### `todo add <název> [volby]`
 Přidá úkol. Bez `-p` použije první projekt.
@@ -68,7 +108,7 @@ todo worklogs TODO-184          # zarovnaná tabulka worklogů
 ```
 
 ### Globální volby
-- `--json` — strojový JSON výstup (na všech příkazech).
+- `--json` – strojový JSON výstup (na všech příkazech).
 - `--version`, `--help` (a `todo help <příkaz>`).
 
 ```bash
@@ -80,7 +120,7 @@ todo worklogs TODO-184 --json
 
 **Sync.** Po každé změně CLI počká ~3 s na sync s relay serverem. Když je relay
 nedostupný (offline), vypíše `⚠ uloženo lokálně, sync na relay se nepovedl
-(offline?)` a skončí úspěšně — data jsou lokálně bezpečně uložená a dosyncují se
+(offline?)` a skončí úspěšně – data jsou lokálně bezpečně uložená a dosyncují se
 při příštím připojení.
 
 **Exit kódy.**
@@ -90,16 +130,19 @@ při příštím připojení.
 | `1` | uživatelská/business chyba (neznámý kód úkolu, špatný stav, neplatný čas) |
 | `2` | konfigurační chyba (chybí `TODOCKO_MNEMONIC`) |
 
-Chyby jdou na `stderr`, data na `stdout` — lze bezpečně pipovat (`todo … --json | jq`).
+Chyby jdou na `stderr`, data na `stdout` – lze bezpečně pipovat (`todo … --json | jq`).
 
 **Barvy.** Jen v interaktivním terminálu (TTY) a při nenastaveném `NO_COLOR`.
 
 ## Omezení (v1)
 
 - Sdílí SQLite soubor s běžícím MCP serverem. Při souběžném zápisu může (vzácně)
-  nastat `SQLITE_BUSY` — v takovém případě příkaz zopakuj.
-- Mimo rozsah: `list`/`today`, editace popisu úkolu, projekty/tagy/checklist,
-  sdílené projekty, daemon režim. Přidá se, až bude potřeba.
+  nastat `SQLITE_BUSY` – v takovém případě příkaz zopakuj.
+- Mimo rozsah: editace popisu úkolu, projekty, štítky, checklist, komentáře,
+  přílohy, dokumentace a daemon režim. Zápis do sdílených projektů taky ne,
+  `list` a `today` je jen čtou.
+- Parita s MCP (161 nástrojů) se nechystá. Většina z nich dává smysl jen jako
+  nástroj pro AI a 161 příkazů v terminálu nikdo nechce.
 
 ## Architektura
 
@@ -117,9 +160,11 @@ src/
     dates.ts              today/tomorrow/YYYY-MM-DD → YYYY-MM-DD
     status.ts             validace/normalizace stavu
     format.ts             tabulky / barvy / ✓⚠✗
+    select.ts             co se vypíše a v jakém pořadí (bez Evolu, testovatelné)
     commands/
-      add.ts  status.ts  worklog.ts
+      add.ts  status.ts  worklog.ts  list.ts
 ```
 
-Testy: `npm test` (vitest) — unit testy čistých helperů (duration, datum, stav,
-tabulka).
+Testy: `npm test` (vitest). Čisté helpery (duration, datum, stav, tabulka,
+výběr úkolů) se testují přímo, `list.ts` proti zamockovanému `handleToolCall`,
+protože ten skutečný by při načtení modulu nastartoval databázi.

@@ -4,13 +4,15 @@ import { bootstrap } from './cli/bootstrap.js';
 import { cmdAdd } from './cli/commands/add.js';
 import { cmdSetStatus, cmdMv } from './cli/commands/status.js';
 import { cmdLog, cmdWorklogs } from './cli/commands/worklog.js';
+import { cmdList, cmdToday } from './cli/commands/list.js';
 import { fail } from './cli/format.js';
+import { VERSION } from './version.js';
 
 const program = new Command();
 program
   .name('todo')
-  .description('Todocko CLI — rychlé osobní ovládání z terminálu')
-  .version('1.0.0')
+  .description('Todocko CLI – rychlé osobní ovládání z terminálu')
+  .version(VERSION)
   .option('--json', 'strojový JSON výstup');
 
 const json = () => program.opts().json === true;
@@ -25,6 +27,23 @@ async function run(fn: (evolu: Awaited<ReturnType<typeof bootstrap>>) => Promise
     process.exit(1);
   }
 }
+
+program
+  .command('list')
+  .description('vypsat úkoly (bez --all skryje hotové a opakované)')
+  .option('-p, --project <code>', 'jen tenhle projekt (kód)')
+  .option('--status <s>', 'backlog|todo|in_progress|review|done|recurring')
+  .option('--all', 'včetně hotových a opakovaných')
+  .option('--limit <n>', 'nejvýš n úkolů')
+  .option('--no-shared', 'vynechat sdílené projekty (rychlejší)')
+  .action((opts) => run((e) => cmdList(e, opts, json())));
+
+program
+  .command('today')
+  .description('co je na dnešek: po termínu, termín dnes, naplánované a rozdělané')
+  .option('-p, --project <code>', 'jen tenhle projekt (kód)')
+  .option('--no-shared', 'vynechat sdílené projekty (rychlejší)')
+  .action((opts) => run((e) => cmdToday(e, opts, json())));
 
 program
   .command('add')
