@@ -145,7 +145,7 @@ async function createTaskComment(
     taskId: args.taskId as TaskId,
     content: EvoluString.orThrow(args.content),
     userId: args.userId ? (args.userId as UserId) : null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
 
   logActivity(evolu, {
@@ -175,7 +175,7 @@ async function updateTaskComment(
     evolu.update("taskComment", {
       id: args.id as TaskCommentId,
       content: EvoluString.orThrow(args.content),
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();
@@ -192,7 +192,7 @@ async function deleteTaskComment(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("taskComment", {
       id: args.id as TaskCommentId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

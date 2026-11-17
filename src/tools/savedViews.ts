@@ -103,7 +103,7 @@ async function createSavedView(
     filters: EvoluString.orThrow(args.filters),
     isBuiltIn: null,
     position: Int.orThrow(maxPos + 1),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -124,7 +124,7 @@ async function updateSavedView(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
-  assertMutation("updateSavedView", evolu.update("savedView", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateSavedView", evolu.update("savedView", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
 
   return { success: true, message: `View updated` };
@@ -132,7 +132,7 @@ async function updateSavedView(
 
 async function deleteSavedView(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  assertMutation("deleteSavedView", evolu.update("savedView", { id: args.id as SavedViewId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteSavedView", evolu.update("savedView", { id: args.id as SavedViewId, isDeleted: SQLITE_TRUE } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "View deleted" };
 }

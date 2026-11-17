@@ -83,17 +83,17 @@ describe.skipIf(sourceFiles.length === 0)("writes to the shared instance", () =>
 
 describe("the detector itself", () => {
   it("flags a write with no owner", () => {
-    const bad = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { onComplete: waiter.onComplete });`;
+    const bad = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { onSuccess: waiter.onSuccess, onError: waiter.onError });`;
     expect(sharedWriteSites(bad)[0]!.hasOwner).toBe(false);
   });
 
   it("flags the pre-8.20.3 ownerId, which Evolu now ignores", () => {
-    const old = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { ownerId: owner.id, onComplete: waiter.onComplete });`;
+    const old = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { ownerId: owner.id, onSuccess: waiter.onSuccess, onError: waiter.onError });`;
     expect(sharedWriteSites(old)[0]!.hasOwner).toBe(false);
   });
 
   it("accepts a write that has one", () => {
-    const good = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { owner: owner, onComplete: waiter.onComplete });`;
+    const good = `projectEvolu.insert("projectNote", {\n  title: "x",\n}, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });`;
     expect(sharedWriteSites(good)[0]!.hasOwner).toBe(true);
   });
 

@@ -181,12 +181,16 @@ async function syncStatus(args: { retest?: boolean }) {
     quarantinedRows: quarantine,
     errorTracking:
       'Evolu v8 reports no sync errors to the client - there is no instance hook and nothing is logged. lastError/errorCount used to be reported here and were never populated by anything, so they are gone; quarantinedRows is the real signal (TODO-266, TODO-288)',
-    onCompleteCount: health.onCompleteCount,
+    onSuccessCount: health.onSuccessCount,
+    // A refused mutation, which before Evolu 8.28 had no callback at all and
+    // was indistinguishable from a slow one.
+    onErrorCount: health.onErrorCount,
+    lastMutationError: health.lastMutationError,
     tips: [
       "If all relays show 'untested', run with retest: true",
       "If relays show 'failed'/'timeout', check network/firewall",
       "quarantinedRows counts data this schema cannot apply — growth means the schema is behind the app",
-      "onCompleteCount tracks successfully applied local mutations",
+      "onSuccessCount tracks successfully stored local mutations, onErrorCount the refused ones",
       "sync.verdict is the one to read: 'stale' means a local write is waiting and nothing is leaving, which an open socket does not tell you",
       "'idle' is not a fault — nothing was written, so nothing had to go out",
       "'relay-blocked' means the relay answers over HTTPS but not over a WebSocket, so look at a proxy or firewall, not at the relay",

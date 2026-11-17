@@ -150,7 +150,7 @@ async function uploadNoteAttachment(
     mimeType,
     data: fileContent,
     size: Int.orThrow(size),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -247,7 +247,7 @@ async function deleteNoteAttachment(
       id: args.id as LocalNoteAttachmentId,
       data: null,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

@@ -189,7 +189,7 @@ async function addWorklog(
     description: args.description ? NonEmptyTrimmedString1000.orThrow(args.description) : null,
     loggedAt: args.loggedAt || new Date().toISOString().split("T")[0],
     userId: args.userId ? (args.userId as UserId) : null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
 
   logActivity(evolu, {
@@ -230,7 +230,7 @@ async function updateWorklog(
   }
 
   const waiter = createMutationWaiter();
-  assertMutation("updateWorklog", evolu.update("worklog", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateWorklog", evolu.update("worklog", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
 
   await waiter.waitForSync();
 
@@ -245,7 +245,7 @@ async function deleteWorklog(evolu: EvoluInstance, args: { id: string }) {
   assertMutation("deleteWorklog", evolu.update("worklog", {
     id: args.id as WorklogId,
     isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete }));
+  } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
 
   await waiter.waitForSync();
 

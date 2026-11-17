@@ -95,7 +95,7 @@ async function createDeploymentStage(
     name: NonEmptyTrimmedString100.orThrow(args.name),
     color: args.color || "#22c55e",
     position: Int.orThrow(position),
-  } as any, { onComplete: waiter.onComplete });
+  } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError });
   await waiter.waitForSync();
   return { success: true, stageId: result.id, message: `Deployment stage "${args.name}" created successfully` };
 }
@@ -112,14 +112,14 @@ async function updateDeploymentStage(
   if (args.color !== undefined) updates.color = args.color;
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
   const waiter = createMutationWaiter();
-  assertMutation("updateDeploymentStage", evolu.update("deploymentStage", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateDeploymentStage", evolu.update("deploymentStage", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Deployment stage updated successfully" };
 }
 
 async function deleteDeploymentStage(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  assertMutation("deleteDeploymentStage", evolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteDeploymentStage", evolu.update("deploymentStage", { id: args.id as DeploymentStageId, isDeleted: SQLITE_TRUE } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Deployment stage deleted successfully" };
 }

@@ -1,4 +1,4 @@
-import { getSyncHealth, trackOnComplete, type EvoluInstance } from "../evolu.js";
+import { getSyncHealth, trackMutationError, trackMutationSuccess, type EvoluInstance } from "../evolu.js";
 import { maxLength, NonEmptyTrimmedString } from "@evolu/common";
 import { NETWORK_DELAY_MS, MAX_RICH_TEXT_LENGTH } from "./pure.js";
 
@@ -43,23 +43,57 @@ export {
 export const RichTextString = maxLength(MAX_RICH_TEXT_LENGTH)(NonEmptyTrimmedString);
 
 /**
- * Wait for a mutation to complete locally (via onComplete), then wait for network sync.
- * Returns a promise that resolves after the mutation is locally applied + network delay.
+ * Wait for a mutation to be stored locally, then wait for network sync.
+ *
+ * Evolu 8.28 renamed `onComplete` to `onSuccess` and added `onError`. The old
+ * name said the callback ran whenever the mutation ended, but it ran only when
+ * the mutation was stored, so a write that could not be stored, such as one
+ * refused because another context holds the database files, left this waiter
+ * hanging until the three second safety net expired and the tool then reported
+ * success. `onError` turns that silence into a thrown error: a write the
+ * caller is told went through, and did not, is the worst answer this server
+ * can give.
  */
 export function createMutationWaiter(): {
-  onComplete: () => void;
+  onSuccess: () => void;
+  onError: (error: unknown) => void;
   waitForSync: () => Promise<void>;
   waitForLocal: () => Promise<void>;
 } {
-  let resolveComplete: (() => void) | null = null;
-  const completePromise = new Promise<void>((resolve) => {
-    resolveComplete = resolve;
+  let resolveSettled: (() => void) | null = null;
+  const settledPromise = new Promise<void>((resolve) => {
+    resolveSettled = resolve;
   });
+  let failure: string | null = null;
+
+  /**
+   * Only the error's type, never the error itself. What Evolu hands over is
+   * not ours and may carry row data; a type name is enough to act on.
+   */
+  const describe = (error: unknown): string => {
+    if (typeof error === "object" && error !== null) {
+      const type = (error as { type?: unknown }).type;
+      if (typeof type === "string") return type;
+    }
+    return "UnknownMutationError";
+  };
+
+  /** Throws when the mutation was refused, which both waits have to do. */
+  const assertStored = (): void => {
+    if (failure !== null) {
+      throw new Error(`mutation was not stored: ${failure}`);
+    }
+  };
 
   return {
-    onComplete: () => {
-      trackOnComplete();
-      if (resolveComplete) resolveComplete();
+    onSuccess: () => {
+      trackMutationSuccess();
+      if (resolveSettled) resolveSettled();
+    },
+    onError: (error: unknown) => {
+      failure = describe(error);
+      trackMutationError(failure);
+      if (resolveSettled) resolveSettled();
     },
     /**
      * Only the local half: the mutation is applied and a following read sees
@@ -68,16 +102,18 @@ export function createMutationWaiter(): {
      */
     waitForLocal: async () => {
       await Promise.race([
-        completePromise,
+        settledPromise,
         new Promise<void>((resolve) => setTimeout(resolve, 3000)),
       ]);
+      assertStored();
     },
     waitForSync: async () => {
-      // Wait for onComplete (max 3s safety net)
+      // Wait for onSuccess or onError (max 3s safety net)
       await Promise.race([
-        completePromise,
+        settledPromise,
         new Promise<void>((resolve) => setTimeout(resolve, 3000)),
       ]);
+      assertStored();
       // Then wait for network round-trip
       await new Promise((resolve) => setTimeout(resolve, NETWORK_DELAY_MS));
     },

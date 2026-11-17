@@ -234,7 +234,7 @@ async function createProject(
     isArchived: null,
     isHiddenFromFilters: null,
     position: Int.orThrow(maxPosition + 1),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -293,7 +293,7 @@ async function updateProject(
   }
 
   const waiter = createMutationWaiter();
-  assertMutation("updateProject", evolu.update("project", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateProject", evolu.update("project", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
 
   await waiter.waitForSync();
 
@@ -316,7 +316,7 @@ async function deleteProject(evolu: EvoluInstance, args: { id: string }) {
       id: args.id as ProjectId,
       isDeleted: SQLITE_TRUE,
       deletedAt: new Date().toISOString(),
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

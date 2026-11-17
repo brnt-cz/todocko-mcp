@@ -204,7 +204,7 @@ async function createTag(
     color: EvoluString.orThrow(args.color || "#6b7280"),
     projectId: (args.projectId ?? null) as ProjectId,
     isDefault: args.isDefault ? SQLITE_TRUE : null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -235,7 +235,7 @@ async function updateTag(
     ...(args.color !== undefined ? { color: EvoluString.orThrow(args.color) } : {}),
     ...(args.projectId !== undefined ? { projectId: args.projectId as ProjectId } : {}),
     ...(args.isDefault !== undefined ? { isDefault: args.isDefault ? SQLITE_TRUE : null } : {}),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   assertMutation("td_update_tag", result);
   await waiter.waitForSync();
@@ -270,7 +270,7 @@ async function deleteTag(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("tag", {
       id: args.id as TagId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();
@@ -332,7 +332,7 @@ async function addTagToTask(evolu: EvoluInstance, args: { taskId: string; tagId:
   const result = evolu.insert("taskTag", {
     taskId: args.taskId as TaskId,
     tagId: args.tagId as TagId,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -367,7 +367,7 @@ async function removeTagFromTask(evolu: EvoluInstance, args: { taskId: string; t
     evolu.update("taskTag", {
       id: (result[0] as any).id as TaskTagId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

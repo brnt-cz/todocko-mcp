@@ -191,7 +191,7 @@ async function createTaskTemplate(
     position: Int.orThrow(maxPos + 1),
     checklistItems: serializeTemplateList(args.checklistItems, "checklistItems"),
     tagIds: serializeTemplateList(args.tagIds, "tagIds"),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -216,7 +216,7 @@ async function updateTaskTemplate(
   if (args.tagIds !== undefined) updates.tagIds = serializeTemplateList(args.tagIds, "tagIds");
 
   const waiter = createMutationWaiter();
-  assertMutation("updateTaskTemplate", evolu.update("taskTemplate", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateTaskTemplate", evolu.update("taskTemplate", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
 
   return { success: true, message: `Template updated` };
@@ -224,7 +224,7 @@ async function updateTaskTemplate(
 
 async function deleteTaskTemplate(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  assertMutation("deleteTaskTemplate", evolu.update("taskTemplate", { id: args.id as TaskTemplateId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteTaskTemplate", evolu.update("taskTemplate", { id: args.id as TaskTemplateId, isDeleted: SQLITE_TRUE } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Template deleted" };
 }
