@@ -251,12 +251,12 @@ export function topPositionForNewTask(minPosition: number): number {
   return Math.min(0, minPosition) - POSITION_STEP;
 }
 
-// Network delay after onComplete - time for WebSocket to send data to relay
-// onComplete means local DB is updated; this delay allows network round-trip
+// Network delay after onSuccess - time for WebSocket to send data to relay
+// onSuccess means local DB is updated; this delay allows network round-trip
 export const NETWORK_DELAY_MS = 500;
 
 /**
- * Simple wait for sync (used where onComplete isn't available)
+ * Simple wait for sync (used where the mutation callbacks are not available)
  */
 export async function waitForSync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, NETWORK_DELAY_MS));

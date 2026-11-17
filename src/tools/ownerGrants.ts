@@ -84,7 +84,7 @@ export async function recordMemberGrant(
       memberAppOwnerId: EvoluString.orThrow(memberAppOwnerId),
       permission: EvoluString.orThrow(permission),
     },
-    { onComplete: waiter.onComplete },
+    { onSuccess: waiter.onSuccess, onError: waiter.onError },
   );
   await waiter.waitForSync();
 }

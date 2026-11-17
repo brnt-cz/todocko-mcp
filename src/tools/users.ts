@@ -185,7 +185,7 @@ async function createUser(
     avatarUrl: null,
     passwordHash: null,
     theme: null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -224,7 +224,7 @@ async function updateUser(
   }
 
   const waiter = createMutationWaiter();
-  assertMutation("updateUser", evolu.update("user", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateUser", evolu.update("user", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
 
   await waiter.waitForSync();
 
@@ -240,7 +240,7 @@ async function deleteUser(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("user", {
       id: args.id as UserId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

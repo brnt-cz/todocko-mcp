@@ -201,7 +201,7 @@ async function createMention(
     sourceType: EvoluString.orThrow(args.sourceType),
     sourceId: args.sourceId ? EvoluString.orThrow(args.sourceId) : null,
     isRead: null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -218,7 +218,7 @@ async function markMentionRead(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("mention", {
       id: args.id as MentionId,
       isRead: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();
@@ -267,7 +267,7 @@ async function deleteMention(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("mention", {
       id: args.id as MentionId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

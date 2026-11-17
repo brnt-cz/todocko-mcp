@@ -923,7 +923,11 @@ const RELAY_SERVERS = ((raw: string): RelayUrl[] => {
 interface SyncHealth {
   wsConnectivity: Map<string, 'untested' | 'ok' | 'failed'>;
   evoluReady: boolean;
-  onCompleteCount: number;
+  onSuccessCount: number;
+  /** Mutations Evolu refused to store, which until 8.28 nothing could see. */
+  onErrorCount: number;
+  /** Type of the last refusal, for diagnostics. Never the error itself. */
+  lastMutationError: string | null;
   /** When a local mutation last happened. Without a time, nothing can tell that a write is waiting. */
   lastLocalMutationAt: number | null;
   /** Per-table count of incoming change events observed via subscribeQuery. */
@@ -933,7 +937,9 @@ interface SyncHealth {
 const syncHealth: SyncHealth = {
   wsConnectivity: new Map(RELAY_SERVERS.map(url => [url, 'untested' as const])),
   evoluReady: false,
-  onCompleteCount: 0,
+  onSuccessCount: 0,
+  onErrorCount: 0,
+  lastMutationError: null,
   lastLocalMutationAt: null,
   incomingChangesByTable: new Map(),
 };
@@ -944,14 +950,18 @@ const syncHealth: SyncHealth = {
 export function getSyncHealth(): {
   wsConnectivity: Record<string, string>;
   evoluReady: boolean;
-  onCompleteCount: number;
+  onSuccessCount: number;
+  onErrorCount: number;
+  lastMutationError: string | null;
   lastLocalMutationAt: number | null;
   relayServers: string[];
 } {
   return {
     wsConnectivity: Object.fromEntries(syncHealth.wsConnectivity),
     evoluReady: syncHealth.evoluReady,
-    onCompleteCount: syncHealth.onCompleteCount,
+    onSuccessCount: syncHealth.onSuccessCount,
+    onErrorCount: syncHealth.onErrorCount,
+    lastMutationError: syncHealth.lastMutationError,
     lastLocalMutationAt: syncHealth.lastLocalMutationAt,
     relayServers: RELAY_SERVERS,
   };
@@ -989,13 +999,25 @@ export async function getQuarantineCounts(): Promise<{ app: number | null; proje
   return { app, project };
 }
 
-/** Track onComplete calls from mutations */
-export function trackOnComplete(): void {
-  syncHealth.onCompleteCount++;
+/** Track stored mutations (Evolu's onSuccess, called onComplete before 8.28) */
+export function trackMutationSuccess(): void {
+  syncHealth.onSuccessCount++;
   // A time, not just a count: without it there is no way to tell "written
   // locally and never sent", which is the fault td_sync_status could not see.
   // (TODO-294)
   syncHealth.lastLocalMutationAt = Date.now();
+}
+
+/**
+ * Track mutations Evolu refused to store.
+ *
+ * Before 8.28 there was no callback for this at all, so a refused write was
+ * indistinguishable from a slow one: both ended as a three second wait and a
+ * reported success. The type is kept for diagnostics, never the error object.
+ */
+export function trackMutationError(type: string): void {
+  syncHealth.onErrorCount++;
+  syncHealth.lastMutationError = type;
 }
 
 /**

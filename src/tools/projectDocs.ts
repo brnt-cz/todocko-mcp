@@ -264,7 +264,7 @@ async function createProjectDoc(
     position: Int.orThrow(maxPos + 1),
     isDoc: SQLITE_TRUE,
     parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -288,7 +288,7 @@ async function updateProjectDoc(
   if (args.parentDocId !== undefined) updates.parentDocId = args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null;
 
   const waiter = createMutationWaiter();
-  assertMutation("updateProjectDoc", evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateProjectDoc", evolu.update("localProjectNote", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
 
   return { success: true, message: `Document page updated` };
@@ -296,7 +296,7 @@ async function updateProjectDoc(
 
 async function deleteProjectDoc(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  assertMutation("deleteProjectDoc", evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteProjectDoc", evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Document page deleted" };
 }
@@ -410,7 +410,7 @@ async function createSharedProjectDoc(
       position: Int.orThrow(maxPos + 1),
       isDoc: SQLITE_TRUE,
       parentDocId: args.parentDocId ? EvoluString.orThrow(args.parentDocId) : null,
-    }, { owner: owner, onComplete: waiter.onComplete });
+    }, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });
 
     await waiter.waitForSync();
 
@@ -452,7 +452,7 @@ async function updateSharedProjectDoc(
     // iXO1duq-onrYm9n19nT-eA instead of the project's. Every write in
     // shared.ts already passes it. (TODO-299)
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", updates as any, { owner: owner, onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", updates as any, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });
     await waiter.waitForSync();
 
     return { success: true, message: "Shared document page updated" };
@@ -477,7 +477,7 @@ async function deleteSharedProjectDoc(
   await assertRowExists(projectEvolu, "projectNote", args.id, "Document page", owner.id as string);
   try {
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { owner: owner, onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });
     await waiter.waitForSync();
     return { success: true, message: "Shared document page deleted" };
   } finally {

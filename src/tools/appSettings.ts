@@ -120,7 +120,7 @@ async function setAppSetting(evolu: EvoluInstance, args: { key: string; value: s
       key: EvoluString.orThrow(args.key),
       value: EvoluString.orThrow(args.value),
     },
-    { onComplete: waiter.onComplete }
+    { onSuccess: waiter.onSuccess, onError: waiter.onError }
   );
 
   await waiter.waitForSync();

@@ -341,32 +341,40 @@ function buildNodeEvoluDeps(): EvoluDeps {
       void run(startDbWorker(self));
     });
 
-  const sharedWorker = createSharedWorker<SharedWorkerInput, SharedWorkerOutput>((self) => {
-    const run = createRun({
-      ...createWorkerDeps(),
-      createWebSocket: createInstrumentedWebSocket,
-      lockManager: navigator.locks,
-      reportDefect: reportSharedWorkerDefect,
-      /*
-       * Required since Evolu 8.14, which replaced the optional
-       * `isPersistentStorageAvailable` with this. (TODO-419)
-       *
-       * "Persisted" is a claim Evolu asks platforms to make only when it is
-       * certain, and here it is: the database is a file on disk opened through
-       * Evolu's own SQLite, with no browser in between that might evict it, no
-       * private window and no memory-only mode. That is exactly the case the
-       * Evolu docs give for "Persisted" ("the database is the app's own file,
-       * as in React Native").
-       */
-      getDevicePersistence: () => Promise.resolve("Persisted" as const),
+  /*
+   * A factory since Evolu 8.28, which replaced `sharedWorker` in the deps with
+   * `createStoredWorker` and calls it at most once, after the platform's
+   * persistence check answers. Ours answers immediately, so the worker starts
+   * at the same moment it used to; what changed is who decides when.
+   * (TODO-476)
+   */
+  const createStoredWorker = () =>
+    createSharedWorker<SharedWorkerInput, SharedWorkerOutput>((self) => {
+      const run = createRun({
+        ...createWorkerDeps(),
+        createWebSocket: createInstrumentedWebSocket,
+        lockManager: navigator.locks,
+        reportDefect: reportSharedWorkerDefect,
+        /*
+         * Required since Evolu 8.14, which replaced the optional
+         * `isPersistentStorageAvailable` with this. (TODO-419)
+         *
+         * "Persisted" is a claim Evolu asks platforms to make only when it is
+         * certain, and here it is: the database is a file on disk opened through
+         * Evolu's own SQLite, with no browser in between that might evict it, no
+         * private window and no memory-only mode. That is exactly the case the
+         * Evolu docs give for "Persisted" ("the database is the app's own file,
+         * as in React Native").
+         */
+        getDevicePersistence: () => Promise.resolve("Persisted" as const),
+      });
+      void run(async (run) => {
+        // The shared worker owns sync for the whole process; keep it alive until
+        // the Run is aborted rather than letting the Task settle immediately.
+        await using _ = await run.ok(initSharedWorker(self));
+        return await run(waitForAbort);
+      });
     });
-    void run(async (run) => {
-      // The shared worker owns sync for the whole process; keep it alive until
-      // the Run is aborted rather than letting the Task settle immediately.
-      await using _ = await run.ok(initSharedWorker(self));
-      return await run(waitForAbort);
-    });
-  });
 
   return createCommonEvoluDeps({
     createDbWorker,
@@ -379,6 +387,6 @@ function buildNodeEvoluDeps(): EvoluDeps {
     lockManager: navigator.locks,
     // Nothing to reload in a CLI process — the MCP host restarts us.
     reloadApp: () => {},
-    sharedWorker,
+    createStoredWorker,
   });
 }

@@ -194,7 +194,7 @@ async function uploadAttachment(
     data: null,
     size: Int.orThrow(size),
     contentShard: null,
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   const attachmentId = result.id as AttachmentId;
   // Obsah jde do vlastního shardu, hlavička zůstává u AppOwnera (TODO-450):
@@ -278,7 +278,7 @@ async function deleteAttachment(
       data: null,
       contentShard: null,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: shardWaiter.onComplete }));
+    } as any, { onSuccess: shardWaiter.onSuccess, onError: shardWaiter.onError }));
     await shardWaiter.waitForSync();
     return {
       success: true,
@@ -305,7 +305,7 @@ async function deleteAttachment(
     id: args.id as AttachmentId,
     data: null,
     isDeleted: SQLITE_TRUE,
-  } as any, { onComplete: waiter.onComplete }));
+  } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
 
   for (const chunk of chunkRows) {
     evolu.update("attachmentChunk", {

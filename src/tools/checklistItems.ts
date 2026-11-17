@@ -167,7 +167,7 @@ async function createChecklistItem(
     title: NonEmptyTrimmedString1000.orThrow(args.title),
     isChecked: args.isChecked ? SQLITE_TRUE : null,
     position: Int.orThrow(position),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
 
   logActivity(evolu, {
@@ -227,7 +227,7 @@ async function updateChecklistItem(
   }
 
   const waiter = createMutationWaiter();
-  assertMutation("updateChecklistItem", evolu.update("checklistItem", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateChecklistItem", evolu.update("checklistItem", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
 
   if (args.isChecked !== undefined) {
     logActivity(evolu, {
@@ -252,7 +252,7 @@ async function deleteChecklistItem(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("checklistItem", {
       id: args.id as ChecklistItemId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

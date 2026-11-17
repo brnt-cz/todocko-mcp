@@ -839,7 +839,7 @@ MCP (Model Context Protocol) server pro práci s daty [Todocko](https://app.todo
 
 ## Evolu v8 (TODO-88)
 
-MCP běží na `@evolu/common` 8.27.0 a `@evolu/nodejs` 4.6.0. Upgrade z 8.22
+MCP běží na `@evolu/common` 8.28.0 a `@evolu/nodejs` 4.6.0. Upgrade z 8.22
 (TODO-431) nevyžadoval změnu kódu; sync přes relay ověřen v obou směrech
 proti verzi 8.22.
 
@@ -863,6 +863,32 @@ databáze na disku**:
   si `?ownerId=` připojuje sám.
 - Platforma musí nově dodat `deleteDatabaseFiles` (maže soubor databáze i žurnál)
   a `getDevicePersistence` i na hlavním vlákně, ne jen v shared workeru.
+
+Upgrade na 8.28 (TODO-476) přinesl dvě lámavé změny a obě se nás týkají:
+
+- **`onComplete` v mutacích se jmenuje `onSuccess`** a přibylo `onError`. Staré
+  jméno tvrdilo, že callback běží, kdykoliv mutace skončí, ale běžel jen při
+  uložení. Zápis, který uložit nešlo, třeba protože databázi drží jiný proces,
+  tedy `createMutationWaiter` nechal viset do třísekundové pojistky a nástroj
+  pak ohlásil úspěch. `onError` z toho ticha dělá výjimku: 115 volání ve 26
+  souborech posílá nově obě, a `td_sync_status` vedle `onSuccessCount` ukazuje
+  i `onErrorCount` a `lastMutationError`. **Jméno volby, které Evolu nezná, se
+  za běhu ignoruje**, zápis proběhne a nástroj ohlásí úspěch, takže rozdíl
+  pozná jedině počet zavolaných callbacků. Proto ta sonda níž.
+- **Deps místo `sharedWorker` chtějí `createStoredWorker`**, tedy továrnu, ne
+  hotového workera. Evolu ji volá nejvýš jednou, až odpoví kontrola trvalého
+  úložiště. Ta naše odpovídá hned, takže worker startuje ve stejnou chvíli jako
+  dřív; změnilo se jen to, kdo o tom rozhoduje.
+
+`npm run probe` je runtime sonda (`probe/evolu-runtime.mjs`). `tsc` dbWorkera ani
+stored workera nikdy nespustí, a právě tam upgrade Evolu dopadá, takže zelený
+build o ničem z toho nevypovídá. Sonda mluví JSON-RPC na postavený `dist/`,
+založí projekt a úkol, přečte ho zpátky a spočítá callbacky mutací. Běží
+izolovaně: `HOME` míří do `/var/tmp`, takže si otevře vlastní databázi místo
+uživatelovy `~/.todocko`, a relay URL je mrtvý port, takže nic neleze ven.
+Frázi si generuje sama a nikam ji nevypisuje. Ověřená i pozitivní kontrolou:
+vrácení jednoho volání na `onComplete` shodí sondu na `onSuccessCount=1,
+expected 2`, zatímco build i testy zůstanou zelené.
 
 Od Evolu 8.20.3 nese zápis do sdílené instance celého ownera,
 `{ owner: sharedOwner }`, ne `{ ownerId }`. Zapomenuté `ownerId` Evolu ignoruje

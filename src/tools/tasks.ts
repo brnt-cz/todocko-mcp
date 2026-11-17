@@ -801,7 +801,7 @@ async function createTask(
     const posResult = await safeLoadQuery(evolu, posQuery);
     const minPosition = posResult.length > 0 ? ((posResult[0] as any).position ?? 0) : 0;
 
-    // Create task with onComplete tracking
+    // Create task with onSuccess tracking
     const result = evolu.insert("task", {
       projectId: args.projectId as ProjectId,
       title: NonEmptyTrimmedString100.orThrow(taskCode),
@@ -824,7 +824,7 @@ async function createTask(
       recurrenceDay: args.recurrenceDay || null,
       sprintNumber: args.sprintNumber ? Int.orThrow(args.sprintNumber) : null,
       ...(args.parentTaskId ? { parentTaskId: args.parentTaskId as TaskId } : {}),
-    } as any, { onComplete: waiter.onComplete });
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
     // Touch the task with update to set updatedAt (Evolu only sets it on update, not insert)
     evolu.update("task", { id: result.id, status: args.status || "todo" } as any);
@@ -840,7 +840,7 @@ async function createTask(
   // limit for the first time in the app, after the fact. (TODO-243)
   const tierNote = await freeTierNote(evolu, "task");
 
-  // Wait for onComplete + network sync
+  // Wait for onSuccess + network sync
   await waiter.waitForSync();
 
 
@@ -1078,7 +1078,7 @@ async function updateTask(
   settleCompletedAt();
 
   const waiter = createMutationWaiter();
-  const updateResult = evolu.update("task", updates as any, { onComplete: waiter.onComplete });
+  const updateResult = evolu.update("task", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   logTaskUpdate(evolu, args.id, oldTask, updates);
 
@@ -1447,7 +1447,7 @@ async function deleteTask(evolu: EvoluInstance, args: { id: string }) {
   await cascadeDeleteTaskChildren(evolu, args.id);
 
   const waiter = createMutationWaiter();
-  assertMutation("deleteTask", evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteTask", evolu.update("task", { id: args.id as TaskId, isDeleted: SQLITE_TRUE, deletedAt: new Date().toISOString() } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   logTaskDelete(evolu, args.id);
 
   await waiter.waitForSync();

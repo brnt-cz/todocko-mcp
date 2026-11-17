@@ -142,7 +142,7 @@ async function createTaskLink(
     sourceTaskId: args.sourceTaskId as TaskId,
     targetTaskId: args.targetTaskId as TaskId,
     linkType: EvoluString.orThrow(args.linkType || "blocks"),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -159,7 +159,7 @@ async function deleteTaskLink(evolu: EvoluInstance, args: { id: string }) {
     evolu.update("taskLink", {
       id: args.id as TaskLinkId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();

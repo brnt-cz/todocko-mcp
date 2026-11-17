@@ -252,7 +252,7 @@ async function createProjectNote(
     title: NonEmptyTrimmedString100.orThrow(args.title),
     content: args.content ? RichTextString.orThrow(args.content) : null,
     position: Int.orThrow(maxPos + 1),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -275,7 +275,7 @@ async function updateProjectNote(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
-  assertMutation("updateProjectNote", evolu.update("localProjectNote", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateProjectNote", evolu.update("localProjectNote", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
 
   return { success: true, message: `Note updated` };
@@ -283,7 +283,7 @@ async function updateProjectNote(
 
 async function deleteProjectNote(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  assertMutation("deleteProjectNote", evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteProjectNote", evolu.update("localProjectNote", { id: args.id as LocalProjectNoteId, isDeleted: SQLITE_TRUE } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Note deleted" };
 }
@@ -394,7 +394,7 @@ async function createSharedProjectNote(
       content: args.content ? RichTextString.orThrow(args.content) : null,
       createdBy: null,
       position: Int.orThrow(maxPos + 1),
-    }, { owner: owner, onComplete: waiter.onComplete });
+    }, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });
 
     await waiter.waitForSync();
 
@@ -435,7 +435,7 @@ async function updateSharedProjectNote(
     // iXO1duq-onrYm9n19nT-eA instead of the project's. Every write in
     // shared.ts already passes it. (TODO-299)
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", updates as any, { owner: owner, onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", updates as any, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });
     await waiter.waitForSync();
 
     return { success: true, message: "Shared note updated" };
@@ -460,7 +460,7 @@ async function deleteSharedProjectNote(
   await assertRowExists(projectEvolu, "projectNote", args.id, "Note", owner.id as string);
   try {
     const waiter = createMutationWaiter();
-    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { owner: owner, onComplete: waiter.onComplete });
+    projectEvolu.update("projectNote", { id: args.id as ProjectNoteId, isDeleted: SQLITE_TRUE } as any, { owner: owner, onSuccess: waiter.onSuccess, onError: waiter.onError });
     await waiter.waitForSync();
     return { success: true, message: "Shared note deleted" };
   } finally {

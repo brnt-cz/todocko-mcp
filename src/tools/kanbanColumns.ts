@@ -124,7 +124,7 @@ async function createKanbanColumn(
     isDefault: args.isDefault ? SQLITE_TRUE : null,
     showInKanban: args.showInKanban !== false ? SQLITE_TRUE : null,
     wipLimit: parseWipLimit(args.wipLimit),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -148,7 +148,7 @@ async function updateKanbanColumn(
   if (args.wipLimit !== undefined) updates.wipLimit = parseWipLimit(args.wipLimit);
 
   const waiter = createMutationWaiter();
-  assertMutation("updateKanbanColumn", evolu.update("kanbanColumn", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateKanbanColumn", evolu.update("kanbanColumn", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
 
   return { success: true, message: `Column updated` };
@@ -156,7 +156,7 @@ async function updateKanbanColumn(
 
 async function deleteKanbanColumn(evolu: EvoluInstance, args: { id: string }) {
   const waiter = createMutationWaiter();
-  assertMutation("deleteKanbanColumn", evolu.update("kanbanColumn", { id: args.id as KanbanColumnId, isDeleted: SQLITE_TRUE } as any, { onComplete: waiter.onComplete }));
+  assertMutation("deleteKanbanColumn", evolu.update("kanbanColumn", { id: args.id as KanbanColumnId, isDeleted: SQLITE_TRUE } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Column deleted" };
 }

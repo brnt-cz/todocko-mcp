@@ -174,7 +174,7 @@ async function createRepositoryLink(
     url: NonEmptyTrimmedString1000.orThrow(args.url),
     label: args.label ? NonEmptyTrimmedString100.orThrow(args.label) : null,
     position: Int.orThrow(maxPosition + 1),
-  }, { onComplete: waiter.onComplete });
+  }, { onSuccess: waiter.onSuccess, onError: waiter.onError });
 
   await waiter.waitForSync();
 
@@ -199,7 +199,7 @@ async function updateRepositoryLink(
   if (args.position !== undefined) updates.position = Int.orThrow(args.position);
 
   const waiter = createMutationWaiter();
-  assertMutation("updateRepositoryLink", evolu.update("repositoryLink", updates as any, { onComplete: waiter.onComplete }));
+  assertMutation("updateRepositoryLink", evolu.update("repositoryLink", updates as any, { onSuccess: waiter.onSuccess, onError: waiter.onError }));
   await waiter.waitForSync();
   return { success: true, message: "Repository link updated successfully" };
 }
@@ -213,7 +213,7 @@ async function deleteRepositoryLink(
     evolu.update("repositoryLink", {
       id: args.id as RepositoryLinkId,
       isDeleted: SQLITE_TRUE,
-    } as any, { onComplete: waiter.onComplete })
+    } as any, { onSuccess: waiter.onSuccess, onError: waiter.onError })
   );
 
   await waiter.waitForSync();
